@@ -18,6 +18,10 @@ async def login(data: UserLogin):
 async def register_by_admin(data: UserRegisterByAdmin):
     return Admin.register_user_by_admin(data)
 
-@routerAdmin.post('/enable_physical_certificate')
-async def enable_physical_certificate(data: UserUpdatePhysicalCertificate):
-    return Admin.enable_physical_certificate(data)
+@routerAdmin.post('/approve_certificate')
+async def approve_certificate(data: UserUpdatePhysicalCertificate):
+    return Admin.approve_certificate(data)
+
+@routerAdmin.post('/reject_certificate')
+async def reject_certificate(data: UserUpdatePhysicalCertificate):
+    return Admin.reject_certificate(data)
