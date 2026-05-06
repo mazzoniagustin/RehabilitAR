@@ -1,6 +1,9 @@
 from pydantic import BaseModel, EmailStr, Field
 from typing import Literal
 
+#Valida los datos ingresados, es un template. Si falta alto del User register, no se registra
+
+
 class UserRegister(BaseModel):
     name: str
     surname: str
@@ -14,13 +17,24 @@ class UserLogin(BaseModel):
     email: EmailStr
     password: str
 
-class UserRegisterByAdmin(BaseModel):
+
+class UserRegisterByStaff(BaseModel):
+    staff_id: str
     name: str
     surname: str
     email: EmailStr
     dni: str
-    rol: Literal['ABONADO', 'NO_ABONADO', 'ADMINISTRATIVO', 'RECEPCIONISTA']
     dni_photo: str
+    physical_certificate: str
 
 class UserUpdatePhysicalCertificate(BaseModel):
+    admin_id: str
     id: str
+
+class EmployeeRegisterByAdmin(BaseModel):
+    admin_id: str
+    name: str
+    surname: str
+    email: EmailStr
+    dni: str
+    rol: Literal['ADMINISTRATIVO', 'RECEPCIONISTA', 'PROFESOR']
