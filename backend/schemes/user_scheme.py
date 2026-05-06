@@ -8,6 +8,7 @@ class UserRegister(BaseModel):
     dni: str
     password: str = Field(min_length=6)
     dni_photo: str
+    physical_certificate: str
 
 class UserLogin(BaseModel):
     email: EmailStr

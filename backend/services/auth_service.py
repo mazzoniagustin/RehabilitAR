@@ -20,7 +20,7 @@ class AuthService:
                     'dni': data.dni,
                     'rol': 'NO_ABONADO',
                     'physical_certificate': 'Pendiente',
-                    'account_status': 'Pendiente'
+                    'account_status': 'Activa'
                     #Url del dni?
                 }).execute()
                 return {"Mensaje": "Usuario registrado exitosamente. Queda pendiente de verificación del apto físico."}

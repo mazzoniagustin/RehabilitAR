@@ -1,27 +1,26 @@
 from fastapi import APIRouter
 from schemes.user_scheme import UserRegister, UserLogin, UserRegisterByAdmin, UserUpdatePhysicalCertificate
-from services.auth_service import AuthService
-from services.admin_service import Admin
+from services import auth_service, admin_service
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 routerAdmin = APIRouter(prefix="/admin", tags=["admin"])
 
 @router.post("/register")
-async def register(data: UserRegister):
-    return AuthService.register_user(data)
+def register(data: UserRegister):
+    return auth_service.register_user(data)
 
 @router.post("/login")
-async def login(data: UserLogin):
-    return AuthService.login_user(data.email, data.password)
+def login(data: UserLogin):
+    return auth_service.login_user(data.email, data.password)
 
 @routerAdmin.post('/register')
-async def register_by_admin(data: UserRegisterByAdmin):
-    return Admin.register_user_by_admin(data)
+def register_by_admin(data: UserRegisterByAdmin):
+    return admin_service.register_user_by_admin(data)
 
 @routerAdmin.post('/approve_certificate')
-async def approve_certificate(data: UserUpdatePhysicalCertificate):
-    return Admin.approve_certificate(data)
+def approve_certificate(data: UserUpdatePhysicalCertificate):
+    return admin_service.approve_certificate(data)
 
 @routerAdmin.post('/reject_certificate')
-async def reject_certificate(data: UserUpdatePhysicalCertificate):
-    return Admin.reject_certificate(data)
+def reject_certificate(data: UserUpdatePhysicalCertificate):
+    return admin_service.reject_certificate(data)
