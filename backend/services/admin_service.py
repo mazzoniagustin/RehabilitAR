@@ -1,6 +1,6 @@
 from fastapi import HTTPException
 from database import supabase
-from utils.password_utils import random_password
+from utils import passord_utils, permissions
 
 #Aplicacion de las reglas de negocio.
 
@@ -20,7 +20,6 @@ def register_user_by_staff(data):
                 'email': data.email,
                 'dni': data.dni,
                 'rol': 'NO_ABONADO',
-                'dni_photo': data.dni_photo,
                 'physical_certificate': 'Pendiente',
                 'account_status': 'Activa'
             }).execute()
@@ -33,6 +32,10 @@ def register_user_by_staff(data):
         
 def register_employee_by_admin(data):
     try:
+
+        if data.rol in ['RECEPCIONISTA', 'PROFESOR'] and not data.specialty:
+            raise HTTPException(status_code=400, detail='La especialidad es obligatoria para recepcionistas y profesores.')
+
         password = random_password()
         response = supabase.auth.admin.create_user({
             'email': data.email,
@@ -47,20 +50,14 @@ def register_employee_by_admin(data):
                 'email': data.email,
                 'dni': data.dni,
                 'rol': data.rol,
-                'account_status': 'Activa'
+                'account_status': 'Activa',
+                'specialty': data.specialty
             }).execute()
 
             return {"Mensaje": "Empleado registrado exitosamente."}
     except Exception as e:
         raise HTTPException(status_code=400, detail=f'Error en el registro del empleado.')
 
-def check_permission(admin_id: str, allowed_roles: list[str]):
-    current_rol = supabase.table('users').select('rol').eq('id', admin_id).execute()
-
-    if current_rol.data and current_rol.data[0].get('rol') in allowed_roles:
-        return True
-    else:
-        return False
 
 def approve_certificate(data):
     try:
@@ -68,7 +65,7 @@ def approve_certificate(data):
             
         if not response.data:
             raise HTTPException(status_code=404, detail='Usuario no encontrado.')
-        if response.data[0].get('physical_certificate') == 'Aprobado':
+        if response.data['physical_certificate'] == 'Aprobado':
             raise HTTPException(status_code=400, detail='El apto físico ya ha sido aprobado.')
             
         supabase.table('users').update({'physical_certificate': 'Aprobado'}).eq('id', data.id).execute()
@@ -83,10 +80,12 @@ def reject_certificate(data):
             
         if not response.data:
             raise HTTPException(status_code=404, detail='Usuario no encontrado.')
-        if response.data[0].get('physical_certificate') == 'Rechazado':
+        if response.data['physical_certificate'] == 'Rechazado':
             raise HTTPException(status_code=400, detail='El apto físico ya ha sido rechazado.')
             
-        supabase.table('users').update({'physical_certificate': 'Rechazado'}).eq('id', data.id).execute()
+        supabase.table('users').update({
+            'physical_certificate': 'Rechazado',
+            'physical_rejection_reason': data.reason}).eq('id', data.id).execute()
         return {'Mensaje': 'Apto físico rechazado.'}
         
     except Exception as e:
