@@ -68,7 +68,7 @@ def login_user(email,password):
 # def recover_password(data): falta front para enviar el mail.
 
 
-def change_password(data):
+"""def change_password(data): Esta función va en user_service.py. Se deja como referencia de cómo se implementa el cambio de contraseña con Supabase.
     try:
         if data.new_password != data.confirm_new_password:
             raise HTTPException(status_code=400, detail='Las contraseñas no coinciden.')
@@ -88,7 +88,7 @@ def change_password(data):
         
     except Exception as e:
         raise HTTPException(status_code=400, detail=f'Error al cambiar la contraseña')
-
+"""
 
 def log_out():
     try:
