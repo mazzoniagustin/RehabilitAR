@@ -1,28 +1,39 @@
 from fastapi import HTTPException
+from utils.permissions import check_user_existance
 from database import supabase
 
 #Aplicacion de las reglas de negocio.
 
 def register_user(data):
-    try: 
+    try:
+        
+        check_user_existance(data.email)
+        
         auth_response = supabase.auth.sign_up({
             "email": data.email,
             "password": data.password
         })
 
-        if auth_response:
-            check_user_existance(data.email, data.dni)
-            supabase.table('users').insert({
-                'id': auth_response.user.id,
-                'name': data.name,
-                'surname': data.surname,
-                'email': data.email,
-                'dni': data.dni,
-                'rol': 'NO_ABONADO',
-                'physical_certificate': 'Pendiente',
-                'account_status': 'Activa',                 
-            }).execute()
-            return {"Mensaje": "Usuario registrado exitosamente. Queda pendiente de verificación del apto físico."}
+        if not auth_response.user:
+            raise HTTPException(status_code=400, detail='Error en el registro del usuario.')
+
+        user_id = auth_response.user.id
+        supabase.table('users').insert({
+            'id': user_id,
+            'name': data.name,
+            'surname': data.surname,
+            'email': data.email,
+            'dni': data.dni,
+            'phone': data.phone,
+            'rol': 'NO_ABONADO',
+            'physical_certificate': 'Pendiente',
+            'account_status': 'ACTIVA',
+            'failed_attempts': 0                
+        }).execute()
+        
+        return {"Mensaje": "Usuario registrado exitosamente. Queda pendiente de verificación del apto físico."}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=f'Error en el registro del usuario: {str(e)}')
         
@@ -36,36 +47,44 @@ def login_user(email,password):
 
         if not response.session:
             raise HTTPException(status_code=401, detail='Credenciales inválidas.')
+
+        user_id = response.user.id
         
-        current_status = supabase.table('users').select('failed_attempts', 'account_status').eq('id', response.user.id).single().execute()
+        current_status = supabase.table('users').select('account_status').eq('id', user_id).single().execute()
         
         if not current_status.data:
             raise HTTPException(status_code=404, detail='Usuario no encontrado.')
 
-        if current_status.data['account_status'] == 'Suspendida':
+        if current_status.data['account_status'] == 'SUSPENDIDO':
             raise HTTPException(status_code=403, detail='Cuenta suspendida. Contacte al administrador.')
 
-        supabase.table('users').update({'failed_attempts': 0}).eq('id', response.user.id).execute() 
+        supabase.table('users').update({'failed_attempts': 0}).eq('id', user_id).execute() 
         return {'Mensaje': 'Usuario autenticado exitosamente', 'Token': response.session.access_token}
     
     except HTTPException:
         raise
     except Exception:
-
-        user = supabase.table('users').select('id', 'failed_attempts').eq('email', email).single().execute()
-
-        if not user.data:
-            raise HTTPException(status_code=401, detail='Credenciales inválidas.')
-
-        count = user.data['failed_attempts'] + 1
-        supabase.table('users').update({'failed_attempts': count}).eq('email', email).execute()
-        if count >= 3:
-            raise HTTPException(status_code=401, detail='Se ve que posee dificultades para iniciar sesión. Le recomendamos reestablecer su contraseña.')
+        # Manejo de intentos fallidos
+        user_response = supabase.table('users').select('failed_attempts').eq('email', email).execute()
         
-        raise HTTPException(status_code=401, detail='Error en las credenciales de inicio de sesión.')
+        if user_response.data:  
+            failed_attempts = user_response.data[0]['failed_attempts'] + 1
+            
+            supabase.table('users').update({'failed_attempts': failed_attempts}).eq('email', email).execute()
+            
+            if failed_attempts >= 5:
+                raise HTTPException(status_code=401, detail='Demasiados intentos fallidos. Intente restaurar su contraseña.')
+        
+        raise HTTPException(status_code=400, detail=f'Credenciales incorrectas.')
 
 
-# def recover_password(data): falta front para enviar el mail.
+def recover_password(email):
+    try:
+        supabase.auth.reset_password_for_email(email)
+        return {'Mensaje': 'Correo de recuperación de contraseña enviado exitosamente.'}
+    
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f'Error al enviar el correo de recuperación: {str(e)}')
 
 
 """def change_password(data): Esta función va en user_service.py. Se deja como referencia de cómo se implementa el cambio de contraseña con Supabase.
@@ -92,7 +111,7 @@ def login_user(email,password):
 
 def log_out():
     try:
-        supabase.auth.sign_out(scope='local') #Solo cierra la sesión local, no afecta otras.
+        supabase.auth.sign_out() 
         return {'Mensaje': 'Usuario desconectado exitosamente.'}
     except Exception as e:
         raise HTTPException(status_code=400, detail=f'Error al cerrar sesión.')
