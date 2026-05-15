@@ -51,4 +51,30 @@ class LogOut(BaseModel):
 class ActionReason(BaseModel):
     reason: str = Field(min_length=1, description="Motivo de la acción. Obligatorio para bloqueos y rechazos de desbloqueo.")
 
+class UserBaseResponse(BaseModel):
+    id: str
+    name: str
+    surname: str
+    email: str
+    dni: str
+    phone: Optional[str] = None
+    rol: str
+    age: Optional[int] = None
+    gender: Optional[str] = None
+    account_status: str
 
+class ClientResponse(UserBaseResponse):
+    credits: Optional[int] = None
+    
+
+class StaffResponse(UserBaseResponse):
+    specialty: Optional[str] = None
+
+class UserUpdate(BaseModel):
+    name: Optional[str] = None
+    surname: Optional[str] = None
+    phone: Optional[str] = None
+    address: Optional[str] = None
+    #marital_status: Literal['SOLTERO/A', 'CASADO/A', 'DIVORCIADO/A', 'VIUDO/A'] = None
+    age: Optional[int] = None
+    gender: Literal['MASCULINO', 'FEMENINO', 'OTRO'] = None
