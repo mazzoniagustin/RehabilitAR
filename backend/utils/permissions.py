@@ -1,18 +1,63 @@
-import supabase
+from fastapi import HTTPException, Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from jose import jwt, JWTError
+from database import supabase
+import os
 
-def check_permission(admin_id: str, allowed_roles: list[str]):
-    current_rol = supabase.table('users').select('rol').eq('id', admin_id).single().execute()
+security = HTTPBearer()
+SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET")
+ALGORITHM = "HS256"
 
-    if current_rol.data and current_rol.data['rol'] in allowed_roles:
-        return True
-    else:
-        return False
 
-def check_user_existance(email: str, dni: str):
-    exist_mail = supabase.table('users').select('email').eq('email', email).single().execute()
+def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    token = credentials.credentials
+
+    try:
+        # Validar el token con Supabase
+        response = supabase.auth.get_user(token)
+
+        if not response or not response.user:
+            raise HTTPException(status_code=401, detail="Token inválido.")
+
+        user_id = response.user.id
+
+        # Obtener el rol desde tu tabla users (una sola query)
+        user_data = (
+            supabase.table('users')
+            .select('rol, account_status')
+            .eq('id', user_id)
+            .single()
+            .execute()
+        )
+
+        if not user_data.data:
+            raise HTTPException(status_code=404, detail="Usuario no encontrado en el sistema.")
+
+        return {
+            "id": user_id,
+            "email": response.user.email,
+            "rol": user_data.data['rol'],
+            "account_status": user_data.data['account_status']
+        }
+
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=401, detail="Token inválido.")
+
+def check_permission(allowed_roles: list[str]):
+    
+    def permission_checker(current_user: dict = Depends(get_current_user)):
+        
+        if current_user['rol'] not in allowed_roles:
+            raise HTTPException(status_code=403, detail='Acceso denegado. Permisos insuficientes.')
+        return current_user
+    
+    return permission_checker
+
+def check_user_existance(email: str):
+    exist_mail = supabase.table('users').select('email').eq('email', email).execute()
     if exist_mail.data:
         raise HTTPException(status_code=400, detail='El correo electrónico ya está en uso.')
-    else:
-        exist_dni = supabase.table('users').select('dni').eq('dni', dni).single().execute()
-        if exist_dni.data:
-            raise HTTPException(status_code=400, detail='El DNI ya está en uso.')
