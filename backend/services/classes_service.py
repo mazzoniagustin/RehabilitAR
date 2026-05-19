@@ -138,25 +138,36 @@ def assign_professor(class_id: str, data):
                 detail='No se puede asignar un profesor a una clase que no está activa.'
             )
 
-        # Parsear horarios de la clase
+        # Validar que no se intente asignar el mismo profesor que ya tiene la clase
+        if clase['professor_id'] and clase['professor_id'] == str(data.professor_id):
+            raise HTTPException(
+                status_code=400,
+                detail='El profesor seleccionado ya está asignado a esta clase.'
+            )
+
+        # Parsear horarios de la clase (Supabase devuelve timestamptz)
         class_start = datetime.fromisoformat(clase['start_time'])
         class_end = datetime.fromisoformat(clase['end_time'])
 
         # Validar que el profesor existe y tiene el rol correcto
         validate_professor_exists(data.professor_id)
 
-        # Validar que no supere las 40 horas semanales
+        # Validar que no supere las 40 horas semanales.
+        # Se excluye la clase actual para evitar doble conteo en caso de reasignación.
         validate_professor_weekly_hours(
             data.professor_id,
             class_start,
-            class_end
+            class_end,
+            exclude_class_id=class_id
         )
 
-        # Validar disponibilidad horaria del profesor
+        # Validar disponibilidad horaria del profesor.
+        # Se excluye la clase actual para evitar falso conflicto en reasignación.
         validate_professor_schedule_availability(
             data.professor_id,
             class_start,
-            class_end
+            class_end,
+            exclude_class_id=class_id
         )
 
         # Asignar el profesor a la clase
