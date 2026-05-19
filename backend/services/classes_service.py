@@ -1,11 +1,18 @@
 from fastapi import HTTPException
 from database import supabase
+from datetime import datetime
 
 from utils.class_validators import (
     validate_room_exists,
     validate_room_status,
     validate_room_capacity,
     validate_room_availability
+)
+
+from utils.professor_validators import (
+    validate_professor_exists,
+    validate_professor_weekly_hours,
+    validate_professor_schedule_availability
 )
 
 
@@ -101,4 +108,75 @@ def list_active_classes():
         raise HTTPException(
             status_code=500,
             detail=f'Error al obtener las clases: {str(e)}'
+        )
+
+
+def assign_professor(class_id: str, data):
+
+    try:
+
+        # Verificar que la clase existe y está activa
+        class_response = (
+            supabase.table('classes')
+            .select('id, professor_id, start_time, end_time, status')
+            .eq('id', class_id)
+            .single()
+            .execute()
+        )
+
+        if not class_response.data:
+            raise HTTPException(
+                status_code=404,
+                detail='La clase seleccionada no existe.'
+            )
+
+        clase = class_response.data
+
+        if clase['status'] != 'activa':
+            raise HTTPException(
+                status_code=400,
+                detail='No se puede asignar un profesor a una clase que no está activa.'
+            )
+
+        # Parsear horarios de la clase
+        class_start = datetime.fromisoformat(clase['start_time'])
+        class_end = datetime.fromisoformat(clase['end_time'])
+
+        # Validar que el profesor existe y tiene el rol correcto
+        validate_professor_exists(data.professor_id)
+
+        # Validar que no supere las 40 horas semanales
+        validate_professor_weekly_hours(
+            data.professor_id,
+            class_start,
+            class_end
+        )
+
+        # Validar disponibilidad horaria del profesor
+        validate_professor_schedule_availability(
+            data.professor_id,
+            class_start,
+            class_end
+        )
+
+        # Asignar el profesor a la clase
+        updated_class = (
+            supabase.table('classes')
+            .update({'professor_id': str(data.professor_id)})
+            .eq('id', class_id)
+            .execute()
+        )
+
+        return {
+            'message': 'Se asignó el profesor correctamente.',
+            'data': updated_class.data[0]
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f'Error al asignar el profesor: {str(e)}'
         )

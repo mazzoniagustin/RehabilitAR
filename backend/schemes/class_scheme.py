@@ -54,3 +54,7 @@ class ClassResponse(BaseModel):
 
     start_time: datetime
     end_time: datetime
+
+
+class AssignProfessor(BaseModel):
+    professor_id: UUID
