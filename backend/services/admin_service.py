@@ -26,7 +26,7 @@ def register_user_by_staff(data):
             'email': data.email,
             'dni': data.dni,
             'rol': 'NO_ABONADO',
-            'physical_certificate': 'Pendiente',
+            'physical_certificate': 'PENDIENTE',
             #'physical_certificate_url': data.physical_certificate_url,
             'account_status': 'ACTIVA',
             'failed_attempts': 0                
@@ -84,12 +84,14 @@ def approve_certificate(data):
             
         if not response.data:
             raise HTTPException(status_code=404, detail='Usuario no encontrado.')
-        if response.data[0]['physical_certificate'] == 'Aprobado':
+        if response.data[0]['physical_certificate'] == 'APROBADO':
             raise HTTPException(status_code=400, detail='El apto físico ya ha sido aprobado.')
             
-        supabase.table('users').update({'physical_certificate': 'Aprobado'}).eq('id', data.id).execute()
+        supabase.table('users').update({'physical_certificate': 'APROBADO'}).eq('id', data.id).execute()
         return {'Mensaje': 'Apto físico aprobado.'}
-        
+    
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=f'Error al aprobar el certificado físico.')
     
@@ -100,11 +102,11 @@ def reject_certificate(data, reason):
             
         if not response.data:
             raise HTTPException(status_code=404, detail='Usuario no encontrado.')
-        if response.data[0]['physical_certificate'] == 'Rechazado':
+        if response.data[0]['physical_certificate'] == 'RECHAZADO':
             raise HTTPException(status_code=400, detail='El apto físico ya ha sido rechazado.')
             
         supabase.table('users').update({
-            'physical_certificate': 'Rechazado',
+            'physical_certificate': 'RECHAZADO',
             'physical_rejection_reason': reason_text}).eq('id', data.id).execute()
         return {'Mensaje': 'Apto físico rechazado.'}
 
