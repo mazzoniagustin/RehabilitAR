@@ -78,3 +78,13 @@ class UserUpdate(BaseModel):
     #marital_status: Literal['SOLTERO/A', 'CASADO/A', 'DIVORCIADO/A', 'VIUDO/A'] = None
     age: Optional[int] = None
     gender: Literal['MASCULINO', 'FEMENINO', 'OTRO'] = None
+
+class UserResponseByAdmin(BaseModel):
+    name: str
+    surname: str
+    email: EmailStr
+    dni: str
+    rol: str
+    account_status: str
+    phone: str
+    credits: int
