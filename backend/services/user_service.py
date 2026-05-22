@@ -24,6 +24,53 @@ def change_password(data):
     except Exception as e:
         raise HTTPException(status_code=400, detail=f'Error al cambiar la contraseña')
 
+def show_user_info(user_id: str):
+    try:
+        res = (
+            supabase
+            .table('users')
+            .select('id, name, surname, email, dni, phone, rol, age, gender, address, account_status, credits, specialty')
+            .eq('id', user_id).single() 
+            .execute()
+        )
+
+        if not res.data:
+            raise HTTPException(status_code=404, detail='Usuario no encontrado')
+
+        user = res.data 
+
+        base = {
+            'id': user.get('id'),
+            'name': user.get('name'),
+            'surname': user.get('surname'),
+            'email': user.get('email'),
+            'dni': user.get('dni'),
+            'phone': user.get('phone'),
+            'rol': user.get('rol'),
+            'age': user.get('age'),
+            'gender': user.get('gender'),
+            'address': user.get('address'),
+            'account_status': user.get('account_status'),
+        }
+
+        if user['rol'] == 'ABONADO':
+            base['credits'] = user.get('credits')
+
+        if user['rol'] in ('ADMINISTRATIVO', 'RECEPCIONISTA', 'PROFESOR'):
+            base['specialty'] = user.get('specialty')
+
+        return base
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f'Error interno: {str(e)}'
+        )
+
+
+
 def update_user_info(user_id: str, update_data: dict):
     try:
         supabase.table("users").update(update_data).eq('id', user_id).execute()
