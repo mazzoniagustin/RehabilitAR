@@ -15,14 +15,13 @@
 
   <!-- ══════ SIDEBAR ══════ -->
   <aside class="sidebar">
-    <div class="sidebar-brand">
-      <!-- <img src="logo.png" class="sidebar-brand-logo" alt="Logo"/> -->
-      <img src="assets/RehabilitAR.png" class="sidebar-brand-logo" alt="RehabilitAR"/>
-      <div class="sidebar-brand-text">
-        <h2>RehabilitAR</h2>
-        <span id="sidebarRole">—</span>
-      </div>
+  <div class="sidebar-brand">
+    <img src="assets/RehabilitAR.png" class="sidebar-brand-logo" alt="RehabilitAR"/>
+    <div class="sidebar-brand-text">
+      <h2>RehabilitAR</h2>
+      <span id="sidebarRole">—</span>
     </div>
+  </div>
 
     <nav class="nav" id="sidebarNav">
       <!-- Generado dinámicamente según el rol -->
@@ -30,17 +29,18 @@
 
     <div class="sidebar-footer">
       <div class="user-chip">
-        <div>
-          <strong id="sidebarName" style="display:block;font-size:.82rem;color:var(--text)">Cargando...</strong>
-          <span id="sidebarEmail" style="font-size:.72rem;color:var(--muted)">—</span>
+        <div class="avatar" id="avatarInitials">?</div>
+          <div>
+            <strong id="sidebarName" style="display:block;font-size:.82rem;color:var(--text)">Cargando...</strong>
+            <span id="sidebarEmail" style="font-size:.72rem;color:var(--muted)">—</span>
+          </div>
         </div>
-      </div>
       <button class="btn-logout" onclick="handleLogout()">
-        <svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-        Cerrar sesión
+      <svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      Cerrar sesión
       </button>
-    </div>
-  </aside>
+      </div>
+    </aside>
 
   <!-- ══════ MAIN ══════ -->
   <main class="main">
