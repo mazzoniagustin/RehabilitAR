@@ -1,6 +1,7 @@
 import uuid
 from fastapi import HTTPException, UploadFile
 from database import supabase
+from datetime import datetime
 
 def change_password(data): 
     try:
@@ -69,8 +70,6 @@ def show_user_info(user_id: str):
             detail=f'Error interno: {str(e)}'
         )
 
-
-
 def update_user_info(user_id: str, update_data: dict):
     try:
         supabase.table("users").update(update_data).eq('id', user_id).execute()
@@ -83,7 +82,15 @@ def update_user_info(user_id: str, update_data: dict):
 
 def show_profile():
     try:
-        roles_info = supabase.table('users').select('id, name, surname, email, rol, age, gender, address, account_status, credits, specialty, physical_certificate').execute()
+        roles_info = (
+        supabase.table('users')
+        .select(
+            'id, name, surname, email, rol, age, gender, '
+            'address, account_status, specialty, '
+            'physical_certificate, credits(available_credits)'
+        )
+            .execute()
+        )
         return roles_info.data
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'Error al obtener los roles de los usuarios: {str(e)}')
@@ -144,17 +151,17 @@ def upload_certificate(user_id: str, file: UploadFile):
 
     return {'message': 'Apto físico enviado.', 'status': 'PENDIENTE'}
 
-def search_users_by_name(name: str):
-    try:
-        response = (
-            supabase.table('users')
-            .select('id, name, surname, email, dni, rol, account_status')
-            .ilike('name', f'%{name}%')
-            .execute()
-        )
-        return response.data
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f'Error al buscar: {str(e)}')
+#def search_users_by_name(name: str):
+#    try:
+#        response = (
+#            supabase.table('users')
+#            .select('id, name, surname, email, dni, rol, account_status')
+#            .ilike('name', f'%{name}%')
+#            .execute()
+#        )
+#        return response.data
+#    except Exception as e:
+#        raise HTTPException(status_code=500, detail=f'Error al buscar: {str(e)}')
     
 PUBLIC_FIELDS = 'id, name, surname, rol, age, gender'
 
@@ -200,14 +207,27 @@ def show_user_admin_info(user_id: str):
     try:
         res = (
             supabase.table('users')
-            .select('id, name, surname, email, dni, phone, rol, age, gender, address, account_status, credits, specialty, physical_certificate')
+            .select('id, name, surname, email, dni, phone, rol, age, gender, address, account_status, credits(available_credits), specialty, physical_certificate')
             .eq('id', user_id)
             .single()
             .execute()
         )
         if not res.data:
             raise HTTPException(status_code=404, detail='Usuario no encontrado.')
-        return res.data
+        data = res.data
+
+        credits_list = data.pop('credits', []) or []
+        date_now = datetime.now()
+        current = next (
+            (c for c in credits_list 
+            if c.get('month') and 
+            datetime.fromisoformat(str(c['month'])).month == date_now.month and
+            datetime.fromisoformat(str(c['month'])).year == date_now.year),
+            None
+        )
+        data['available_credits'] = current.get('available_credits') if current else 0
+        return data
+
     except HTTPException:
         raise
     except Exception as e:
