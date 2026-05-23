@@ -34,7 +34,7 @@ const ROL_LABELS = {
   NO_ABONADO:'No abonado', ABONADO:'Abonado',
   ADMINISTRATIVO:'Administrativo', PROFESOR:'Profesor', RECEPCIONISTA:'Recepcionista'
 };
-const STATUS_LABELS = { ACTIVA:'Activa', SUSPENDIDO:'Suspendido' };
+const STATUS_LABELS = { ACTIVA:'Activa', SUSPENDIDA:'Suspendido' };
 const CERT_LABELS   = { APROBADO:'APROBADO', RECHAZADO:'RECHAZADO', PENDIENTE:'PENDIENTE'};
 
 
@@ -55,8 +55,8 @@ const ICONS = {
 const NAV_CONFIG = {
   NO_ABONADO: [
     { label:'Inicio',          panel:'Inicio',    icon:'grid' },
+    { label:'Encontrar',    panel:'Usuarios',        icon:'users' },
     { label:'Mi perfil',       panel:'Perfil',    icon:'user' },
-    { label:'Encontrar',    panel:'Buscar',        icon:'users' },
     { label:'Clases',          panel:'Clases',    icon:'calendar' },
     { label:'Mis reservas',    panel:'Reservas',  icon:'gift' },
     { label:'Seguridad',       panel:'Seguridad', icon:'lock' },
@@ -64,7 +64,7 @@ const NAV_CONFIG = {
   ABONADO: [
     { label:'Inicio',          panel:'Inicio',    icon:'grid' },
     { label:'Mi perfil',       panel:'Perfil',    icon:'user' },
-    { label:'Encontrar',    panel:'Buscar',        icon:'users' },
+    { label:'Encontrar',    panel:'Usuarios',        icon:'users' },
     { label:'Clases',          panel:'Clases',    icon:'calendar' },
     { label:'Mis reservas',    panel:'Reservas',  icon:'gift' },
     { label:'Seguridad',       panel:'Seguridad', icon:'lock' },
@@ -80,7 +80,7 @@ const NAV_CONFIG = {
   RECEPCIONISTA: [
     { label:'Inicio',             panel:'Inicio',        icon:'grid' },
     { label:'Mi perfil',          panel:'Perfil',        icon:'user' },
-    { label:'Encontrar',    panel:'Buscar',        icon:'users',   section:'Centro' },
+    { label:'Encontrar',    panel:'Usuarios',        icon:'users',   section:'Centro' },
     { label:'Usuarios',           panel:'Usuarios',      icon:'users2' },
     { label:'Aptos físicos',      panel:'Certificados',  icon:'file' },
     { label:'Seguridad',          panel:'Seguridad',     icon:'lock' },
@@ -88,7 +88,7 @@ const NAV_CONFIG = {
   PROFESOR: [
     { label:'Inicio',             panel:'Inicio',        icon:'grid' },
     { label:'Mi perfil',          panel:'Perfil',        icon:'user' },
-    { label:'Encontrar',    panel:'Buscar',        icon:'users' },
+    { label:'Encontrar',    panel:'Usuarios',        icon:'users' },
     { label:'Mis clases',         panel:'Clases',        icon:'calendar', section:'Clases' },
     { label:'Seguridad',          panel:'Seguridad',     icon:'lock' },
   ],
@@ -125,10 +125,10 @@ function buildSidebar(rol) {
 function onPanelShow(panel) {
   if (panel === 'Clases')       loadClases();
   if (panel === 'Reservas')     loadReservas();
-  if (panel === 'Usuarios')     loadUsers();
+  if (panel === 'Usuarios')     initUserPanel();
   if (panel === 'Certificados') loadCertificados();
   if (panel === 'Solicitudes')  loadSolicitudes();
-  if (panel === 'Buscar');
+  if (panel === 'Buscar')       initUserPanel();
 }
 // CARGA DEL DASHBOARD
 const STAT_MAPS = {
@@ -163,7 +163,7 @@ async function loadDashboard() {
     </div>`).join('');
 
   // Alertas según estado
-  if (u.account_status === 'SUSPENDIDO') showAlert('dashAlert', 'Tu cuenta está suspendida. Comunicate con el centro.', 'error');
+  if (u.account_status === 'SUSPENDIDA') showAlert('dashAlert', 'Tu cuenta está suspendida. Comunicate con el centro.', 'error');
 
   // Perfil — vista
   document.getElementById('pfName').textContent    = u.name    || '—';
@@ -202,9 +202,10 @@ async function loadDashboard() {
   // Solo abonados: créditos y vencimiento
   if (u.rol === 'ABONADO') {
     document.getElementById('pfCreditsRow').style.display = 'flex';
+    const available = u.available_credits ?? 0;
     document.getElementById('pfExpiryRow').style.display  = 'flex';
-    document.getElementById('pfCredits').textContent      = u.credits ?? 0;
-    document.getElementById('creditsFill').style.width    = `${((u.credits ?? 0) / 3) * 100}%`;
+    document.getElementById('pfCredits').textContent      = available;
+    document.getElementById('creditsFill').style.width    = `${((available) / 3) * 100}%`;
     document.getElementById('pfExpiry').textContent       = u.subscription_expiry
       ? new Date(u.subscription_expiry).toLocaleDateString('es-AR') : '—';
   }
@@ -419,100 +420,183 @@ async function cancelReserva(id) {
 let searchTimeout = null;
 let blockTargetId = null;
 
-async function loadUsers(role = '', name = '') {
+let pubSearchTimeout = null;
+
+// Muestra los filtros correctos según el rol al abrir el panel
+function initUserPanel() {
+  const u = getUser();
+  if (!u) return;
+
+  if (u.rol === 'ADMINISTRATIVO') {
+    document.getElementById('adminFilters').style.display  = 'block';
+    document.getElementById('publicFilters').style.display = 'none';
+    loadUsers();   // carga todos por defecto
+  } else {
+    document.getElementById('adminFilters').style.display  = 'none';
+    document.getElementById('publicFilters').style.display = 'block';
+    // No precarga — espera que el usuario escriba o filtre
+    document.getElementById('usersTableContainer').innerHTML = `
+      <div class="empty-state">
+        <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+        <p>Buscá por nombre o filtrá por rol para encontrar usuarios.</p>
+      </div>`;
+    document.getElementById('userCount').textContent = '';
+  }
+}
+
+// ── Admin: carga con filtros ──────────────────────────────────
+async function loadUsers(name = '', role = '', status = '') {
   const container = document.getElementById('usersTableContainer');
   container.innerHTML = '<div class="empty-state"><p>Cargando...</p></div>';
-  
-  const currentUser = getUser();
-  const isAdmin = currentUser?.rol === 'ADMINISTRATIVO';
 
   try {
-
     const params = new URLSearchParams();
-    if (name) params.append('name', name);
-    if (role) params.append('role', role); 
+    if (name)   params.append('name',   name);
+    if (role)   params.append('role',    role);
+    if (status) params.append('status', status);
 
-    const queryString = params.toString() ? `?${params.toString()}` : '';
-
-    let url;
-    if (isAdmin) {
-      url = `${API}/staff/users${queryString}`;
-    } else {
-      url = `${API}/users/public-search${queryString}`;
-    }
-
+    const url = `${API}/staff/users${params.toString() ? '?' + params.toString() : ''}`;
     const res  = await fetch(url, { headers: authH() });
     const data = await res.json();
-    
-    if (!res.ok) { 
-      container.innerHTML = `<div class="empty-state"><p>${data.detail || 'Error al obtener usuarios.'}</p></div>`; 
-      return; 
-    }
 
-    document.getElementById('userCount').textContent = `${data.length} resultado${data.length !== 1 ? 's' : ''}`;
+    if (!res.ok) { container.innerHTML = `<div class="empty-state"><p>${data.detail || 'Error.'}</p></div>`; return; }
+
+    renderUsersTable(data, true);
+  } catch {
+    container.innerHTML = '<div class="empty-state"><p>No se pudo conectar.</p></div>';
+  }
+}
+
+function applyAdminFilters() {
+  const name   = document.getElementById('searchName').value.trim();
+  const role   = document.getElementById('filterRole').value;
+  const status = document.getElementById('filterStatus').value;
+  loadUsers(name, role, status);
+}
+
+// Al limpiar como admin → muestra todos de nuevo
+function clearAdminFilters() {
+  document.getElementById('searchName').value   = '';
+  document.getElementById('filterRole').value   = '';
+  document.getElementById('filterStatus').value = '';
+  loadUsers();  // sin filtros = todos los usuarios
+}
+
+function onSearchInput() {
+  clearTimeout(searchTimeout);
+  searchTimeout = setTimeout(() => applyAdminFilters(), 400);
+}
+
+// ── Público (recep/prof/cliente): carga con filtros ───────────
+async function loadPublicUsers(name = '', role = '') {
+  const container = document.getElementById('usersTableContainer');
+  const countEl   = document.getElementById('userCount');
+
+  if (!name && !role) {
+    container.innerHTML = '<div class="empty-state"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><p>Escribí un nombre o seleccioná un rol para buscar.</p></div>';
+    countEl.textContent = '';
+    return;
+  }
+
+  container.innerHTML = '<div class="empty-state"><p>Buscando...</p></div>';
+
+  try {
+    const params = new URLSearchParams();
+    if (name) params.append('name', name);
+    if (role) params.append('role', role);
+
+    const res  = await fetch(`${API}/users/public-search?${params.toString()}`, { headers: authH() });
+    const data = await res.json();
+
+    if (!res.ok) { container.innerHTML = `<div class="empty-state"><p>${data.detail || 'Error.'}</p></div>`; return; }
+
+    countEl.textContent = `${data.length} resultado${data.length !== 1 ? 's' : ''}`;
 
     if (!data.length) {
-      container.innerHTML = '<div class="empty-state"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><p>No se encontraron usuarios</p></div>';
+      container.innerHTML = '<div class="empty-state"><p>No se encontraron usuarios.</p></div>';
       return;
     }
 
     container.innerHTML = `
       <table class="data-table">
-        <thead>
+        <thead><tr><th>Nombre</th><th>Rol</th><th></th></tr></thead>
+        <tbody>${data.map(u => `
           <tr>
-            <th>Nombre</th>
-            ${isAdmin ? '<th>Email</th><th>DNI</th>' : ''}
-            <th>Rol</th>
-            <th>Estado</th>
-            <th>Acciones</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${data.map(u => `
-            <tr>
-              <td><strong style="color:var(--teal-dim)">${u.name} ${u.surname}</strong></td>
-              ${isAdmin ? `<td style="font-size:.82rem">${u.email || '—'}</td><td>${u.dni || '—'}</td>` : ''}
-              <td>${badge(u.rol, ROL_LABELS)}</td>
-              <td>${badge(u.account_status, STATUS_LABELS)}</td>
-              <td style="display:flex;gap:6px">
-                <button class="action-btn" onclick="openUserProfile('${u.id}')">Ver perfil</button>
-                ${isAdmin ? (u.account_status === 'ACTIVA'
-                  ? `<button class="action-btn danger" onclick="openBlockModal('${u.id}','${u.name} ${u.surname}')">Suspender</button>`
-                  : `<button class="action-btn success" onclick="unblockUser('${u.id}')">Reactivar</button>`)
-                : ''}
-              </td>
-            </tr>
-          `).join('')}
+            <td><strong style="color:var(--teal-dim)">${u.name} ${u.surname}</strong></td>
+            <td>${badge(u.rol, ROL_LABELS)}</td>
+            <td><button class="action-btn" onclick="openUserProfile('${u.id}')">Ver perfil</button></td>
+          </tr>`).join('')}
         </tbody>
       </table>`;
-  } catch (err) { 
-    container.innerHTML = '<div class="empty-state"><p>No se pudo conectar al servidor.</p></div>'; 
+  } catch {
+    container.innerHTML = '<div class="empty-state"><p>No se pudo conectar.</p></div>';
   }
 }
 
-function onSearchInput() {
-  clearTimeout(searchTimeout);
-  const name = document.getElementById('searchName').value.trim();
-  const role = document.getElementById('filterRole').value;
-  if (!name && !role) {
-    document.getElementById('usersTableContainer').innerHTML = '<div class="empty-state"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><p>Usá los filtros para buscar usuarios</p></div>';
-    document.getElementById('userCount').textContent = '';
+function applyPublicFilters() {
+  const name = document.getElementById('publicSearchName').value.trim();
+  const role = document.getElementById('publicFilterRole').value;
+  loadPublicUsers(name, role);
+}
+
+// HU-36/37: limpiar filtros vista pública → limpia la tabla
+function clearPublicFilters() {
+  document.getElementById('publicSearchName').value  = '';
+  document.getElementById('publicFilterRole').value  = '';
+  document.getElementById('userCount').textContent   = '';
+  document.getElementById('usersTableContainer').innerHTML = `
+    <div class="empty-state">
+      <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+      <p>Buscá por nombre o filtrá por rol para encontrar usuarios.</p>
+    </div>`;
+}
+
+function onPublicSearchInput() {
+  clearTimeout(pubSearchTimeout);
+  pubSearchTimeout = setTimeout(() => applyPublicFilters(), 400);
+}
+
+// ── Render tabla (compartido) ─────────────────────────────────
+function renderUsersTable(data, isAdmin) {
+  const container = document.getElementById('usersTableContainer');
+  document.getElementById('userCount').textContent =
+    `${data.length} resultado${data.length !== 1 ? 's' : ''}`;
+
+  if (!data.length) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+        <p>No se encontraron usuarios.</p>
+      </div>`;
     return;
   }
-  searchTimeout = setTimeout(() => loadUsers(role, name), 400);
-}
 
-function filterByRole() {
-  const role = document.getElementById('filterRole').value;
-  const name = document.getElementById('searchName').value.trim();
-  loadUsers(role, name);
-}
-
-function clearFilters() {
-  document.getElementById('searchName').value  = '';
-  document.getElementById('filterRole').value  = '';
-  document.getElementById('userCount').textContent = '';
-  document.getElementById('usersTableContainer').innerHTML = '<div class="empty-state"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><p>Usá los filtros para buscar usuarios</p></div>';
+  container.innerHTML = `
+    <table class="data-table">
+      <thead><tr>
+        <th>Nombre</th>
+        ${isAdmin ? '<th>Email</th><th>DNI</th>' : ''}
+        <th>Rol</th>
+        ${isAdmin ? '<th>Estado</th>' : ''}
+        <th></th>
+      </tr></thead>
+      <tbody>${data.map(u => `
+        <tr>
+          <td><strong style="color:var(--teal-dim)">${u.name} ${u.surname}</strong></td>
+          ${isAdmin ? `<td style="font-size:.82rem">${u.email || '—'}</td><td>${u.dni || '—'}</td>` : ''}
+          <td>${badge(u.rol, ROL_LABELS)}</td>
+          ${isAdmin ? `<td>${badge(u.account_status, STATUS_LABELS)}</td>` : ''}
+          <td style="display:flex;gap:6px">
+            <button class="action-btn" onclick="openUserProfile('${u.id}')">Ver perfil</button>
+            ${isAdmin
+              ? (u.account_status === 'ACTIVA'
+                  ? `<button class="action-btn danger" onclick="openBlockModal('${u.id}','${u.name} ${u.surname}')">Suspender</button>`
+                  : `<button class="action-btn success" onclick="unblockUser('${u.id}')">Reactivar</button>`)
+              : ''}
+          </td>
+        </tr>`).join('')}
+      </tbody>
+    </table>`;
 }
 
 // ── Ver perfil completo ───────────────────────────────────────
@@ -665,42 +749,6 @@ async function confirmReject() {
     closeRejectModal();
     loadCertificados();
   } catch { alert('No se pudo conectar.'); }
-}
-
-
-async function loadPublicSearch(name = '') {
-  const container = document.getElementById('publicSearchContainer');
-  if (!name) {
-    container.innerHTML = '<div class="empty-state"><p>Escribí un nombre para buscar.</p></div>';
-    return;
-  }
-  container.innerHTML = '<div class="empty-state"><p>Buscando...</p></div>';
-  try {
-    const res  = await fetch(`${API}/users/public-search?name=${encodeURIComponent(name)}`, { headers: authH() });
-    const data = await res.json();
-    if (!res.ok || !data.length) {
-      container.innerHTML = '<div class="empty-state"><p>No se encontraron resultados.</p></div>';
-      return;
-    }
-    container.innerHTML = `
-      <table class="data-table">
-        <thead><tr><th>Nombre</th><th>Rol</th><th></th></tr></thead>
-        <tbody>${data.map(u => `
-          <tr>
-            <td><strong style="color:var(--teal-dim)">${u.name} ${u.surname}</strong></td>
-            <td>${badge(u.rol, ROL_LABELS)}</td>
-            <td><button class="action-btn" onclick="openUserProfile('${u.id}')">Ver perfil</button></td>
-          </tr>`).join('')}
-        </tbody>
-      </table>`;
-  } catch { container.innerHTML = '<div class="empty-state"><p>No se pudo conectar.</p></div>'; }
-}
-
-let publicSearchTimeout = null;
-function onPublicSearchInput() {
-  clearTimeout(publicSearchTimeout);
-  const name = document.getElementById('publicSearchInput').value.trim();
-  publicSearchTimeout = setTimeout(() => loadPublicSearch(name), 400);
 }
 
 
