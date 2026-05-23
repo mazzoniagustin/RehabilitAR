@@ -27,13 +27,10 @@ def register_user_by_staff(data):
             'dni': data.dni,
             'rol': 'NO_ABONADO',
             'physical_certificate': 'PENDIENTE',
-            #'physical_certificate_url': data.physical_certificate_url,
             'account_status': 'ACTIVA',
             'failed_attempts': 0                
         }).execute()
-                
-            #Enviar mail con la contraseña del usuario
-                
+
         return {"Mensaje": "Usuario registrado exitosamente."}
     except HTTPException:
         raise
