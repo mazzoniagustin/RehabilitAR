@@ -131,6 +131,14 @@ input::placeholder { color:var(--muted) }
 .panel { display:none }
 .panel.active { display:block; animation:fadeIn .3s ease }
 
+.panel {
+  padding-top: 0;
+}
+
+.page-header {
+  margin-bottom: 20px;
+}
+
 /* Stats */
 .stats-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:14px; margin-bottom:24px }
 .stat-card { background:var(--surface); border:1.5px solid var(--border); border-radius:14px; padding:18px 20px; display:flex; align-items:center; gap:14px }
