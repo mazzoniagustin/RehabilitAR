@@ -30,7 +30,7 @@ def show_user_info(user_id: str):
         res = (
             supabase
             .table('users')
-            .select('id, name, surname, email, dni, phone, rol, age, gender, address, account_status, credits, specialty')
+            .select('id, name, surname, email, dni, phone, rol, age, gender, address, account_status, credits, specialty, physical_certificate')
             .eq('id', user_id).single() 
             .execute()
         )
@@ -52,6 +52,7 @@ def show_user_info(user_id: str):
             'gender': user.get('gender'),
             'address': user.get('address'),
             'account_status': user.get('account_status'),
+            'physical_certificate': user.get('physical_certificate')
         }
 
         if user['rol'] == 'ABONADO':
@@ -79,22 +80,6 @@ def update_user_info(user_id: str, update_data: dict):
     except Exception as e:
         raise HTTPException(status_code=500,detail=f'Error al actualizar la información del usuario: {str(e)}')
     
-
-def show_profile():
-    try:
-        roles_info = (
-        supabase.table('users')
-        .select(
-            'id, name, surname, email, rol, age, gender, '
-            'address, account_status, specialty, '
-            'physical_certificate, credits(available_credits)'
-        )
-            .execute()
-        )
-        return roles_info.data
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f'Error al obtener los roles de los usuarios: {str(e)}')
-
 
 ALLOWED_TYPES = [
     "image/jpeg",
@@ -151,17 +136,6 @@ def upload_certificate(user_id: str, file: UploadFile):
 
     return {'message': 'Apto físico enviado.', 'status': 'PENDIENTE'}
 
-#def search_users_by_name(name: str):
-#    try:
-#        response = (
-#            supabase.table('users')
-#            .select('id, name, surname, email, dni, rol, account_status')
-#            .ilike('name', f'%{name}%')
-#            .execute()
-#        )
-#        return response.data
-#    except Exception as e:
-#        raise HTTPException(status_code=500, detail=f'Error al buscar: {str(e)}')
     
 PUBLIC_FIELDS = 'id, name, surname, rol, age, gender'
 
@@ -239,11 +213,12 @@ def request_unblock(user_id: str, reason):
         
         supabase.table('user_status_history').insert({
             'user_id': user_id,
-            'previous_status': 'SUSPENDIDO',
-            'new_status': 'SUSPENDIDO', 
+            'previous_status': 'SUSPENDIDA',
+            'new_status': 'SUSPENDIDA', 
             'reason': f'SOLICITUD DE DESBLOQUEO: {reason_text}',
-            'acted_by': user_id
+            'acted_by': user_id,
+            #'created_at': datetime.now().isoformat(sep=' ', timespec='seconds')
         }).execute()
         return {'Mensaje': 'Solicitud enviada. Un administrador revisará tu caso.'}
     except Exception as e:
-        raise HTTPException(status_code=500, detail='No se pudo enviar la solicitud.')
+        raise HTTPException(status_code=500, detail=f'No se pudo enviar la solicitud. {e}')
