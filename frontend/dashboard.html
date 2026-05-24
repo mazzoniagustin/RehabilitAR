@@ -176,119 +176,150 @@
 
     <!-- PANEL: Usuarios (admin/recepcionista) -->
 <!-- PANEL: Usuarios (admin/recep) -->
-    <div class="panel" id="panelUsuarios">
-      <div class="page-header">
-        <div class="page-header-left"><h2>Gestión de usuarios</h2><p>Buscá, filtrá y administrá los usuarios del centro</p></div>
-          <button class="btn btn-sm" onclick="openRegisterModal()" id="btnRegistrarUsuario" style="display:none">+ Registrar usuario</button>
+<div class="panel" id="panelUsuarios">
+    <div class="page-header">
+      <div class="page-header-left">
+        <h2>Gestión de usuarios</h2>
+        <p>Buscá, filtrá y administrá los usuarios del centro</p>
+      </div>
+      <button class="btn btn-sm" onclick="openRegisterModal()" id="btnRegistrarUsuario" style="display:none">+ Registrar usuario</button>
+    </div>
+    
+    <div id="usuariosAlert" class="alert"></div>
+
+    <div class="section-card" style="padding:16px 20px;margin-bottom:16px" id="adminFilters" style="display:none">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:12px;align-items:end">
+        <div class="form-group" style="margin:0">
+          <label>Buscar por nombre</label>
+          <input type="text" id="searchName" placeholder="Ej: Juan" oninput="onSearchInput()"/>
         </div>
-        <div id="usuariosAlert" class="alert"></div>
-
-  <!-- Filtros ADMIN -->
-          <div class="section-card" style="padding:16px 20px;margin-bottom:16px" id="adminFilters" style="display:none">
-            <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:12px;align-items:end">
-              <div class="form-group" style="margin:0">
-                <label>Buscar por nombre</label>
-                <input type="text" id="searchName" placeholder="Ej: Juan" oninput="onSearchInput()"/>
-              </div>
-              <div class="form-group" style="margin:0">
-                <label>Filtrar por rol</label>
-                <select id="filterRole" onchange="applyAdminFilters()">
-                <option value="">Todos los roles</option>
-                <option value="NO_ABONADO">No abonados</option>
-                <option value="ABONADO">Abonados</option>
-                <option value="PROFESOR">Profesores</option>
-                <option value="RECEPCIONISTA">Recepcionistas</option>
-                <option value="ADMINISTRATIVO">Administrativos</option>
-                </select>
-              </div>
-              <div class="form-group" style="margin:0">
-                <label>Filtrar por estado</label>
-                <select id="filterStatus" onchange="applyAdminFilters()">
-                  <option value="">Todos los estados</option>
-                  <option value="ACTIVA">Activa</option>
-                  <option value="SUSPENDIDO">Suspendido</option>
-                  </select>
-              </div>
-              <div style="display:flex;gap:8px;align-items:flex-end;padding-bottom:2px">
-                <button class="btn btn-sm btn-outline" onclick="clearAdminFilters()">Limpiar</button>
-              </div>
-            </div>
-          </div>
-
-  <!-- Filtros RECEP/PROF/CLIENTE (búsqueda pública) -->
-  <div class="section-card" style="padding:16px 20px;margin-bottom:16px" id="publicFilters" style="display:none">
-    <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:12px;align-items:end">
-      <div class="form-group" style="margin:0">
-        <label>Buscar por nombre</label>
-        <input type="text" id="publicSearchName" placeholder="Ej: Juan" oninput="onPublicSearchInput()"/>
-      </div>
-      <div class="form-group" style="margin:0">
-        <label>Filtrar por rol</label>
-        <select id="publicFilterRole" onchange="applyPublicFilters()">
-          <option value="">Todos</option>
-          <option value="NO_ABONADO">No abonados</option>
-          <option value="ABONADO">Abonados</option>
-          <option value="PROFESOR">Profesores</option>
-          <option value="RECEPCIONISTA">Recepcionistas</option>
-        </select>
-      </div>
-      <div style="display:flex;gap:8px;align-items:flex-end;padding-bottom:2px">
-        <button class="btn btn-sm btn-outline" onclick="clearPublicFilters()">Limpiar</button>
-      </div>
-    </div>
-  </div>
-    <div id="usersTableContainer">
-      <div class="empty-state">
-        <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
-        <p>Usá los filtros para buscar usuarios</p>
-      </div>
-    </div>
-  </div>
-</div>
-
-      <div class="section-card">
-        <h3>
-          <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
-          Usuarios
-          <span id="userCount" style="font-size:.8rem;font-weight:400;color:var(--muted);margin-left:8px"></span>
-        </h3>
-        <div id="usersTableContainer">
-          <div class="empty-state">
-            <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
-            <p>Usá los filtros para buscar usuarios</p>
-          </div>
+        <div class="form-group" style="margin:0">
+          <label>Filtrar por rol</label>
+          <select id="filterRole" onchange="applyAdminFilters()">
+            <option value="">Todos los roles</option>
+            <option value="NO_ABONADO">No abonados</option>
+            <option value="ABONADO">Abonados</option>
+            <option value="PROFESOR">Profesores</option>
+            <option value="RECEPCIONISTA">Recepcionistas</option>
+            <option value="ADMINISTRATIVO">Administrativos</option>
+          </select>
+        </div>
+        <div class="form-group" style="margin:0">
+          <label>Filtrar por estado</label>
+          <select id="filterStatus" onchange="applyAdminFilters()">
+            <option value="">Todos los estados</option>
+            <option value="ACTIVA">Activa</option>
+            <option value="SUSPENDIDO">Suspendido</option>
+          </select>
+        </div>
+        <div style="display:flex;gap:8px;align-items:flex-end;padding-bottom:2px">
+          <button class="btn btn-sm btn-outline" onclick="clearAdminFilters()">Limpiar</button>
         </div>
       </div>
     </div>
 
-    <!-- PANEL: Certificados pendientes (admin/recep) -->
-    <div class="panel" id="panelCertificados">
-      <div class="page-header"><div class="page-header-left"><h2>Aptos físicos</h2><p>Aptos pendientes de aprobación</p></div></div>
-      <div class="section-card">
-        <h3><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> Pendientes</h3>
-        <div id="pendingCertsContainer"><div class="empty-state"><p>Cargando...</p></div></div>
+    <div class="section-card" style="padding:16px 20px;margin-bottom:16px" id="publicFilters" style="display:none">
+      <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:12px;align-items:end">
+        <div class="form-group" style="margin:0">
+          <label>Buscar por nombre</label>
+          <input type="text" id="publicSearchName" placeholder="Ej: Juan" oninput="onPublicSearchInput()"/>
+        </div>
+        <div class="form-group" style="margin:0">
+          <label>Filtrar por rol</label>
+          <select id="publicFilterRole" onchange="applyPublicFilters()">
+            <option value="">Todos</option>
+            <option value="NO_ABONADO">No abonados</option>
+            <option value="ABONADO">Abonados</option>
+            <option value="PROFESOR">Profesores</option>
+            <option value="RECEPCIONISTA">Recepcionistas</option>
+          </select>
+        </div>
+        <div style="display:flex;gap:8px;align-items:flex-end;padding-bottom:2px">
+          <button class="btn btn-sm btn-outline" onclick="clearPublicFilters()">Limpiar</button>
+        </div>
       </div>
     </div>
 
+    <div class="section-card">
+      <h3>
+        <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+        Usuarios
+        <span id="userCount" style="font-size:.8rem;font-weight:400;color:var(--muted);margin-left:8px"></span>
+      </h3>
+      <div id="usersTableContainer">
+        <div class="empty-state">
+          <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+          <p>Usá los filtros para buscar usuarios</p>
+        </div>
+      </div>
+    </div>
+  </div> <div class="panel" id="panelCertificados">
+    <div class="page-header">
+      <div class="page-header-left">
+        <h2>Aptos físicos</h2>
+        <p>Aptos pendientes de aprobación</p>
+      </div>
+    </div>
+    <div class="section-card">
+      <h3>
+        <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> 
+        Pendientes
+      </h3>
+      <div id="pendingCertsContainer">
+        <div class="empty-state"><p>Cargando...</p></div>
+      </div>
+    </div>
+  </div>
 
-<!-- PANEL: Solicitudes de desbloqueo (solo admin) -->
-<div class="panel" id="panelSolicitudes">
+
+  <div class="panel" id="panelSolicitudes">
+    <div class="page-header">
+      <div class="page-header-left">
+        <h2>Solicitudes de reactivacion</h2>
+        <p>Reclamos enviados por usuarios suspendidos</p>
+      </div>
+    </div>
+    <div id="solicitudesAlert" class="alert"></div>
+    <div class="section-card">
+      <h3>
+        <svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+        Pendientes
+      </h3>
+      <div id="solicitudesContainer">
+        <div class="empty-state"><p>Cargando...</p></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PANEL: Solicitar reactivación (clientes/empleados suspendidos) -->
+<div class="panel" id="panelReactivacion">
   <div class="page-header">
-    <div class="page-header-left"><h2>Solicitudes de reactivacion</h2><p>Reclamos enviados por usuarios suspendidos</p></div>
+    <div class="page-header-left">
+      <h2>Solicitar reactivación</h2>
+      <p>Enviá un reclamo para reactivar tu cuenta</p>
+    </div>
   </div>
-  <div id="solicitudesAlert" class="alert"></div>
-  <div class="section-card">
+  <div id="reactivacionAlert" class="alert"></div>
+
+  <div class="section-card" style="max-width:520px">
     <h3>
       <svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
-      Pendientes
+      Estado de tu cuenta
     </h3>
-    <div id="solicitudesContainer"><div class="empty-state"><p>Cargando...</p></div></div>
+    <div id="reactivacionStatus" style="margin-bottom:20px"></div>
+
+    <div id="reactivacionForm">
+      <div class="form-group">
+        <label>Motivo del reclamo</label>
+        <input type="text" id="unblockReason" placeholder="Explicá por qué debería reactivarse tu cuenta"/>
+      </div>
+      <button class="btn btn-sm" onclick="submitUnblockRequest()">Enviar solicitud</button>
+    </div>
   </div>
 </div>
 
-  </main>
+</main>
 </div>
-
 
 
 <!-- Modal: Ver perfil de usuario (admin) -->

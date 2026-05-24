@@ -59,6 +59,7 @@ const NAV_CONFIG = {
     { label:'Mi perfil',       panel:'Perfil',    icon:'user' },
     { label:'Clases',          panel:'Clases',    icon:'calendar' },
     { label:'Mis reservas',    panel:'Reservas',  icon:'gift' },
+    { label: 'Solicitar reactivación', panel:'Reactivacion', icon:'bell' },
     { label:'Seguridad',       panel:'Seguridad', icon:'lock' },
   ],
   ABONADO: [
@@ -67,6 +68,7 @@ const NAV_CONFIG = {
     { label:'Encontrar',    panel:'Usuarios',        icon:'users' },
     { label:'Clases',          panel:'Clases',    icon:'calendar' },
     { label:'Mis reservas',    panel:'Reservas',  icon:'gift' },
+    { label: 'Solicitar reactivación', panel:'Reactivacion', icon:'bell' },
     { label:'Seguridad',       panel:'Seguridad', icon:'lock' },
   ],
   ADMINISTRATIVO: [
@@ -81,8 +83,9 @@ const NAV_CONFIG = {
     { label:'Inicio',             panel:'Inicio',        icon:'grid' },
     { label:'Mi perfil',          panel:'Perfil',        icon:'user' },
     { label:'Encontrar',    panel:'Usuarios',        icon:'users',   section:'Centro' },
-    { label:'Usuarios',           panel:'Usuarios',      icon:'users2' },
-    { label:'Aptos físicos',      panel:'Certificados',  icon:'file' },
+    //{ label:'Usuarios',           panel:'Usuarios',      icon:'users2' },
+    //{ label:'Aptos físicos',      panel:'Certificados',  icon:'file' },
+    { label: 'Solicitar reactivación', panel:'Reactivacion', icon:'bell' },
     { label:'Seguridad',          panel:'Seguridad',     icon:'lock' },
   ],
   PROFESOR: [
@@ -90,6 +93,7 @@ const NAV_CONFIG = {
     { label:'Mi perfil',          panel:'Perfil',        icon:'user' },
     { label:'Encontrar',    panel:'Usuarios',        icon:'users' },
     { label:'Mis clases',         panel:'Clases',        icon:'calendar', section:'Clases' },
+    { label: 'Solicitar reactivación', panel:'Reactivacion', icon:'bell' },
     { label:'Seguridad',          panel:'Seguridad',     icon:'lock' },
   ],
 };
@@ -128,6 +132,7 @@ function onPanelShow(panel) {
   if (panel === 'Usuarios')     initUserPanel();
   if (panel === 'Certificados') loadCertificados();
   if (panel === 'Solicitudes')  loadSolicitudes();
+  if (panel === 'Reactivacion') loadReactivacionPanel();
   if (panel === 'Buscar')       initUserPanel();
 }
 // CARGA DEL DASHBOARD
@@ -219,6 +224,14 @@ async function loadDashboard() {
     document.getElementById('btnRegistrarUsuario').style.display = 'inline-flex';
     // Recepcionista solo puede registrar clientes, no empleados
   }
+
+  if (u.account_status === 'SUSPENDIDA') {
+    const config = NAV_CONFIG[u.rol] || NAV_CONFIG['NO_ABONADO'];
+
+  if (!config.find(i => i.panel === 'Reactivacion')) {
+    config.push({ label:'Solicitar reactivación', panel:'Reactivacion', icon:'bell' });
+  }
+}
 
   buildSidebar(u.rol);
 }
@@ -510,9 +523,12 @@ async function loadPublicUsers(name = '', role = '') {
 
     if (!res.ok) { container.innerHTML = `<div class="empty-state"><p>${data.detail || 'Error.'}</p></div>`; return; }
 
-    countEl.textContent = `${data.length} resultado${data.length !== 1 ? 's' : ''}`;
+    const currentUser = getUser();
+    const filtered = data.filter(u => u.id !== currentUser?.id);
 
-    if (!data.length) {
+    countEl.textContent = `${filtered.length} resultado${filtered.length !== 1 ? 's' : ''}`;
+
+    if (!filtered.length) {
       container.innerHTML = '<div class="empty-state"><p>No se encontraron usuarios.</p></div>';
       return;
     }
@@ -520,7 +536,7 @@ async function loadPublicUsers(name = '', role = '') {
     container.innerHTML = `
       <table class="data-table">
         <thead><tr><th>Nombre</th><th>Rol</th><th></th></tr></thead>
-        <tbody>${data.map(u => `
+        <tbody>${filtered.map(u => `
           <tr>
             <td><strong style="color:var(--teal-dim)">${u.name} ${u.surname}</strong></td>
             <td>${badge(u.rol, ROL_LABELS)}</td>
@@ -558,7 +574,9 @@ function onPublicSearchInput() {
 
 // ── Render tabla (compartido) ─────────────────────────────────
 function renderUsersTable(data, isAdmin) {
+  const currentUser = getUser();
   const container = document.getElementById('usersTableContainer');
+  data = data.filter(u => u.id !== currentUser.id);
   document.getElementById('userCount').textContent =
     `${data.length} resultado${data.length !== 1 ? 's' : ''}`;
 
@@ -648,6 +666,7 @@ async function openUserProfile(userId) {
         ['Nombre',  `${u.name} ${u.surname}`],
         ['Rol',     badge(u.rol, ROL_LABELS)],
         ['Edad',    u.age ? `${u.age} años` : '—'],
+        ['Género', u.gender || '—'],
         ...(u.rol === 'ABONADO' ? [['Tipo', badge('ABONADO', ROL_LABELS)]] : []),
       ];
     }
@@ -664,7 +683,7 @@ function closeUserModal() { document.getElementById('userProfileModal').classLis
 async function unblockUser(userId) {
   if (!confirm('¿Reactivar esta cuenta?')) return;
   try {
-    const res  = await fetchfetch(`${API}/staff/unblock_user/${user_id}`, { method:'POST', headers:authH() });
+    const res  = await fetch(`${API}/staff/unblock_user/${user_id}`, { method:'POST', headers:authH() });
     const data = await res.json();
     if (!res.ok) return showAlert('usuariosAlert', typeof data.detail === 'string' ? data.detail : 'Error.');
     showAlert('usuariosAlert', 'Cuenta reactivada.', 'success');
@@ -726,9 +745,36 @@ async function loadCertificados() {
   } catch { container.innerHTML = '<div class="empty-state"><p>No se pudo cargar.</p></div>'; }
 }
 
+async function viewCert(userId) {
+  try {
+    const res = await fetch(
+      `${API}/staff/certificates/${userId}/view`,
+      { headers: authH() }
+    );
+
+    if (!res.ok) {
+      showAlert('usuariosAlert', 'No se pudo cargar el archivo.');
+      return;
+    }
+
+    const data = await res.json();
+    window.open(data.url, '_blank');
+
+  } catch {
+    showAlert('usuariosAlert', 'Error al abrir el archivo.');
+  }
+}
+
 async function approveCert(userId) {
   try {
-    const res  = await fetch(`${API}/staff/approve_certificate`, { method:'POST', headers:authH(), body:JSON.stringify({ id: userId }) });
+    const res = await fetch(`${API}/staff/approve_certificate`, { 
+      method: 'POST', 
+      headers: {
+        ...authH(), 
+        'Content-Type': 'application/json' 
+      }, 
+      body: JSON.stringify({ id: userId }) 
+    });
     const data = await res.json();
     if (!res.ok) return showAlert('usuariosAlert', typeof data.detail === 'string' ? data.detail : 'Error.');
     showAlert('usuariosAlert', 'Apto físico aprobado.', 'success');
@@ -743,8 +789,14 @@ async function confirmReject() {
   const reason = document.getElementById('rejectReason').value.trim();
   if (!reason) return alert('El motivo es obligatorio.');
   try {
-    const res  = await fetch(`${API}/staff/reject_certificate`, { method:'POST', headers:authH(), body:JSON.stringify({ id: rejectTargetId, reason }) });
-    const data = await res.json();
+    const res = await fetch(`${API}/staff/reject_certificate`, { 
+      method: 'POST', 
+      headers: {
+        ...authH(),
+        'Content-Type': 'application/json' 
+      }, 
+      body: JSON.stringify({ id: rejectTargetId, reason }) 
+    });
     if (!res.ok) return alert(typeof data.detail === 'string' ? data.detail : 'Error.');
     closeRejectModal();
     loadCertificados();
@@ -766,27 +818,110 @@ async function loadSolicitudes() {
     container.innerHTML = `
       <table class="data-table">
         <thead><tr><th>Usuario</th><th>Motivo del reclamo</th><th>Fecha</th><th>Acciones</th></tr></thead>
-        <tbody>${data.map(s => `
+        <tbody>${data.map(s => {
+          // 💡 Limpiamos el texto acá en el Front para quitarle el prefijo feo
+          const cleanReason = s.reason ? s.reason.replace('SOLICITUD DE DESBLOQUEO: ', '') : '—';
+
+          return `
           <tr>
             <td>
-              <strong style="color:var(--teal-dim)">${s.user_name || s.user_id}</strong>
-              <span style="display:block;font-size:.78rem;color:var(--muted)">${s.user_email || ''}</span>
+              <strong style="color:var(--teal-dim)">${s.name} ${s.surname}</strong>
+              <span style="display:block;font-size:.78rem;color:var(--muted)">${s.email || ''}</span>
             </td>
-            <td style="font-size:.85rem">${s.request_reason || '—'}</td>
+            <td style="font-size:.85rem">${cleanReason}</td>
             <td style="font-size:.82rem;color:var(--muted)">${s.created_at ? new Date(s.created_at).toLocaleDateString('es-AR') : '—'}</td>
             <td style="display:flex;gap:6px">
-              <button class="action-btn success" onclick="approveUnlock('${s.user_id}','${s.id}')">Aprobar</button>
-              <button class="action-btn danger"  onclick="openRejectUnlockModal('${s.user_id}','${s.id}')">Rechazar</button>
+              <button class="action-btn success" onclick="approveUnlock('${s.user_id}','${s.user_id}')">Aprobar</button>
+              <button class="action-btn danger"  onclick="openRejectUnlockModal('${s.user_id}','${s.user_id}')">Rechazar</button>
             </td>
-          </tr>`).join('')}
+          </tr>`;
+        }).join('')}
         </tbody>
       </table>`;
   } catch { container.innerHTML = '<div class="empty-state"><p>No se pudo conectar.</p></div>'; }
 }
 
+async function loadReactivacionPanel() {
+  const u = getUser();
+  const statusEl = document.getElementById('reactivacionStatus');
+  const formEl   = document.getElementById('reactivacionForm');
+
+  statusEl.innerHTML = `
+    <div class="field-row">
+      <span class="field-label">Estado actual</span>
+      <span class="field-value">${badge(u.account_status, STATUS_LABELS)}</span>
+    </div>`;
+
+  if (u.account_status !== 'SUSPENDIDA') {
+    formEl.innerHTML = '<p style="color:var(--muted);font-size:.88rem">Tu cuenta está activa. No necesitás enviar una solicitud.</p>';
+    return;async function loadSolicitudes() {
+  const container = document.getElementById('solicitudesContainer');
+  container.innerHTML = '<div class="empty-state"><p>Cargando...</p></div>';
+  try {
+    const res  = await fetch(`${API}/staff/pending_unblocks`, { headers: authH() });
+    const data = await res.json();
+    if (!res.ok) { container.innerHTML = `<div class="empty-state"><p>${data.detail || 'Error.'}</p></div>`; return; }
+    if (!data.length) {
+      container.innerHTML = '<div class="empty-state"><svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg><p>No hay solicitudes pendientes</p></div>';
+      return;
+    }
+    container.innerHTML = `
+      <table class="data-table">
+        <thead><tr><th>Usuario</th><th>Motivo del reclamo</th><th>Fecha</th><th>Acciones</th></tr></thead>
+        <tbody>${data.map(s => {
+          // 💡 Limpiamos el texto acá en el Front para quitarle el prefijo feo
+          const cleanReason = s.reason ? s.reason.replace('SOLICITUD DE DESBLOQUEO: ', '') : '—';
+
+          return `
+          <tr>
+            <td>
+              <strong style="color:var(--teal-dim)">${s.name} ${s.surname}</strong>
+              <span style="display:block;font-size:.78rem;color:var(--muted)">${s.email || ''}</span>
+            </td>
+            <td style="font-size:.85rem">${cleanReason}</td>
+            <td style="font-size:.82rem;color:var(--muted)">${s.created_at ? new Date(s.created_at).toLocaleDateString('es-AR') : '—'}</td>
+            <td style="display:flex;gap:6px">
+              <button class="action-btn success" onclick="approveUnlock('${s.user_id}','${s.user_id}')">Aprobar</button>
+              <button class="action-btn danger"  onclick="openRejectUnlockModal('${s.user_id}','${s.user_id}')">Rechazar</button>
+            </td>
+          </tr>`;
+        }).join('')}
+        </tbody>
+      </table>`;
+  } catch { container.innerHTML = '<div class="empty-state"><p>No se pudo conectar.</p></div>'; }
+}
+  }
+
+}
+
+async function submitUnblockRequest() {
+  const reason = document.getElementById('unblockReason').value.trim();
+  if (!reason) return showAlert('reactivacionAlert', 'Ingresá el motivo del reclamo.');
+
+  try {
+    const res = await fetch(`${API}/users/request-unblock`, {
+      method: 'POST',
+      headers: {
+        ...authH(),
+        'Content-Type': 'application/json' 
+      },
+      body: JSON.stringify({ reason })
+    });
+    const data = await res.json();
+    if (!res.ok) return showAlert('reactivacionAlert', typeof data.detail === 'string' ? data.detail : 'Error.');
+
+    showAlert('reactivacionAlert', 'Solicitud enviada. El equipo del centro la revisará pronto.', 'success');
+    document.getElementById('unblockReason').value = '';
+    document.getElementById('reactivacionForm').innerHTML =
+      '<p style="color:var(--muted);font-size:.88rem">Solicitud enviada correctamente. Aguardá la respuesta del equipo.</p>';
+  } catch {
+    showAlert('reactivacionAlert', 'No se pudo conectar.');
+  }
+}
+
 async function approveUnlock(userId) {
   try {
-    const res  = await fetch(`${API}/users/${userId}/unblock`, { method:'POST', headers:authH() });
+    const res  = await fetch(`${API}/staff/approve_unblock_request/${userId}`, { method:'POST', headers:authH() });
     const data = await res.json();
     if (!res.ok) return showAlert('solicitudesAlert', typeof data.detail === 'string' ? data.detail : 'Error.');
     showAlert('solicitudesAlert', 'Cuenta reactivada.', 'success');
@@ -811,7 +946,7 @@ async function confirmRejectUnlock() {
   const reason = document.getElementById('rejectUnlockReason').value.trim();
   if (!reason) return alert('El motivo es obligatorio.');
   try {
-    const res  = await fetch(`${API}/users/${rejectUnlockTargetId}/reject-unblock`, { method:'POST', headers:authH(), body:JSON.stringify({ reason }) });
+    const res  = await fetch(`${API}/staff/reject_unblock_request/${rejectUnlockTargetId}`, { method:'POST', headers:authH(), body:JSON.stringify({ reason }) });
     const data = await res.json();
     if (!res.ok) return alert(typeof data.detail === 'string' ? data.detail : 'Error.');
     closeRejectUnlockModal();
@@ -819,37 +954,65 @@ async function confirmRejectUnlock() {
   } catch { alert('No se pudo conectar.'); }
 }
 
+function clearValue(id) {
+  const el = document.getElementById(id);
+  if (el) el.value = '';
+}
 
 function openRegisterModal() {
   document.getElementById('registerType').value = 'cliente';
   document.getElementById('employeeFields').style.display = 'none';
-  document.getElementById('rName').value = document.getElementById('rSurname').value = '';
-  document.getElementById('rEmail').value = document.getElementById('rDni').value = '';
-  document.getElementById('rPhone').value = document.getElementById('rSpecialty').value = '';
+
+  const today = new Date().toISOString().split('T')[0];
+  document.getElementById('rBirthdate').max = today;
+
+  clearValue('rName');
+  clearValue('rSurname');
+  clearValue('rEmail');
+  clearValue('rDni');
+  clearValue('rBirthdate');
+  clearValue('rSpecialty');
+
   document.getElementById('registerUserAlert').className = 'alert';
   document.getElementById('registerUserModal').classList.add('open');
 }
 
 function closeRegisterModal() { document.getElementById('registerUserModal').classList.remove('open'); }
 
+function setDisplay(id, value) {
+  const el = document.getElementById(id);
+  if (el) el.style.display = value;
+}
+
 function onRegisterTypeChange() {
   const type = document.getElementById('registerType').value;
-  document.getElementById('employeeFields').style.display = type === 'empleado' ? 'block' : 'none';
-  document.getElementById('rPhoneGroup').style.display    = type === 'cliente'  ? 'block' : 'none';
+
+  setDisplay('employeeFields', type === 'empleado' ? 'block' : 'none');
+  setDisplay('rPhoneGroup',    type === 'cliente'  ? 'block' : 'none');
+
   if (type === 'empleado') onRolChange();
 }
 
 function onRolChange() {
-  const rol = document.getElementById('rRol').value;
+  const rol = document.getElementById('rRol')?.value;
+  if (!rol) return;
 
-  document.getElementById('specialtyGroup').style.display = rol === 'ADMINISTRATIVO' ? 'none' : 'block';
+  setDisplay('specialtyGroup', rol === 'ADMINISTRATIVO' ? 'none' : 'block');
+
 }
-
 async function submitRegisterUser() {
   const type = document.getElementById('registerType').value;
   const name    = document.getElementById('rName').value.trim();
   const surname = document.getElementById('rSurname').value.trim();
   const email   = document.getElementById('rEmail').value.trim();
+  const birthdate = document.getElementById('rBirthdate').value;
+
+  if (!birthdate)
+    return showAlert(
+      'registerUserAlert',
+      'La fecha de nacimiento es obligatoria.'
+    );
+
   const dni     = document.getElementById('rDni').value.trim();
 
   if (!name || !surname || !email || !dni)
@@ -860,15 +1023,30 @@ async function submitRegisterUser() {
 
   if (type === 'cliente') {
     url  = `${API}/staff/register`;
-    body = { name, surname, email, dni: document.getElementById('rPhone').value.trim() || null };
+    body = {
+      name,
+      surname,
+      email,
+      dni,
+      birth_date: birthdate
+  };
   } else {
     const rol       = document.getElementById('rRol').value;
     const specialty = document.getElementById('rSpecialty').value.trim();
     if (rol !== 'ADMINISTRATIVO' && !specialty)
       return showAlert('registerUserAlert', 'La especialidad es obligatoria para este rol.');
-    url  = `${API}/staff/register_employee`;
-    body = { name, surname, email, dni, rol, specialty: specialty || null };
-  }
+      url  = `${API}/staff/register_employee`;
+      body = {
+          name,
+          surname,
+          email,
+          dni,
+          rol,
+          specialty: specialty || null,
+          birth_date: birthdate
+    };
+}
+  
 
   const btn = document.getElementById('registerUserBtn');
   btn.disabled = true;
