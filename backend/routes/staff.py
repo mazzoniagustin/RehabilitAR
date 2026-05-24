@@ -50,3 +50,7 @@ def get_users(
     user = Depends(check_permission(['ADMINISTRATIVO']))
 ):
     return admin_service.get_filtered_users(name, role, status)
+
+@routerStaff.get('/certificates/{user_id}/view')
+def view_certificates(user_id: str, user = Depends(check_permission(['ADMINISTRATIVO']))):
+    return admin_service.view_user_certificates(user_id)
