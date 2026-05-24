@@ -1,4 +1,5 @@
 from fastapi import HTTPException
+from backend.utils.notifications import send_account_created_email
 from utils.password_utils import random_password
 from utils.permissions import check_user_existance
 from database import supabase
@@ -30,6 +31,8 @@ def register_user_by_staff(data):
             'account_status': 'ACTIVA',
             'failed_attempts': 0                
         }).execute()
+        
+        send_account_created_email(data.email, data.name, password)
 
         return {"Mensaje": "Usuario registrado exitosamente."}
     except HTTPException:
@@ -225,6 +228,7 @@ def get_pending_unblock_requests():
     try:
         res = supabase.table('user_status_history')\
             .select('''
+                id,
                 user_id, 
                 reason, 
                 created_at, 
@@ -283,3 +287,24 @@ def unblock_user(user_id, acted_by):
         raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=f'Error al desbloquear el usuario.')
+
+def view_certificate(user_id):
+    try:
+        response = (
+        supabase.table('users').select('physical_certificate_url')
+        .eq('id', user_id)
+        .single()
+        .execute()
+        )
+        
+        if not response.data:
+            raise HTTPException(status_code=404, detail='Certificado no encontrado.')
+        
+        path = response.data.get('physical_certificate_url')
+        
+        url = supabase.storage.from_('certificates').create_signed_url(path, 300)   
+        
+        return {'url': url['signedURL']}
+    
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f'Error al obtener el certificado.')
