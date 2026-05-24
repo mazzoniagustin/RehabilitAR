@@ -60,3 +60,7 @@ def get_user_profile(
 ):
     
     return user_service.show_user_admin_info(user_id)
+
+@routerUser.post('/request-unblock')
+def request_unblock(data: ActionReason, current_user: dict = Depends(get_current_user)):
+    return user_service.request_unblock(current_user['id'], data)
