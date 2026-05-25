@@ -21,7 +21,8 @@ def validate_room_exists(room_id):
 
 
 def validate_room_status(room):
-    if room['status'] != 'activa':
+    # FIX: era != 'activa'; el CHECK de rooms.status acepta DISPONIBLE/OCUPADA/MANTENIMIENTO
+    if room['status'] != 'DISPONIBLE':
         raise HTTPException(
             status_code=400,
             detail='La sala seleccionada no está disponible.'
@@ -42,7 +43,7 @@ def validate_room_availability(room_id, start_time, end_time):
         supabase.table('classes')
         .select('id, start_time, end_time')
         .eq('room_id', str(room_id))
-        .neq('status', 'cancelada')
+        .neq('status', 'CANCELADA')  # FIX: era 'cancelada' (minúscula)
         .execute()
     )
 

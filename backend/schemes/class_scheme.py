@@ -6,11 +6,11 @@ from uuid import UUID
 
 class ClassCreate(BaseModel):
     room_id: UUID
-    type: Literal['individual', 'grupal']
+    type: Literal['INDIVIDUAL', 'GRUPAL', 'FIJA']
     activity_type: Literal[
-        'tren_superior',
-        'tren_medio',
-        'tren_inferior'
+        'TREN_SUPERIOR',
+        'TREN_MEDIO',
+        'TREN_INFERIOR'
     ]
 
     is_scheduled: bool = False

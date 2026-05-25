@@ -55,7 +55,7 @@ def create_class(data):
 
                 'is_scheduled': data.is_scheduled,
 
-                'status': 'activa',
+                'status': 'PROGRAMADA',  # FIX: era 'activa', no existe en el CHECK
 
                 'max_capacity': data.max_capacity,
                 'current_capacity': 0,
@@ -97,7 +97,7 @@ def list_active_classes():
                 )
                 '''
             )
-            .eq('status', 'activa')
+            .eq('status', 'PROGRAMADA')  # FIX: era 'activa', no existe en el CHECK
             .order('start_time', desc=False)
             .execute()
         )
@@ -115,7 +115,7 @@ def assign_professor(class_id: str, data):
 
     try:
 
-        # Verificar que la clase existe y está activa
+        # Verificar que la clase existe y está programada
         class_response = (
             supabase.table('classes')
             .select('id, professor_id, start_time, end_time, status')
@@ -132,7 +132,8 @@ def assign_professor(class_id: str, data):
 
         clase = class_response.data
 
-        if clase['status'] != 'activa':
+        # FIX: era != 'activa'; los estados válidos son PROGRAMADA / EN CURSO
+        if clase['status'] not in ('PROGRAMADA', 'EN CURSO'):
             raise HTTPException(
                 status_code=400,
                 detail='No se puede asignar un profesor a una clase que no está activa.'
