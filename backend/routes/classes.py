@@ -24,6 +24,20 @@ def list_classes(
     return classes_service.list_active_classes()
 
 
+@router.get('/rooms')
+def list_rooms(
+    user=Depends(check_permission(['ADMINISTRATIVO']))
+):
+    return classes_service.list_rooms()
+
+
+@router.get('/professors')
+def list_professors(
+    user=Depends(check_permission(['ADMINISTRATIVO']))
+):
+    return classes_service.list_professors()
+
+
 @router.patch('/{class_id}/assign-professor')
 def assign_professor(
     class_id: str,

@@ -39,6 +39,19 @@ def create_class(data):
             data.end_time
         )
 
+        if data.professor_id:
+            validate_professor_exists(data.professor_id)
+            validate_professor_weekly_hours(
+                data.professor_id,
+                data.start_time,
+                data.end_time
+            )
+            validate_professor_schedule_availability(
+                data.professor_id,
+                data.start_time,
+                data.end_time
+            )
+
         # Crear clase
         new_class = (
             supabase.table('classes')
@@ -108,6 +121,48 @@ def list_active_classes():
         raise HTTPException(
             status_code=500,
             detail=f'Error al obtener las clases: {str(e)}'
+        )
+
+
+def list_rooms():
+
+    try:
+
+        response = (
+            supabase.table('rooms')
+            .select('id, name, capacity, status')
+            .order('name', desc=False)
+            .execute()
+        )
+
+        return response.data
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f'Error al obtener las salas: {str(e)}'
+        )
+
+
+def list_professors():
+
+    try:
+
+        response = (
+            supabase.table('users')
+            .select('id, name, surname, specialty, account_status')
+            .eq('rol', 'PROFESOR')
+            .eq('account_status', 'ACTIVA')
+            .order('surname', desc=False)
+            .execute()
+        )
+
+        return response.data
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f'Error al obtener los profesores: {str(e)}'
         )
 
 

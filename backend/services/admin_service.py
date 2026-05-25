@@ -1,5 +1,5 @@
 from fastapi import HTTPException
-from backend.utils.notifications import send_account_created_email
+from utils.notifications import send_account_created_email
 from utils.password_utils import random_password
 from utils.permissions import check_user_existance
 from database import supabase
