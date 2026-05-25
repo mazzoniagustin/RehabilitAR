@@ -75,6 +75,7 @@ const NAV_CONFIG = {
     { label:'Inicio',             panel:'Inicio',        icon:'grid' },
     { label:'Mi perfil',          panel:'Perfil',        icon:'user' },
     { label:'Usuarios',           panel:'Usuarios',      icon:'users',   section:'Administración' },
+    { label:'Clases',             panel:'Clases',        icon:'calendar' },
     { label:'Aptos físicos',      panel:'Certificados',  icon:'file' },
     { label:'Solicitudes',        panel:'Solicitudes',   icon:'bell' },
     { label:'Seguridad',          panel:'Seguridad',     icon:'lock' },
@@ -359,9 +360,135 @@ async function submitCertificate() {
 }
 
 
-async function loadClases() {
+let adminClassRooms = [];
+let adminClassProfessors = [];
+
+function apiErrorMessage(data, fallback = 'Error.') {
+  if (typeof data?.detail === 'string') return data.detail;
+  if (Array.isArray(data?.detail)) return data.detail.map(e => e.msg || e.message || JSON.stringify(e)).join(' ');
+  return fallback;
+}
+
+function combineDateAndTime(date, time) {
+  return date && time ? new Date(`${date}T${time}`).toISOString() : null;
+}
+
+function professorName(professorId) {
+  const professor = adminClassProfessors.find(p => p.id === professorId);
+  return professor ? `${professor.name} ${professor.surname}` : '';
+}
+
+async function loadAdminClassData() {
+  const [roomsRes, professorsRes] = await Promise.all([
+    fetch(`${API}/classes/rooms`, { headers: authH() }),
+    fetch(`${API}/classes/professors`, { headers: authH() })
+  ]);
+
+  const rooms = await roomsRes.json();
+  const professors = await professorsRes.json();
+
+  if (!roomsRes.ok) throw new Error(apiErrorMessage(rooms, 'No se pudieron cargar las salas.'));
+  if (!professorsRes.ok) throw new Error(apiErrorMessage(professors, 'No se pudieron cargar los profesores.'));
+
+  adminClassRooms = rooms || [];
+  adminClassProfessors = professors || [];
+
+  const roomSelect = document.getElementById('classRoom');
+  const professorSelect = document.getElementById('classProfessor');
+
+  roomSelect.innerHTML = adminClassRooms.length
+    ? adminClassRooms.map(room => `
+      <option value="${room.id}" ${room.status !== 'DISPONIBLE' ? 'disabled' : ''}>
+        ${room.name} - cupo ${room.capacity}${room.status !== 'DISPONIBLE' ? ` (${room.status})` : ''}
+      </option>
+    `).join('')
+    : '<option value="">No hay salas cargadas</option>';
+
+  professorSelect.innerHTML = '<option value="">Sin profesor inicial</option>' + adminClassProfessors.map(professor => `
+    <option value="${professor.id}">${professor.name} ${professor.surname}${professor.specialty ? ` - ${professor.specialty}` : ''}</option>
+  `).join('');
+}
+
+async function loadAdminClasses() {
   const container = document.getElementById('clasesTableContainer');
   container.innerHTML = '<div class="empty-state"><p>Cargando...</p></div>';
+
+  try {
+    const res = await fetch(`${API}/classes/`, { headers: authH() });
+    const data = await res.json();
+
+    if (!res.ok) {
+      container.innerHTML = `<div class="empty-state"><p>${apiErrorMessage(data, 'Error al cargar las clases.')}</p></div>`;
+      return;
+    }
+
+    if (!data.length) {
+      container.innerHTML = '<div class="empty-state"><p>No hay clases programadas.</p></div>';
+      return;
+    }
+
+    container.innerHTML = `
+      <table class="data-table">
+        <thead><tr><th>Actividad</th><th>Tipo</th><th>Sala</th><th>Inicio</th><th>Cupo</th><th>Profesor</th><th>Asignar</th></tr></thead>
+        <tbody>${data.map(c => {
+          const assignedName = professorName(c.professor_id);
+          return `
+          <tr>
+            <td><strong>${(c.activity_type || '').replace(/_/g, ' ')}</strong></td>
+            <td>${c.type || '-'}</td>
+            <td>${c.rooms?.name || '-'}</td>
+            <td>${formatDate(c.start_time)}</td>
+            <td>${c.current_capacity}/${c.max_capacity}</td>
+            <td>${assignedName || '<span style="color:var(--muted)">Sin asignar</span>'}</td>
+            <td>
+              <div style="display:flex;gap:6px;align-items:center;min-width:260px">
+                <select id="assignProfessor_${c.id}" style="min-width:170px">
+                  <option value="">Seleccionar</option>
+                  ${adminClassProfessors.map(p => `<option value="${p.id}" ${p.id === c.professor_id ? 'selected' : ''}>${p.name} ${p.surname}</option>`).join('')}
+                </select>
+                <button class="action-btn" onclick="assignProfessorToClass('${c.id}')">Asignar</button>
+              </div>
+            </td>
+          </tr>`;
+        }).join('')}
+        </tbody>
+      </table>`;
+  } catch (e) {
+    container.innerHTML = `<div class="empty-state"><p>${e.message || 'No se pudo cargar.'}</p></div>`;
+  }
+}
+
+async function loadClases() {
+  const u = getUser();
+  const isAdmin = u?.rol === 'ADMINISTRATIVO';
+  const adminForm = document.getElementById('adminClassForm');
+  const title = document.getElementById('clasesTitle');
+  const subtitle = document.getElementById('clasesSubtitle');
+  const listTitle = document.getElementById('clasesListTitle');
+  const container = document.getElementById('clasesTableContainer');
+
+  if (isAdmin) {
+    title.textContent = 'Gestion de clases';
+    subtitle.textContent = 'Crea clases y asigna profesores';
+    listTitle.innerHTML = '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Clases programadas';
+    adminForm.style.display = 'block';
+    container.innerHTML = '<div class="empty-state"><p>Cargando...</p></div>';
+
+    try {
+      await loadAdminClassData();
+      await loadAdminClasses();
+    } catch (e) {
+      container.innerHTML = `<div class="empty-state"><p>${e.message || 'No se pudo cargar.'}</p></div>`;
+    }
+    return;
+  }
+
+  title.textContent = 'Clases disponibles';
+  subtitle.textContent = 'Explora y reserva clases';
+  listTitle.innerHTML = '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Proximas clases';
+  adminForm.style.display = 'none';
+  container.innerHTML = '<div class="empty-state"><p>Cargando...</p></div>';
+
   try {
     const res  = await fetch(`${API}/classes/available`, { headers: authH() });
     if (!res.ok) { container.innerHTML = '<div class="empty-state"><p>Error al cargar las clases.</p></div>'; return; }
@@ -382,6 +509,86 @@ async function loadClases() {
         </tbody>
       </table>`;
   } catch { container.innerHTML = '<div class="empty-state"><p>No se pudo cargar.</p></div>'; }
+}
+
+async function createClassFromAdmin() {
+  const room_id = document.getElementById('classRoom').value;
+  const type = document.getElementById('classType').value;
+  const activity_type = document.getElementById('classActivity').value;
+  const max_capacity = Number(document.getElementById('classCapacity').value);
+  const class_date = document.getElementById('classDate').value;
+  const start_time = document.getElementById('classStartTime').value;
+  const end_time = document.getElementById('classEndTime').value;
+  const professor_id = document.getElementById('classProfessor').value || null;
+
+  if (!room_id || !type || !activity_type || !max_capacity || !class_date || !start_time || !end_time) {
+    return showAlert('clasesAlert', 'Completa todos los campos obligatorios.');
+  }
+
+  const apiStartTime = combineDateAndTime(class_date, start_time);
+  const apiEndTime = combineDateAndTime(class_date, end_time);
+
+  if (new Date(apiEndTime) <= new Date(apiStartTime)) {
+    return showAlert('clasesAlert', 'La hora de fin debe ser mayor a la hora de inicio.');
+  }
+
+  const btn = document.getElementById('createClassBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Creando...';
+
+  try {
+    const res = await fetch(`${API}/classes/`, {
+      method: 'POST',
+      headers: authH(),
+      body: JSON.stringify({
+        room_id,
+        type,
+        activity_type,
+        is_scheduled: false,
+        max_capacity,
+        start_time: apiStartTime,
+        end_time: apiEndTime,
+        professor_id
+      })
+    });
+
+    const data = await res.json();
+    if (!res.ok) return showAlert('clasesAlert', apiErrorMessage(data, 'Error al crear la clase.'));
+
+    showAlert('clasesAlert', data.message || 'La clase se creo exitosamente.', 'success');
+    document.getElementById('classCapacity').value = '';
+    document.getElementById('classDate').value = '';
+    document.getElementById('classStartTime').value = '';
+    document.getElementById('classEndTime').value = '';
+    document.getElementById('classProfessor').value = '';
+    await loadAdminClasses();
+  } catch {
+    showAlert('clasesAlert', 'No se pudo conectar.');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Crear clase';
+  }
+}
+
+async function assignProfessorToClass(classId) {
+  const professor_id = document.getElementById(`assignProfessor_${classId}`).value;
+  if (!professor_id) return showAlert('clasesAlert', 'Selecciona un profesor.');
+
+  try {
+    const res = await fetch(`${API}/classes/${classId}/assign-professor`, {
+      method: 'PATCH',
+      headers: authH(),
+      body: JSON.stringify({ professor_id })
+    });
+
+    const data = await res.json();
+    if (!res.ok) return showAlert('clasesAlert', apiErrorMessage(data, 'Error al asignar profesor.'));
+
+    showAlert('clasesAlert', data.message || 'Se asigno el profesor correctamente.', 'success');
+    await loadAdminClasses();
+  } catch {
+    showAlert('clasesAlert', 'No se pudo conectar.');
+  }
 }
 
 async function reserveClass(classId) {
