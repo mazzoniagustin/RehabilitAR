@@ -58,3 +58,10 @@ class ClassResponse(BaseModel):
 
 class AssignProfessor(BaseModel):
     professor_id: UUID
+
+class UpdateCapacity(BaseModel):
+    new_capacity: int = Field(gt=0, description='El nuevo cupo debe ser mayor a 0.')
+
+class EvaluateRequest(BaseModel):
+    status: Literal['ACEPTADA', 'RECHAZADA']
+    reason: Optional[str] = None
