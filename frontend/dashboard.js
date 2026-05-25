@@ -362,6 +362,7 @@ async function submitCertificate() {
 
 let adminClassRooms = [];
 let adminClassProfessors = [];
+let professorClassRequests = [];
 
 function apiErrorMessage(data, fallback = 'Error.') {
   if (typeof data?.detail === 'string') return data.detail;
@@ -458,10 +459,77 @@ async function loadAdminClasses() {
   }
 }
 
+async function loadProfessorRequests() {
+  const container = document.getElementById('professorRequestsContainer');
+  container.innerHTML = '<div class="empty-state"><p>Cargando...</p></div>';
+
+  try {
+    const res = await fetch(`${API}/classes/requests/pending`, { headers: authH() });
+    const data = await res.json();
+
+    if (!res.ok) {
+      container.innerHTML = `<div class="empty-state"><p>${apiErrorMessage(data, 'Error al cargar solicitudes.')}</p></div>`;
+      return;
+    }
+
+    if (!data.length) {
+      container.innerHTML = '<div class="empty-state"><p>No hay solicitudes pendientes.</p></div>';
+      return;
+    }
+
+    container.innerHTML = `
+      <table class="data-table">
+        <thead><tr><th>Profesor</th><th>Clase</th><th>Sala</th><th>Horario</th><th>Acciones</th></tr></thead>
+        <tbody>${data.map(req => {
+          const clase = req.classes || {};
+          const professor = req.users || {};
+          return `
+            <tr>
+              <td><strong>${professor.name || ''} ${professor.surname || ''}</strong><span style="display:block;font-size:.78rem;color:var(--muted)">${professor.specialty || ''}</span></td>
+              <td>${(clase.activity_type || '').replace(/_/g, ' ')} / ${clase.type || '-'}</td>
+              <td>${clase.rooms?.name || '-'}</td>
+              <td>${formatDate(clase.start_time)}</td>
+              <td style="display:flex;gap:6px;flex-wrap:wrap">
+                <button class="action-btn success" onclick="evaluateProfessorRequest('${req.class_id}', '${req.id}', 'ACEPTADA')">Aceptar</button>
+                <button class="action-btn danger" onclick="rejectProfessorRequest('${req.class_id}', '${req.id}')">Rechazar</button>
+              </td>
+            </tr>`;
+        }).join('')}
+        </tbody>
+      </table>`;
+  } catch (e) {
+    container.innerHTML = `<div class="empty-state"><p>${e.message || 'No se pudo conectar.'}</p></div>`;
+  }
+}
+
+async function loadMyProfessorRequests() {
+  try {
+    const res = await fetch(`${API}/classes/requests/me`, { headers: authH() });
+    const data = await res.json();
+
+    if (!res.ok) {
+      professorClassRequests = [];
+      showAlert('clasesAlert', apiErrorMessage(data, 'Error al cargar tus solicitudes.'));
+      return;
+    }
+
+    professorClassRequests = data || [];
+  } catch {
+    professorClassRequests = [];
+    showAlert('clasesAlert', 'No se pudieron cargar tus solicitudes.');
+  }
+}
+
+function professorRequestForClass(classId) {
+  return professorClassRequests.find(req => req.class_id === classId);
+}
+
 async function loadClases() {
   const u = getUser();
   const isAdmin = u?.rol === 'ADMINISTRATIVO';
+  const isProfessor = u?.rol === 'PROFESOR';
   const adminForm = document.getElementById('adminClassForm');
+  const requestsSection = document.getElementById('adminProfessorRequests');
   const title = document.getElementById('clasesTitle');
   const subtitle = document.getElementById('clasesSubtitle');
   const listTitle = document.getElementById('clasesListTitle');
@@ -472,7 +540,10 @@ async function loadClases() {
     subtitle.textContent = 'Crea clases y asigna profesores';
     listTitle.innerHTML = '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Clases programadas';
     adminForm.style.display = 'block';
+    requestsSection.style.display = 'block';
     container.innerHTML = '<div class="empty-state"><p>Cargando...</p></div>';
+
+    loadProfessorRequests();
 
     try {
       await loadAdminClassData();
@@ -483,32 +554,115 @@ async function loadClases() {
     return;
   }
 
+  requestsSection.style.display = 'none';
   title.textContent = 'Clases disponibles';
-  subtitle.textContent = 'Explora y reserva clases';
+  subtitle.textContent = isProfessor ? 'Solicita asignacion a clases programadas' : 'Explora y reserva clases';
   listTitle.innerHTML = '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Proximas clases';
   adminForm.style.display = 'none';
   container.innerHTML = '<div class="empty-state"><p>Cargando...</p></div>';
 
   try {
-    const res  = await fetch(`${API}/classes/available`, { headers: authH() });
+    if (isProfessor) await loadMyProfessorRequests();
+
+    const res  = await fetch(isProfessor ? `${API}/classes/available-for-professor` : `${API}/classes/available`, { headers: authH() });
     if (!res.ok) { container.innerHTML = '<div class="empty-state"><p>Error al cargar las clases.</p></div>'; return; }
     const data = await res.json();
     if (!data.length) { container.innerHTML = '<div class="empty-state"><p>No hay clases disponibles.</p></div>'; return; }
     container.innerHTML = `
       <table class="data-table">
         <thead><tr><th>Actividad</th><th>Tipo</th><th>Inicio</th><th>Cupo</th><th>Profesor</th><th></th></tr></thead>
-        <tbody>${data.map(c => `
+        <tbody>${data.map(c => {
+          const request = isProfessor ? professorRequestForClass(c.id) : null;
+          const hasProfessor = !!c.professor_id;
+          const buttonLabel = request
+            ? (request.status === 'PENDIENTE' ? 'Solicitada' : request.status === 'ACEPTADA' ? 'Aceptada' : 'Rechazada')
+            : hasProfessor ? 'Asignada' : 'Solicitar';
+          const buttonDisabled = isProfessor && (!!request || hasProfessor);
+          return `
           <tr>
             <td><strong>${(c.activity_type || '').replace('_', ' ')}</strong></td>
             <td>${c.type || '—'}</td>
             <td>${formatDate(c.start_time)}</td>
             <td>${c.current_capacity}/${c.max_capacity}</td>
             <td>${c.professor_name || '<span style="color:var(--muted)">Sin asignar</span>'}</td>
-            <td><button class="action-btn" onclick="reserveClass('${c.id}')">Reservar</button></td>
-          </tr>`).join('')}
+            <td><button class="action-btn" ${buttonDisabled ? 'disabled' : ''} onclick="${isProfessor ? `requestProfessorClass('${c.id}')` : `reserveClass('${c.id}')`}">${isProfessor ? buttonLabel : 'Reservar'}</button></td>
+          </tr>`;
+        }).join('')}
         </tbody>
       </table>`;
   } catch { container.innerHTML = '<div class="empty-state"><p>No se pudo cargar.</p></div>'; }
+}
+
+async function requestProfessorClass(classId) {
+  try {
+    const res = await fetch(`${API}/classes/${classId}/request`, {
+      method: 'POST',
+      headers: authH()
+    });
+    const data = await res.json();
+    if (!res.ok) return showAlert('clasesAlert', apiErrorMessage(data, 'Error al enviar la solicitud.'));
+    showAlert('clasesAlert', data.message || 'Solicitud enviada correctamente.', 'success');
+    await loadClases();
+  } catch {
+    showAlert('clasesAlert', 'No se pudo conectar.');
+  }
+}
+
+async function evaluateProfessorRequest(classId, requestId, status, reason = null) {
+  try {
+    const res = await fetch(`${API}/classes/${classId}/request/${requestId}`, {
+      method: 'PATCH',
+      headers: authH(),
+      body: JSON.stringify({ status, reason })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      const targetAlert = status === 'RECHAZADA' ? 'rejectProfessorRequestAlert' : 'clasesAlert';
+      showAlert(targetAlert, apiErrorMessage(data, 'Error al evaluar la solicitud.'));
+      return false;
+    }
+    showAlert('clasesAlert', data.message || 'Solicitud evaluada correctamente.', 'success');
+    await loadAdminClasses();
+    await loadProfessorRequests();
+    return true;
+  } catch {
+    const targetAlert = status === 'RECHAZADA' ? 'rejectProfessorRequestAlert' : 'clasesAlert';
+    showAlert(targetAlert, 'No se pudo conectar.');
+    return false;
+  }
+}
+
+let rejectProfessorClassId = null;
+let rejectProfessorRequestId = null;
+
+function rejectProfessorRequest(classId, requestId) {
+  rejectProfessorClassId = classId;
+  rejectProfessorRequestId = requestId;
+  document.getElementById('rejectProfessorRequestReason').value = '';
+  document.getElementById('rejectProfessorRequestAlert').className = 'alert';
+  document.getElementById('rejectProfessorRequestModal').classList.add('open');
+}
+
+function closeRejectProfessorRequestModal() {
+  document.getElementById('rejectProfessorRequestModal').classList.remove('open');
+  rejectProfessorClassId = null;
+  rejectProfessorRequestId = null;
+}
+
+async function confirmRejectProfessorRequest() {
+  const reason = document.getElementById('rejectProfessorRequestReason').value.trim();
+  if (!reason || !reason.trim()) {
+    showAlert('rejectProfessorRequestAlert', 'El rechazo debe incluir un motivo obligatorio.');
+    return;
+  }
+
+  const ok = await evaluateProfessorRequest(
+    rejectProfessorClassId,
+    rejectProfessorRequestId,
+    'RECHAZADA',
+    reason
+  );
+  if (ok) closeRejectProfessorRequestModal();
 }
 
 async function createClassFromAdmin() {
@@ -527,6 +681,17 @@ async function createClassFromAdmin() {
 
   const apiStartTime = combineDateAndTime(class_date, start_time);
   const apiEndTime = combineDateAndTime(class_date, end_time);
+  const selectedDate = new Date(`${class_date}T00:00`);
+  const startMinutes = Number(start_time.slice(0, 2)) * 60 + Number(start_time.slice(3, 5));
+  const endMinutes = Number(end_time.slice(0, 2)) * 60 + Number(end_time.slice(3, 5));
+
+  if (selectedDate.getDay() === 0 || selectedDate.getDay() === 6) {
+    return showAlert('clasesAlert', 'Las clases solo pueden programarse de lunes a viernes.');
+  }
+
+  if (startMinutes < 8 * 60 || endMinutes > 20 * 60) {
+    return showAlert('clasesAlert', 'Las clases deben estar dentro del horario del centro: 08:00 a 20:00.');
+  }
 
   if (new Date(apiEndTime) <= new Date(apiStartTime)) {
     return showAlert('clasesAlert', 'La hora de fin debe ser mayor a la hora de inicio.');
