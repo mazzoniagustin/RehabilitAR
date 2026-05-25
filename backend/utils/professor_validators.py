@@ -71,7 +71,7 @@ def validate_professor_weekly_hours(
         supabase.table('classes')
         .select('id, start_time, end_time')
         .eq('professor_id', str(professor_id))
-        .neq('status', 'cancelada')
+        .neq('status', 'CANCELADA')  # FIX: era 'cancelada' (minúscula)
         .gte('start_time', week_start.isoformat())
         .lt('start_time', week_end.isoformat())
     )
@@ -119,7 +119,7 @@ def validate_professor_schedule_availability(
         supabase.table('classes')
         .select('id, start_time, end_time')
         .eq('professor_id', str(professor_id))
-        .neq('status', 'cancelada')
+        .neq('status', 'CANCELADA')  # FIX: era 'cancelada' (minúscula)
     )
 
     if exclude_class_id:

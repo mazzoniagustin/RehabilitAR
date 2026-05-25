@@ -1,3 +1,4 @@
+from typing import Optional
 from fastapi import HTTPException
 from database import supabase
 from datetime import datetime
@@ -39,6 +40,19 @@ def create_class(data):
             data.end_time
         )
 
+        if data.professor_id:
+            validate_professor_exists(data.professor_id)
+            validate_professor_weekly_hours(
+                data.professor_id,
+                data.start_time,
+                data.end_time
+            )
+            validate_professor_schedule_availability(
+                data.professor_id,
+                data.start_time,
+                data.end_time
+            )
+
         # Crear clase
         new_class = (
             supabase.table('classes')
@@ -55,7 +69,7 @@ def create_class(data):
 
                 'is_scheduled': data.is_scheduled,
 
-                'status': 'activa',
+                'status': 'PROGRAMADA',  # FIX: era 'activa', no existe en el CHECK
 
                 'max_capacity': data.max_capacity,
                 'current_capacity': 0,
@@ -97,7 +111,7 @@ def list_active_classes():
                 )
                 '''
             )
-            .eq('status', 'activa')
+            .eq('status', 'PROGRAMADA')  # FIX: era 'activa', no existe en el CHECK
             .order('start_time', desc=False)
             .execute()
         )
@@ -111,11 +125,53 @@ def list_active_classes():
         )
 
 
+def list_rooms():
+
+    try:
+
+        response = (
+            supabase.table('rooms')
+            .select('id, name, capacity, status')
+            .order('name', desc=False)
+            .execute()
+        )
+
+        return response.data
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f'Error al obtener las salas: {str(e)}'
+        )
+
+
+def list_professors():
+
+    try:
+
+        response = (
+            supabase.table('users')
+            .select('id, name, surname, specialty, account_status')
+            .eq('rol', 'PROFESOR')
+            .eq('account_status', 'ACTIVA')
+            .order('surname', desc=False)
+            .execute()
+        )
+
+        return response.data
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f'Error al obtener los profesores: {str(e)}'
+        )
+
+
 def assign_professor(class_id: str, data):
 
     try:
 
-        # Verificar que la clase existe y está activa
+        # Verificar que la clase existe y está programada
         class_response = (
             supabase.table('classes')
             .select('id, professor_id, start_time, end_time, status')
@@ -132,7 +188,8 @@ def assign_professor(class_id: str, data):
 
         clase = class_response.data
 
-        if clase['status'] != 'activa':
+        # FIX: era != 'activa'; los estados válidos son PROGRAMADA / EN CURSO
+        if clase['status'] not in ('PROGRAMADA', 'EN CURSO'):
             raise HTTPException(
                 status_code=400,
                 detail='No se puede asignar un profesor a una clase que no está activa.'
@@ -191,3 +248,154 @@ def assign_professor(class_id: str, data):
             status_code=500,
             detail=f'Error al asignar el profesor: {str(e)}'
         )
+
+
+def cancel_class(class_id: str):
+    try:
+        class_response = supabase.table('classes').select('id, status').eq('id', class_id).single().execute()
+        if not class_response.data:
+            raise HTTPException(status_code=404, detail='La clase seleccionada no existe.')
+        
+        clase = class_response.data
+        if clase['status'] == 'CANCELADA':
+            raise HTTPException(status_code=400, detail='La clase ya se encuentra cancelada.')
+            
+        updated_class = supabase.table('classes').update({'status': 'CANCELADA'}).eq('id', class_id).execute()
+        
+        return {
+            'message': 'Clase cancelada exitosamente',
+            'data': updated_class.data[0]
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f'Error al cancelar la clase: {str(e)}')
+
+def update_capacity(class_id: str, new_capacity: int):
+    try:
+        class_response = supabase.table('classes').select('id, max_capacity, room_id, status, rooms(capacity)').eq('id', class_id).single().execute()
+        
+        if not class_response.data:
+            raise HTTPException(status_code=404, detail='La clase seleccionada no existe.')
+            
+        clase = class_response.data
+        
+        if clase['status'] != 'PROGRAMADA' and clase['status'] != 'EN CURSO':
+            raise HTTPException(status_code=400, detail='Solo se puede modificar el cupo de clases activas.')
+            
+        room_capacity = clase['rooms']['capacity']
+        
+        if new_capacity > room_capacity:
+            raise HTTPException(status_code=400, detail='El cupo ingresado supera la capacidad máxima de la sala')
+            
+        # Get current inscribed students count
+        reservations_response = supabase.table('reservations').select('id', count='exact').eq('class_id', class_id).in_('status', ['CONFIRMADA']).execute()
+        current_inscribed = reservations_response.count if reservations_response.count is not None else 0
+        
+        if new_capacity < current_inscribed:
+            # Cancel class automatically
+            updated_class = supabase.table('classes').update({'status': 'CANCELADA'}).eq('id', class_id).execute()
+            return {
+                'message': 'El nuevo cupo es menor a los inscriptos. La clase ha sido cancelada.',
+                'data': updated_class.data[0]
+            }
+            
+        updated_class = supabase.table('classes').update({'max_capacity': new_capacity}).eq('id', class_id).execute()
+        
+        return {
+            'message': 'Cupo de clase actualizado exitosamente',
+            'data': updated_class.data[0]
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f'Error al modificar el cupo de la clase: {str(e)}')
+
+
+def create_professor_request(class_id: str, professor_id: str):
+    try:
+        class_response = supabase.table('classes').select('id, start_time, end_time, status').eq('id', class_id).single().execute()
+        if not class_response.data:
+            raise HTTPException(status_code=404, detail='La clase seleccionada no existe.')
+            
+        # check existing request
+        req_check = supabase.table('professor_requests').select('id, status').eq('class_id', class_id).eq('professor_id', professor_id).execute()
+        if req_check.data and any(r['status'] == 'PENDIENTE' for r in req_check.data):
+            raise HTTPException(status_code=400, detail='Ya existe una solicitud pendiente para esta clase.')
+            
+        new_request = supabase.table('professor_requests').insert({
+            'class_id': class_id,
+            'professor_id': professor_id,
+            'status': 'PENDIENTE'
+        }).execute()
+        
+        return {'message': 'Solicitud enviada correctamente', 'data': new_request.data[0]}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f'Error al crear la solicitud: {str(e)}')
+
+def evaluate_professor_request(class_id: str, request_id: str, data):
+    try:
+        req_response = supabase.table('professor_requests').select('*, classes(start_time, end_time, status, professor_id)').eq('id', request_id).single().execute()
+        if not req_response.data:
+            raise HTTPException(status_code=404, detail='Solicitud no encontrada.')
+            
+        request_obj = req_response.data
+        if request_obj['class_id'] != class_id:
+            raise HTTPException(status_code=400, detail='La solicitud no corresponde a esta clase.')
+            
+        if request_obj['status'] != 'PENDIENTE':
+            raise HTTPException(status_code=400, detail='La solicitud ya fue evaluada.')
+            
+        if data.status == 'RECHAZADA':
+            if not data.reason or not data.reason.strip():
+                raise HTTPException(status_code=400, detail='El rechazo debe incluir un motivo obligatorio')
+                
+            updated = supabase.table('professor_requests').update({'status': 'RECHAZADA', 'reject_reason': data.reason}).eq('id', request_id).execute()
+            return {'message': 'Solicitud rechazada correctamente con motivo', 'data': updated.data[0]}
+            
+        # ACEPTADA
+        clase = request_obj['classes']
+        if clase['professor_id'] is not None:
+            raise HTTPException(status_code=400, detail='La clase ya tiene un profesor asignado.')
+            
+        class_start = datetime.fromisoformat(clase['start_time'])
+        class_end = datetime.fromisoformat(clase['end_time'])
+        
+        try:
+            validate_professor_weekly_hours(request_obj['professor_id'], class_start, class_end)
+        except HTTPException:
+            # Re-raise with specific message requested by HU
+            raise HTTPException(status_code=400, detail='No se puede asignar el profesor porque supera el límite de 40 horas semanales')
+            
+        try:
+            validate_professor_schedule_availability(request_obj['professor_id'], class_start, class_end)
+        except HTTPException:
+            # Re-raise with specific message requested by HU
+            raise HTTPException(status_code=400, detail='No se puede asignar el profesor por conflicto de horario')
+            
+        # All ok, update class and request
+        supabase.table('classes').update({'professor_id': request_obj['professor_id']}).eq('id', class_id).execute()
+        updated = supabase.table('professor_requests').update({'status': 'ACEPTADA'}).eq('id', request_id).execute()
+        
+        return {'message': 'Se aceptó la solicitud correctamente', 'data': updated.data[0]}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f'Error al evaluar la solicitud: {str(e)}')
+
+def list_class_students(class_id: str):
+    try:
+        class_check = supabase.table('classes').select('id').eq('id', class_id).single().execute()
+        if not class_check.data:
+            raise HTTPException(status_code=404, detail='Clase no encontrada.')
+            
+        res = supabase.table('reservations').select('user_id, users(name, surname, email, phone)').eq('class_id', class_id).in_('status', ['CONFIRMADA']).execute()
+        
+        return res.data
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f'Error al obtener inscriptos: {str(e)}')

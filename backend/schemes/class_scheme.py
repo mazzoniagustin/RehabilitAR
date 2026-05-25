@@ -6,11 +6,11 @@ from uuid import UUID
 
 class ClassCreate(BaseModel):
     room_id: UUID
-    type: Literal['individual', 'grupal']
+    type: Literal['INDIVIDUAL', 'GRUPAL', 'FIJA']
     activity_type: Literal[
-        'tren_superior',
-        'tren_medio',
-        'tren_inferior'
+        'TREN_SUPERIOR',
+        'TREN_MEDIO',
+        'TREN_INFERIOR'
     ]
 
     is_scheduled: bool = False
@@ -58,3 +58,10 @@ class ClassResponse(BaseModel):
 
 class AssignProfessor(BaseModel):
     professor_id: UUID
+
+class UpdateCapacity(BaseModel):
+    new_capacity: int = Field(gt=0, description='El nuevo cupo debe ser mayor a 0.')
+
+class EvaluateRequest(BaseModel):
+    status: Literal['ACEPTADA', 'RECHAZADA']
+    reason: Optional[str] = None
