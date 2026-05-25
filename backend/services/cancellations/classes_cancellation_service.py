@@ -1,7 +1,7 @@
 from database import supabase
 from datetime import datetime, timezone
 from fastapi import HTTPException
-from services.credits_service import otorgar_credito #pendiente_de_implementar
+#from services.credits_service import otorgar_credito #pendiente_de_implementar
 
 def cancelar_clase(class_id, cancel_reason):
     try:
@@ -12,7 +12,7 @@ def cancelar_clase(class_id, cancel_reason):
             reservas = supabase.table("reservations").select("*").eq("class_id", class_id).eq("status", "activa").execute()
             for reserva in reservas.data:
                 supabase.table("reservations").update({"status": "cancelada"}).eq("id", reserva["id"]).execute()
-                otorgar_credito(reserva["user_id"], reserva["class_id"]) #pendiente_de_implementar
+                #otorgar_credito(reserva["user_id"], reserva["class_id"]) #pendiente_de_implementar
             return {"message": "Clase cancelada exitosamente."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al cancelar la clase: {str(e)}")
@@ -29,7 +29,7 @@ def cancelación_automática(class_id):
                 reservas = supabase.table("reservations").select("*").eq("class_id", class_id).eq("status", "activa").execute()
                 for reserva in reservas.data:
                     supabase.table("reservations").update({"status": "cancelada"}).eq("id", reserva["id"]).execute()
-                    otorgar_credito(reserva["user_id"], reserva["class_id"]) #pendiente_de_implementar
+                    #otorgar_credito(reserva["user_id"], reserva["class_id"]) #pendiente_de_implementar
                 return {"message": "Clase cancelada automáticamente por falta de profesor."}
         else:
             raise HTTPException(status_code=400, detail="El ID de la clase es obligatorio para la cancelación automática.")
