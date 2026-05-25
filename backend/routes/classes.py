@@ -1,7 +1,6 @@
-from typing import Optional
 from fastapi import APIRouter, Depends
 from services import classes_service
-from schemes.class_scheme import ClassCreate, AssignProfessor
+from schemes.class_scheme import ClassCreate, AssignProfessor, UpdateCapacity, EvaluateRequest
 from utils.permissions import check_permission
 
 router = APIRouter(
@@ -27,20 +26,37 @@ def list_classes(
 
 @router.get('/rooms')
 def list_rooms(
-    start_time: Optional[datetime] = None,
-    end_time: Optional[datetime] = None,
     user=Depends(check_permission(['ADMINISTRATIVO']))
 ):
-    return classes_service.list_rooms(start_time, end_time)
+    return classes_service.list_rooms()
 
 
 @router.get('/professors')
 def list_professors(
-    start_time: Optional[datetime] = None,
-    end_time: Optional[datetime] = None,
     user=Depends(check_permission(['ADMINISTRATIVO']))
 ):
-    return classes_service.list_professors(start_time, end_time)
+    return classes_service.list_professors()
+
+
+@router.get('/available-for-professor')
+def list_classes_for_professor(
+    user=Depends(check_permission(['PROFESOR']))
+):
+    return classes_service.list_active_classes()
+
+
+@router.get('/requests/pending')
+def list_pending_professor_requests(
+    user=Depends(check_permission(['ADMINISTRATIVO']))
+):
+    return classes_service.list_pending_professor_requests()
+
+
+@router.get('/requests/me')
+def list_my_professor_requests(
+    user=Depends(check_permission(['PROFESOR']))
+):
+    return classes_service.list_professor_requests(user['id'])
 
 
 @router.patch('/{class_id}/assign-professor')
@@ -66,14 +82,12 @@ def update_capacity(
 ):
     return classes_service.update_capacity(class_id, data.new_capacity)
 
-from schemes.class_scheme import EvaluateRequest
-
 @router.post('/{class_id}/request')
 def create_professor_request(
     class_id: str,
     user=Depends(check_permission(['PROFESOR']))
 ):
-    return classes_service.create_professor_request(class_id, str(user.id))
+    return classes_service.create_professor_request(class_id, user['id'])
 
 @router.patch('/{class_id}/request/{request_id}')
 def evaluate_professor_request(

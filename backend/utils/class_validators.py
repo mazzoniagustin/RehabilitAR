@@ -2,6 +2,31 @@ from fastapi import HTTPException
 from database import supabase
 
 
+def validate_center_business_hours(start_time, end_time):
+    if start_time.weekday() >= 5 or end_time.weekday() >= 5:
+        raise HTTPException(
+            status_code=400,
+            detail='Las clases solo pueden programarse de lunes a viernes.'
+        )
+
+    if start_time.date() != end_time.date():
+        raise HTTPException(
+            status_code=400,
+            detail='La clase debe iniciar y finalizar el mismo dia.'
+        )
+
+    opening_minutes = 8 * 60
+    closing_minutes = 20 * 60
+    start_minutes = start_time.hour * 60 + start_time.minute
+    end_minutes = end_time.hour * 60 + end_time.minute
+
+    if start_minutes < opening_minutes or end_minutes > closing_minutes:
+        raise HTTPException(
+            status_code=400,
+            detail='Las clases deben programarse dentro del horario del centro: 08:00 a 20:00.'
+        )
+
+
 def validate_room_exists(room_id):
     response = (
         supabase.table('rooms')

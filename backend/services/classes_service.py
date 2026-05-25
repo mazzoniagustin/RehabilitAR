@@ -4,6 +4,7 @@ from database import supabase
 from datetime import datetime
 
 from utils.class_validators import (
+    validate_center_business_hours,
     validate_room_exists,
     validate_room_status,
     validate_room_capacity,
@@ -23,6 +24,11 @@ def create_class(data):
 
         # Validar sala existente
         room = validate_room_exists(data.room_id)
+
+        validate_center_business_hours(
+            data.start_time,
+            data.end_time
+        )
 
         # Validar estado sala
         validate_room_status(room)
@@ -314,9 +320,15 @@ def update_capacity(class_id: str, new_capacity: int):
 
 def create_professor_request(class_id: str, professor_id: str):
     try:
-        class_response = supabase.table('classes').select('id, start_time, end_time, status').eq('id', class_id).single().execute()
+        class_response = supabase.table('classes').select('id, professor_id, start_time, end_time, status').eq('id', class_id).single().execute()
         if not class_response.data:
             raise HTTPException(status_code=404, detail='La clase seleccionada no existe.')
+
+        if class_response.data['status'] not in ('PROGRAMADA', 'EN CURSO'):
+            raise HTTPException(status_code=400, detail='No se puede solicitar una clase que no esta activa.')
+
+        if class_response.data['professor_id'] is not None:
+            raise HTTPException(status_code=400, detail='La clase ya tiene un profesor asignado.')
             
         # check existing request
         req_check = supabase.table('professor_requests').select('id, status').eq('class_id', class_id).eq('professor_id', professor_id).execute()
@@ -334,6 +346,87 @@ def create_professor_request(class_id: str, professor_id: str):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'Error al crear la solicitud: {str(e)}')
+
+
+def list_pending_professor_requests():
+    try:
+        response = (
+            supabase.table('professor_requests')
+            .select('id, class_id, professor_id, status, created_at')
+            .eq('status', 'PENDIENTE')
+            .order('created_at', desc=False)
+            .execute()
+        )
+
+        requests = response.data or []
+        if not requests:
+            return []
+
+        professor_ids = list({r['professor_id'] for r in requests})
+        class_ids = list({r['class_id'] for r in requests})
+
+        professors_response = (
+            supabase.table('users')
+            .select('id, name, surname, specialty')
+            .in_('id', professor_ids)
+            .execute()
+        )
+        professors_by_id = {
+            professor['id']: professor
+            for professor in (professors_response.data or [])
+        }
+
+        classes_response = (
+            supabase.table('classes')
+            .select('id, type, activity_type, start_time, end_time, professor_id, room_id')
+            .in_('id', class_ids)
+            .execute()
+        )
+
+        classes = classes_response.data or []
+        room_ids = list({c['room_id'] for c in classes if c.get('room_id')})
+        rooms_by_id = {}
+
+        if room_ids:
+            rooms_response = (
+                supabase.table('rooms')
+                .select('id, name')
+                .in_('id', room_ids)
+                .execute()
+            )
+            rooms_by_id = {
+                room['id']: room
+                for room in (rooms_response.data or [])
+            }
+
+        classes_by_id = {}
+        for clase in classes:
+            clase['rooms'] = rooms_by_id.get(clase.get('room_id'))
+            classes_by_id[clase['id']] = clase
+
+        for request in requests:
+            request['users'] = professors_by_id.get(request['professor_id'])
+            request['classes'] = classes_by_id.get(request['class_id'])
+
+        return requests
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f'Error al obtener solicitudes pendientes: {str(e)}')
+
+
+def list_professor_requests(professor_id: str):
+    try:
+        response = (
+            supabase.table('professor_requests')
+            .select('id, class_id, status, reject_reason, created_at')
+            .eq('professor_id', professor_id)
+            .order('created_at', desc=True)
+            .execute()
+        )
+
+        return response.data or []
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f'Error al obtener tus solicitudes: {str(e)}')
+
 
 def evaluate_professor_request(class_id: str, request_id: str, data):
     try:
