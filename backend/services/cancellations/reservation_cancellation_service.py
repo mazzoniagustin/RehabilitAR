@@ -21,7 +21,7 @@ def cancelar_reserva(reservation_id):
                 if (user["rol"] == "ABONADO"):
                     if (user["cancellation_amount"] < 2):
                         #credits_service.otorgar_credito(user["id"]) #pendiente_de_implementar
-                        supabase.table("reservations").update({"status": "cancelada"}).eq("id", reservation_id).execute()
+                        supabase.table("reservations").update({"status": "CANCELADA"}).eq("id", reservation_id).execute()
                         supabase.table("users").update({"cancellation_amount": user["cancellation_amount"] + 1}).eq("id", user["id"]).execute()
                         return {"message": mensaje}
                     else:
@@ -29,11 +29,11 @@ def cancelar_reserva(reservation_id):
                             #subscriptions_service.cancelar_descuentos(user["id"]) #pendiente_de_implementar
                             #credits_service.retirar_credito(user["id"]) #pendiente_de_implementar
                             mensaje = "Has alcanzado el límite de cancelaciones. Se han retirado tus créditos y descuentos"
-                        supabase.table("reservations").update({"status": "cancelada"}).eq("id", reservation_id).execute()
+                        supabase.table("reservations").update({"status": "CANCELADA"}).eq("id", reservation_id).execute()
                         supabase.table("users").update({"cancellation_amount": user["cancellation_amount"] + 1}).eq("id", user["id"]).execute()
                         return {"message": mensaje}
                 else:
-                    supabase.table("reservations").update({"status": "cancelada"}).eq("id", reservation_id).execute()
+                    supabase.table("reservations").update({"status": "CANCELADA"}).eq("id", reservation_id).execute()
                     #depositar_reserva(reserva["amount_paid"], user["email"]) #pendiente_de_implementar   
                     return {"message": mensaje}
             elif (diferencia_horas >= 24) and (diferencia_horas < 48):
@@ -43,7 +43,7 @@ def cancelar_reserva(reservation_id):
                             #subscriptions_service.otorgar_descuento20(user["id"]) #pendiente_de_implementar
                         #else:
                             #subscriptions_service.otorgar_descuento30(user["id"]) #pendiente_de_implementar
-                        supabase.table("reservations").update({"status": "cancelada"}).eq("id", reservation_id).execute()
+                        supabase.table("reservations").update({"status": "CANCELADA"}).eq("id", reservation_id).execute()
                         supabase.table("users").update({"cancellation_amount": user["cancellation_amount"] + 1}).eq("id", user["id"]).execute()
                         return {"message": mensaje}
                     else:
@@ -51,11 +51,11 @@ def cancelar_reserva(reservation_id):
                             #subscriptions_service.cancelar_descuentos(user["id"]) #pendiente_de_implementar
                             #credits_service.retirar_credito(user["id"]) #pendiente_de_implementar
                             mensaje = "Has alcanzado el límite de cancelaciones. Se han retirado tus créditos y descuentos"
-                        supabase.table("reservations").update({"status": "cancelada"}).eq("id", reservation_id).execute()
+                        supabase.table("reservations").update({"status": "CANCELADA"}).eq("id", reservation_id).execute()
                         supabase.table("users").update({"cancellation_amount": user["cancellation_amount"] + 1}).eq("id", user["id"]).execute()
                         return {"message": mensaje}
                 else:
-                    supabase.table("reservations").update({"status": "cancelada"}).eq("id", reservation_id).execute()
+                    supabase.table("reservations").update({"status": "CANCELADA"}).eq("id", reservation_id).execute()
                     #depositar_reserva(reserva["amount_paid"], user["email"]) #pendiente_de_implementar   
                     return {"message": mensaje}
             else:
