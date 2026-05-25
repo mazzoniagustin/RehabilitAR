@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>RehabilitAR — Acceso</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+
+<div class="bg-shapes"><span></span><span></span><span></span></div>
+
+<div class="app" id="authApp">
+  <div class="card">
+
+    <div class="brand">
+      <!-- Reemplazar con: <img src="logo.png" class="brand-logo" alt="RehabilitAR"/> -->
+      <img src="assets/RehabilitAR.png" class="brand-logo" alt="RehabilitAR"/>
+      <h1>RehabilitAR</h1>
+      <p>Centro de rehabilitación física</p>
+    </div>
+
+    <div class="tabs">
+      <button class="tab active" onclick="switchTab('login')">Iniciar sesión</button>
+      <button class="tab" onclick="switchTab('register')">Registrarse</button>
+    </div>
+
+    <div id="alertBox" class="alert"></div>
+
+    <!-- LOGIN -->
+    <div id="loginView" class="view active">
+      <div class="form-group">
+        <label>Email</label>
+        <input type="email" id="loginEmail" placeholder="tu@email.com"/>
+      </div>
+      <div class="form-group">
+        <label>Contraseña</label>
+        <input type="password" id="loginPassword" placeholder="••••••"/>
+      </div>
+      <button class="btn" id="loginBtn" onclick="handleLogin()">Ingresar</button>
+      <div class="link-row"><a href="#" onclick="showRecovery()">¿Olvidaste tu contraseña?</a></div>
+    </div>
+
+    <div id="registerView" class="view">
+      <div class="row-2">
+        <div class="form-group"><label>Nombre</label><input type="text" id="regName" placeholder="Juan"/></div>
+        <div class="form-group"><label>Apellido</label><input type="text" id="regSurname" placeholder="Pérez"/></div>
+      </div>
+      <div class="form-group">
+        <label>Email</label>
+        <input type="email" id="regEmail" placeholder="tu@email.com"/>
+      </div>
+      <div class="form-group">
+        <label>DNI</label>
+        <input type="text" id="regDni" placeholder="12345678"/>
+      </div>
+      <div class="form-group">
+        <label>Contraseña</label>
+        <input type="password" id="regPassword" placeholder="Mínimo 6 caracteres"/>
+      </div>
+      <button class="btn" id="registerBtn" onclick="handleRegister()">Crear cuenta</button>
+      <div class="link-row"><a href="#" onclick="switchTab('login')">¿Ya tenés cuenta? Iniciá sesión</a></div>
+    </div>
+
+    <!-- RECUPERAR CONTRASEÑA -->
+    <div id="recoveryView" class="view">
+      <p style="font-size:.88rem;color:var(--muted);margin-bottom:18px">
+        Ingresá tu email y te enviamos un enlace para restablecer tu contraseña.
+      </p>
+      <div class="form-group">
+        <label>Email</label>
+        <input type="email" id="recoveryEmail" placeholder="tu@email.com"/>
+      </div>
+      <button class="btn" id="recoveryBtn" onclick="handleRecovery()">Enviar enlace</button>
+      <div class="link-row"><a href="#" onclick="switchTab('login')">← Volver al inicio de sesión</a></div>
+    </div>
+
+  </div>
+</div>
+
+<script src="auth.js"></script>
+</body>
+</html>
