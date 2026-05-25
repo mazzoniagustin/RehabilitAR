@@ -1,4 +1,6 @@
 from database import supabase
+from fastapi import HTTPException
+from datetime import datetime, timezone
 from services.users_service import incrementar_cancellation_amount #pendiente_de_implementar
 from services.mercadoPago_service import depositar_reserva #pendiente_de_implementar
 import services.credits_service as credits_service #pendiente_de_implementar
@@ -17,46 +19,49 @@ def cancelar_reserva(reservation_id):
             diferencia_horas = (start_time - ahora).total_seconds() / 3600
             mensaje = "Reserva cancelada exitosamente."
             if (diferencia_horas >= 48):
-                if (user["role"] == "ABONADO"):
+                if (user["rol"] == "ABONADO"):
                     if (user["cancellation_amount"] < 2):
                         credits_service.otorgar_credito(user["id"]) #pendiente_de_implementar
-                        supabase.table("reservations").update({"status": "cancelled"}).eq("id", reservation_id).execute()
+                        supabase.table("reservations").update({"status": "cancelada"}).eq("id", reservation_id).execute()
                         incrementar_cancellation_amount(user["id"]) #pendiente_de_implementar
                     else:
                         if (user["cancellation_amount"] == 2):
                             subscriptions_service.cancelar_descuentos(user["id"]) #pendiente_de_implementar
                             credits_service.retirar_credito(user["id"]) #pendiente_de_implementar
                             mensaje = "Has alcanzado el límite de cancelaciones. Se han retirado tus créditos y descuentos"
-                        supabase.table("reservations").update({"status": "cancelled"}).eq("id", reservation_id).execute()
+                        supabase.table("reservations").update({"status": "cancelada"}).eq("id", reservation_id).execute()
                         incrementar_cancellation_amount(user["id"]) #pendiente_de_implementar
+                    return {"message": mensaje}
                 else:
-                    supabase.table("reservations").update({"status": "cancelled"}).eq("id", reservation_id).execute()
+                    supabase.table("reservations").update({"status": "cancelada"}).eq("id", reservation_id).execute()
                     depositar_reserva(reserva["amount_paid"], user["email"]) #pendiente_de_implementar   
-                return {"message": mensaje}
+                    return {"message": mensaje}
             elif (diferencia_horas >= 24) and (diferencia_horas < 48):
-                if (user["role"] == "ABONADO"):
+                if (user["rol"] == "ABONADO"):
                     if (user["cancellation_amount"] < 2):
                         if (user["cancellation_amount"] == 0):
                             subscriptions_service.otorgar_descuento20(user["id"]) #pendiente_de_implementar
                         else:
                             subscriptions_service.otorgar_descuento30(user["id"]) #pendiente_de_implementar
-                        supabase.table("reservations").update({"status": "cancelled"}).eq("id", reservation_id).execute()
+                        supabase.table("reservations").update({"status": "cancelada"}).eq("id", reservation_id).execute()
                         incrementar_cancellation_amount(user["id"]) #pendiente_de_implementar
+                        return {"message": mensaje}
                     else:
                         if (user["cancellation_amount"] == 2):
                             subscriptions_service.cancelar_descuentos(user["id"]) #pendiente_de_implementar
                             credits_service.retirar_credito(user["id"]) #pendiente_de_implementar
                             mensaje = "Has alcanzado el límite de cancelaciones. Se han retirado tus créditos y descuentos"
-                        supabase.table("reservations").update({"status": "cancelled"}).eq("id", reservation_id).execute()
+                        supabase.table("reservations").update({"status": "cancelada"}).eq("id", reservation_id).execute()
                         incrementar_cancellation_amount(user["id"]) #pendiente_de_implementar
+                        return {"message": mensaje}
                 else:
-                    supabase.table("reservations").update({"status": "cancelled"}).eq("id", reservation_id).execute()
+                    supabase.table("reservations").update({"status": "cancelada"}).eq("id", reservation_id).execute()
                     depositar_reserva(reserva["amount_paid"], user["email"]) #pendiente_de_implementar   
-                return {"message": mensaje}
+                    return {"message": mensaje}
             else:
                 supabase.table("reservations").update({"status": "no_show"}).eq("id", reservation_id).execute()
-                return {"message": "No puede obtener beneficio ya que canceló con menos de 48 horas de anticipación"}
+                raise HTTPException(status_code=400, detail={"message": "No puede obtener beneficio ya que canceló con menos de 48 horas de anticipación"})
         else:
-            return {"error": "El ID de la reserva es obligatorio para la cancelación."}
+            raise HTTPException(status_code=400, detail={"error": "El ID de la reserva es obligatorio para la cancelación."})
     except Exception as e:
-        return {"error de ID de reserva": str(e)}
+        raise HTTPException(status_code=500, detail={"error de ID de reserva": str(e)})
