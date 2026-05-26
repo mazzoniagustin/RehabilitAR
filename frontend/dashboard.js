@@ -20,6 +20,11 @@ function showAlert(id, msg, type = 'error') {
   setTimeout(() => { if (el) el.classList.remove('show'); }, 5000);
 }
 
+function handleUnauthorized() {
+  clearAuth();
+  window.location.href = 'login.html';
+}
+
 function badge(val, map) {
   const cls = (val || '').toLowerCase().replace(/[^a-z0-9]/g, '_');
   return `<span class="badge ${cls}">${map[val] || val || '—'}</span>`;
@@ -362,7 +367,9 @@ async function submitCertificate() {
 
 let adminClassRooms = [];
 let adminClassProfessors = [];
+let adminClassFormProfessors = [];
 let professorClassRequests = [];
+let classAvailabilityListenersReady = false;
 
 function apiErrorMessage(data, fallback = 'Error.') {
   if (typeof data?.detail === 'string') return data.detail;
@@ -380,34 +387,103 @@ function professorName(professorId) {
 }
 
 async function loadAdminClassData() {
-  const [roomsRes, professorsRes] = await Promise.all([
-    fetch(`${API}/classes/rooms`, { headers: authH() }),
-    fetch(`${API}/classes/professors`, { headers: authH() })
-  ]);
-
-  const rooms = await roomsRes.json();
+  const professorsRes = await fetch(`${API}/classes/professors`, { headers: authH() });
   const professors = await professorsRes.json();
 
-  if (!roomsRes.ok) throw new Error(apiErrorMessage(rooms, 'No se pudieron cargar las salas.'));
   if (!professorsRes.ok) throw new Error(apiErrorMessage(professors, 'No se pudieron cargar los profesores.'));
 
-  adminClassRooms = rooms || [];
   adminClassProfessors = professors || [];
+  bindClassAvailabilityInputs();
+  await refreshClassAvailabilityOptions();
+}
 
+function bindClassAvailabilityInputs() {
+  if (classAvailabilityListenersReady) return;
+
+  ['classDate', 'classStartTime', 'classEndTime'].forEach(id => {
+    document.getElementById(id)?.addEventListener('change', refreshClassAvailabilityOptions);
+  });
+
+  classAvailabilityListenersReady = true;
+}
+
+function getClassFormTimeRange() {
+  const classDate = document.getElementById('classDate').value;
+  const startTime = document.getElementById('classStartTime').value;
+  const endTime = document.getElementById('classEndTime').value;
+
+  if (!classDate || !startTime || !endTime) return null;
+
+  return {
+    start_time: combineDateAndTime(classDate, startTime),
+    end_time: combineDateAndTime(classDate, endTime)
+  };
+}
+
+async function refreshClassAvailabilityOptions() {
   const roomSelect = document.getElementById('classRoom');
   const professorSelect = document.getElementById('classProfessor');
+  const detailsFields = document.getElementById('classDetailsFields');
+  const createButton = document.getElementById('createClassBtn');
+  const range = getClassFormTimeRange();
 
-  roomSelect.innerHTML = adminClassRooms.length
-    ? adminClassRooms.map(room => `
-      <option value="${room.id}" ${room.status !== 'DISPONIBLE' ? 'disabled' : ''}>
-        ${room.name} - cupo ${room.capacity}${room.status !== 'DISPONIBLE' ? ` (${room.status})` : ''}
-      </option>
-    `).join('')
-    : '<option value="">No hay salas cargadas</option>';
+  if (!range) {
+    adminClassRooms = [];
+    adminClassFormProfessors = [];
+    if (roomSelect) roomSelect.innerHTML = '';
+    if (professorSelect) professorSelect.innerHTML = '';
+    if (detailsFields) detailsFields.style.display = 'none';
+    if (createButton) createButton.disabled = true;
+    return;
+  }
 
-  professorSelect.innerHTML = '<option value="">Sin profesor inicial</option>' + adminClassProfessors.map(professor => `
-    <option value="${professor.id}">${professor.name} ${professor.surname}${professor.specialty ? ` - ${professor.specialty}` : ''}</option>
-  `).join('');
+  try {
+    const params = new URLSearchParams(range);
+    const [roomsRes, professorsRes] = await Promise.all([
+      fetch(`${API}/classes/rooms?${params.toString()}`, { headers: authH() }),
+      fetch(`${API}/classes/professors?${params.toString()}`, { headers: authH() })
+    ]);
+
+    const rooms = await roomsRes.json();
+    const professors = await professorsRes.json();
+
+    if (!roomsRes.ok) throw new Error(apiErrorMessage(rooms, 'No se pudieron cargar las salas disponibles.'));
+    if (!professorsRes.ok) throw new Error(apiErrorMessage(professors, 'No se pudieron cargar los profesores disponibles.'));
+
+    adminClassRooms = rooms || [];
+    adminClassFormProfessors = professors || [];
+    if (detailsFields) detailsFields.style.display = 'block';
+    if (createButton) createButton.disabled = adminClassRooms.length === 0;
+
+    roomSelect.innerHTML = adminClassRooms.length
+      ? adminClassRooms.map(room => `
+        <option value="${room.id}">${room.name} - cupo ${room.capacity}</option>
+      `).join('')
+      : '<option value="">No hay salas disponibles</option>';
+
+    professorSelect.innerHTML = '<option value="">Sin profesor inicial</option>' + adminClassFormProfessors.map(professor => `
+      <option value="${professor.id}">${professor.name} ${professor.surname}${professor.specialty ? ` - ${professor.specialty}` : ''}</option>
+    `).join('');
+  } catch (e) {
+    adminClassRooms = [];
+    adminClassFormProfessors = [];
+    if (detailsFields) detailsFields.style.display = 'block';
+    if (createButton) createButton.disabled = true;
+    roomSelect.innerHTML = '<option value="">No se pudieron cargar salas</option>';
+    professorSelect.innerHTML = '<option value="">No se pudieron cargar profesores</option>';
+    showAlert('clasesAlert', e.message || 'No se pudo cargar disponibilidad.');
+  }
+}
+
+async function fetchAvailableProfessorsForClasses(classes) {
+  const entries = await Promise.all(classes.map(async c => {
+    const res = await fetch(`${API}/classes/${c.id}/available-professors`, { headers: authH() });
+    const data = await res.json();
+    if (!res.ok) return [c.id, []];
+    return [c.id, data || []];
+  }));
+
+  return Object.fromEntries(entries);
 }
 
 async function loadAdminClasses() {
@@ -428,11 +504,15 @@ async function loadAdminClasses() {
       return;
     }
 
+    const availableProfessorsByClass = await fetchAvailableProfessorsForClasses(data);
+
     container.innerHTML = `
       <table class="data-table">
-        <thead><tr><th>Actividad</th><th>Tipo</th><th>Sala</th><th>Inicio</th><th>Cupo</th><th>Profesor</th><th>Asignar</th></tr></thead>
+        <thead><tr><th>Actividad</th><th>Tipo</th><th>Sala</th><th>Inicio</th><th>Cupo</th><th>Profesor</th><th>Asignar</th><th>Acciones</th></tr></thead>
         <tbody>${data.map(c => {
-          const assignedName = professorName(c.professor_id);
+          const assignedName = c.professor_name || professorName(c.professor_id);
+          const availableProfessors = availableProfessorsByClass[c.id] || [];
+          const hasAvailableProfessors = availableProfessors.length > 0;
           return `
           <tr>
             <td><strong>${(c.activity_type || '').replace(/_/g, ' ')}</strong></td>
@@ -444,10 +524,17 @@ async function loadAdminClasses() {
             <td>
               <div style="display:flex;gap:6px;align-items:center;min-width:260px">
                 <select id="assignProfessor_${c.id}" style="min-width:170px">
-                  <option value="">Seleccionar</option>
-                  ${adminClassProfessors.map(p => `<option value="${p.id}" ${p.id === c.professor_id ? 'selected' : ''}>${p.name} ${p.surname}</option>`).join('')}
+                  <option value="">${hasAvailableProfessors ? 'Seleccionar' : 'Sin disponibles'}</option>
+                  ${availableProfessors.map(p => `<option value="${p.id}" ${p.id === c.professor_id ? 'selected' : ''}>${p.name} ${p.surname}</option>`).join('')}
                 </select>
-                <button class="action-btn" onclick="assignProfessorToClass('${c.id}')">Asignar</button>
+                <button class="action-btn" ${hasAvailableProfessors ? '' : 'disabled'} onclick="assignProfessorToClass('${c.id}')">Asignar</button>
+              </div>
+            </td>
+            <td>
+              <div style="display:flex;gap:6px;flex-wrap:wrap">
+                <button class="action-btn" onclick="openStudentsModal('${c.id}', '${(c.activity_type || '').replace(/_/g, ' ')} ${formatDate(c.start_time)}')">Inscriptos</button>
+                <button class="action-btn" onclick="openCapacityModal('${c.id}', ${c.current_capacity}, ${c.max_capacity})">Cupo</button>
+                <button class="action-btn danger" onclick="cancelClass('${c.id}')">Cancelar</button>
               </div>
             </td>
           </tr>`;
@@ -578,14 +665,18 @@ async function loadClases() {
             ? (request.status === 'PENDIENTE' ? 'Solicitada' : request.status === 'ACEPTADA' ? 'Aceptada' : 'Rechazada')
             : hasProfessor ? 'Asignada' : 'Solicitar';
           const buttonDisabled = isProfessor && (!!request || hasProfessor);
+          const isMyClass = isProfessor && request?.status === 'ACEPTADA';
           return `
           <tr>
-            <td><strong>${(c.activity_type || '').replace('_', ' ')}</strong></td>
+            <td><strong>${(c.activity_type || '').replace(/_/g, ' ')}</strong></td>
             <td>${c.type || '—'}</td>
             <td>${formatDate(c.start_time)}</td>
             <td>${c.current_capacity}/${c.max_capacity}</td>
             <td>${c.professor_name || '<span style="color:var(--muted)">Sin asignar</span>'}</td>
-            <td><button class="action-btn" ${buttonDisabled ? 'disabled' : ''} onclick="${isProfessor ? `requestProfessorClass('${c.id}')` : `reserveClass('${c.id}')`}">${isProfessor ? buttonLabel : 'Reservar'}</button></td>
+            <td style="display:flex;gap:6px">
+              <button class="action-btn" ${buttonDisabled ? 'disabled' : ''} onclick="${isProfessor ? `requestProfessorClass('${c.id}')` : `reserveClass('${c.id}')`}">${isProfessor ? buttonLabel : 'Reservar'}</button>
+              ${isMyClass ? `<button class="action-btn" onclick="openStudentsModal('${c.id}', '${(c.activity_type || '').replace(/_/g, ' ')}')">Inscriptos</button>` : ''}
+            </td>
           </tr>`;
         }).join('')}
         </tbody>
@@ -726,6 +817,7 @@ async function createClassFromAdmin() {
     document.getElementById('classStartTime').value = '';
     document.getElementById('classEndTime').value = '';
     document.getElementById('classProfessor').value = '';
+    await refreshClassAvailabilityOptions();
     await loadAdminClasses();
   } catch {
     showAlert('clasesAlert', 'No se pudo conectar.');
@@ -733,6 +825,87 @@ async function createClassFromAdmin() {
     btn.disabled = false;
     btn.textContent = 'Crear clase';
   }
+}
+
+async function cancelClass(classId) {
+  if (!confirm('¿Cancelar esta clase? Esta acción no se puede deshacer.')) return;
+  try {
+    const res = await fetch(`${API}/classes/${classId}/cancel`, { method: 'PATCH', headers: authH() });
+    const data = await res.json();
+    if (res.status === 401) return handleUnauthorized();
+    if (!res.ok) return showAlert('clasesAlert', apiErrorMessage(data, 'Error al cancelar la clase.'));
+    showAlert('clasesAlert', data.message || 'Clase cancelada exitosamente.', 'success');
+    await loadAdminClasses();
+  } catch { showAlert('clasesAlert', 'No se pudo conectar.'); }
+}
+
+let capacityTargetId = null;
+
+function openCapacityModal(classId, currentCapacity, maxCapacity) {
+  capacityTargetId = classId;
+  document.getElementById('currentCapacityText').textContent = `${currentCapacity} inscriptos / ${maxCapacity} cupo`;
+  document.getElementById('newCapacityInput').value = maxCapacity;
+  document.getElementById('capacityAlert').className = 'alert';
+  document.getElementById('capacityModal').classList.add('open');
+}
+
+function closeCapacityModal() {
+  document.getElementById('capacityModal').classList.remove('open');
+  capacityTargetId = null;
+}
+
+async function confirmUpdateCapacity() {
+  const newCapacity = Number(document.getElementById('newCapacityInput').value);
+  if (!newCapacity || newCapacity < 1) return showAlert('capacityAlert', 'Ingresá un cupo válido mayor a 0.');
+  try {
+    const res = await fetch(`${API}/classes/${capacityTargetId}/capacity`, {
+      method: 'PATCH',
+      headers: authH(),
+      body: JSON.stringify({ new_capacity: newCapacity })
+    });
+    const data = await res.json();
+    if (!res.ok) return showAlert('capacityAlert', apiErrorMessage(data, 'Error al modificar el cupo.'));
+    showAlert('clasesAlert', data.message || 'Cupo actualizado.', 'success');
+    closeCapacityModal();
+    await loadAdminClasses();
+  } catch { showAlert('capacityAlert', 'No se pudo conectar.'); }
+}
+
+async function openStudentsModal(classId, className) {
+  document.getElementById('studentsModalTitle').textContent = `Inscriptos — ${className}`;
+  document.getElementById('studentsContainer').innerHTML = '<div class="empty-state"><p>Cargando...</p></div>';
+  document.getElementById('studentsModal').classList.add('open');
+  try {
+    const res = await fetch(`${API}/classes/${classId}/students`, { headers: authH() });
+    const data = await res.json();
+    if (!res.ok) {
+      document.getElementById('studentsContainer').innerHTML = `<div class="empty-state"><p>${apiErrorMessage(data, 'Error al cargar.')}</p></div>`;
+      return;
+    }
+    if (!data.length) {
+      document.getElementById('studentsContainer').innerHTML = '<div class="empty-state"><p>No hay inscriptos en esta clase.</p></div>';
+      return;
+    }
+    document.getElementById('studentsContainer').innerHTML = `
+      <table class="data-table">
+        <thead><tr><th>Nombre</th><th>Email</th><th>Teléfono</th></tr></thead>
+        <tbody>${data.map(s => {
+          const u = s.users || s;
+          return `<tr>
+            <td><strong>${u.name || ''} ${u.surname || ''}</strong></td>
+            <td style="font-size:.82rem">${u.email || '—'}</td>
+            <td style="font-size:.82rem">${u.phone || '—'}</td>
+          </tr>`;
+        }).join('')}
+        </tbody>
+      </table>`;
+  } catch {
+    document.getElementById('studentsContainer').innerHTML = '<div class="empty-state"><p>No se pudo conectar.</p></div>';
+  }
+}
+
+function closeStudentsModal() {
+  document.getElementById('studentsModal').classList.remove('open');
 }
 
 async function assignProfessorToClass(classId) {

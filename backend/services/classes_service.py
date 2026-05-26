@@ -1,7 +1,7 @@
 from typing import Optional
 from fastapi import HTTPException
 from database import supabase
-from datetime import datetime
+from datetime import datetime, timezone
 
 from utils.class_validators import (
     validate_center_business_hours,
@@ -16,6 +16,56 @@ from utils.professor_validators import (
     validate_professor_weekly_hours,
     validate_professor_schedule_availability
 )
+
+
+def _parse_optional_datetime(value: Optional[str], field_name: str):
+    if not value:
+        return None
+
+    try:
+        return datetime.fromisoformat(value.replace('Z', '+00:00'))
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=f'{field_name} debe tener formato de fecha y hora valido.'
+        )
+
+
+def _parse_time_range(start_time: Optional[str], end_time: Optional[str]):
+    if bool(start_time) != bool(end_time):
+        raise HTTPException(
+            status_code=400,
+            detail='Debe enviar start_time y end_time para filtrar disponibilidad.'
+        )
+
+    start = _parse_optional_datetime(start_time, 'start_time')
+    end = _parse_optional_datetime(end_time, 'end_time')
+
+    if start and end:
+        if end <= start:
+            raise HTTPException(
+                status_code=400,
+                detail='La hora de finalizacion debe ser mayor a la hora de inicio.'
+            )
+
+        validate_center_business_hours(start, end)
+
+    return start, end
+
+
+def _to_utc(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _overlaps(existing_start, existing_end, start_time, end_time):
+    existing_start = _to_utc(datetime.fromisoformat(existing_start.replace('Z', '+00:00')))
+    existing_end = _to_utc(datetime.fromisoformat(existing_end.replace('Z', '+00:00')))
+    start_time = _to_utc(start_time)
+    end_time = _to_utc(end_time)
+
+    return start_time < existing_end and end_time > existing_start
 
 
 def create_class(data):
@@ -107,22 +157,30 @@ def list_active_classes():
 
         response = (
             supabase.table('classes')
-            .select(
-                '''
-                *,
-                rooms(
-                    id,
-                    name,
-                    capacity
-                )
-                '''
-            )
-            .eq('status', 'PROGRAMADA')  # FIX: era 'activa', no existe en el CHECK
+            .select('*, rooms(id, name, capacity)')
+            .eq('status', 'PROGRAMADA')
             .order('start_time', desc=False)
             .execute()
         )
 
-        return response.data
+        classes = response.data or []
+
+        professor_ids = list({c['professor_id'] for c in classes if c.get('professor_id')})
+        professors_by_id = {}
+        if professor_ids:
+            prof_res = (
+                supabase.table('users')
+                .select('id, name, surname')
+                .in_('id', professor_ids)
+                .execute()
+            )
+            professors_by_id = {p['id']: p for p in (prof_res.data or [])}
+
+        for c in classes:
+            prof = professors_by_id.get(c.get('professor_id'))
+            c['professor_name'] = f"{prof['name']} {prof['surname']}" if prof else None
+
+        return classes
 
     except Exception as e:
         raise HTTPException(
@@ -131,19 +189,44 @@ def list_active_classes():
         )
 
 
-def list_rooms():
+def list_rooms(start_time: Optional[str] = None, end_time: Optional[str] = None):
 
     try:
+        start, end = _parse_time_range(start_time, end_time)
 
         response = (
             supabase.table('rooms')
             .select('id, name, capacity, status')
+            .eq('status', 'DISPONIBLE')
             .order('name', desc=False)
             .execute()
         )
 
-        return response.data
+        rooms = response.data or []
+        if not start:
+            return rooms
 
+        classes_response = (
+            supabase.table('classes')
+            .select('room_id, start_time, end_time')
+            .neq('status', 'CANCELADA')
+            .execute()
+        )
+
+        occupied_room_ids = {
+            c['room_id']
+            for c in (classes_response.data or [])
+            if c.get('room_id') and _overlaps(c['start_time'], c['end_time'], start, end)
+        }
+
+        return [
+            room
+            for room in rooms
+            if room['id'] not in occupied_room_ids
+        ]
+
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=500,
@@ -151,9 +234,14 @@ def list_rooms():
         )
 
 
-def list_professors():
+def list_professors(
+    start_time: Optional[str] = None,
+    end_time: Optional[str] = None,
+    exclude_class_id: Optional[str] = None
+):
 
     try:
+        start, end = _parse_time_range(start_time, end_time)
 
         response = (
             supabase.table('users')
@@ -164,12 +252,69 @@ def list_professors():
             .execute()
         )
 
-        return response.data
+        professors = response.data or []
+        if not start:
+            return professors
 
+        available = []
+        for professor in professors:
+            try:
+                validate_professor_weekly_hours(
+                    professor['id'],
+                    start,
+                    end,
+                    exclude_class_id=exclude_class_id
+                )
+                validate_professor_schedule_availability(
+                    professor['id'],
+                    start,
+                    end,
+                    exclude_class_id=exclude_class_id
+                )
+                available.append(professor)
+            except HTTPException:
+                continue
+
+        return available
+
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=500,
             detail=f'Error al obtener los profesores: {str(e)}'
+        )
+
+
+def list_available_professors_for_class(class_id: str):
+    try:
+        class_response = (
+            supabase.table('classes')
+            .select('id, start_time, end_time')
+            .eq('id', class_id)
+            .single()
+            .execute()
+        )
+
+        if not class_response.data:
+            raise HTTPException(
+                status_code=404,
+                detail='La clase seleccionada no existe.'
+            )
+
+        clase = class_response.data
+        return list_professors(
+            clase['start_time'],
+            clase['end_time'],
+            exclude_class_id=class_id
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f'Error al obtener profesores disponibles: {str(e)}'
         )
 
 
@@ -258,19 +403,52 @@ def assign_professor(class_id: str, data):
 
 def cancel_class(class_id: str):
     try:
-        class_response = supabase.table('classes').select('id, status').eq('id', class_id).single().execute()
+        class_response = (
+            supabase.table('classes')
+            .select('id, status')
+            .eq('id', class_id)
+            .single()
+            .execute()
+        )
         if not class_response.data:
             raise HTTPException(status_code=404, detail='La clase seleccionada no existe.')
         
         clase = class_response.data
         if clase['status'] == 'CANCELADA':
             raise HTTPException(status_code=400, detail='La clase ya se encuentra cancelada.')
-            
-        updated_class = supabase.table('classes').update({'status': 'CANCELADA'}).eq('id', class_id).execute()
+
+        updated_class = (
+            supabase.table('classes')
+            .update({'status': 'CANCELADA'})
+            .eq('id', class_id)
+            .select('id, status')
+            .execute()
+        )
+
+        updated_rows = updated_class.data or []
+        if not updated_rows:
+            raise HTTPException(
+                status_code=500,
+                detail='No se pudo cancelar la clase. Intente nuevamente.'
+            )
+
+        confirm_response = (
+            supabase.table('classes')
+            .select('id, status')
+            .eq('id', class_id)
+            .single()
+            .execute()
+        )
+
+        if not confirm_response.data or confirm_response.data.get('status') != 'CANCELADA':
+            raise HTTPException(
+                status_code=500,
+                detail='No se pudo cancelar la clase. Intente nuevamente.'
+            )
         
         return {
             'message': 'Clase cancelada exitosamente',
-            'data': updated_class.data[0]
+            'data': confirm_response.data
         }
     except HTTPException:
         raise
@@ -450,10 +628,6 @@ def evaluate_professor_request(class_id: str, request_id: str, data):
             
         # ACEPTADA
         clase = request_obj['classes']
-
-        if clase['status'] not in ('PROGRAMADA', 'EN CURSO'):
-            raise HTTPException(status_code=400, detail='La clase ya no está activa.')
-
         if clase['professor_id'] is not None:
             raise HTTPException(status_code=400, detail='La clase ya tiene un profesor asignado.')
             
@@ -463,11 +637,13 @@ def evaluate_professor_request(class_id: str, request_id: str, data):
         try:
             validate_professor_weekly_hours(request_obj['professor_id'], class_start, class_end)
         except HTTPException:
+            # Re-raise with specific message requested by HU
             raise HTTPException(status_code=400, detail='No se puede asignar el profesor porque supera el límite de 40 horas semanales')
             
         try:
             validate_professor_schedule_availability(request_obj['professor_id'], class_start, class_end)
         except HTTPException:
+            # Re-raise with specific message requested by HU
             raise HTTPException(status_code=400, detail='No se puede asignar el profesor por conflicto de horario')
             
         # All ok, update class and request

@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends
+from typing import Optional
+from fastapi import APIRouter, Depends, Query
 from services import classes_service
 from schemes.class_scheme import ClassCreate, AssignProfessor, UpdateCapacity, EvaluateRequest
 from utils.permissions import check_permission
@@ -26,16 +27,36 @@ def list_classes(
 
 @router.get('/rooms')
 def list_rooms(
+    start_time: Optional[str] = Query(None),
+    end_time: Optional[str] = Query(None),
     user=Depends(check_permission(['ADMINISTRATIVO']))
 ):
-    return classes_service.list_rooms()
+    return classes_service.list_rooms(start_time, end_time)
 
 
 @router.get('/professors')
 def list_professors(
+    start_time: Optional[str] = Query(None),
+    end_time: Optional[str] = Query(None),
+    exclude_class_id: Optional[str] = Query(None),
     user=Depends(check_permission(['ADMINISTRATIVO']))
 ):
-    return classes_service.list_professors()
+    return classes_service.list_professors(start_time, end_time, exclude_class_id)
+
+
+@router.get('/{class_id}/available-professors')
+def list_available_professors_for_class(
+    class_id: str,
+    user=Depends(check_permission(['ADMINISTRATIVO']))
+):
+    return classes_service.list_available_professors_for_class(class_id)
+
+
+@router.get('/available')
+def list_classes_available(
+    user=Depends(check_permission(['NO_ABONADO', 'ABONADO', 'RECEPCIONISTA']))
+):
+    return classes_service.list_active_classes()
 
 
 @router.get('/available-for-professor')

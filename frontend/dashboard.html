@@ -163,20 +163,22 @@
       <div class="section-card" id="adminClassForm" style="display:none">
         <h3><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Crear clase</h3>
         <div class="edit-row">
-          <div class="form-group"><label>Sala</label><select id="classRoom"></select></div>
-          <div class="form-group"><label>Tipo</label><select id="classType"><option value="GRUPAL">Grupal</option><option value="INDIVIDUAL">Individual</option><option value="FIJA">Fija</option></select></div>
-        </div>
-        <div class="edit-row">
-          <div class="form-group"><label>Actividad</label><select id="classActivity"><option value="TREN_SUPERIOR">Tren superior</option><option value="TREN_MEDIO">Tren medio</option><option value="TREN_INFERIOR">Tren inferior</option></select></div>
-          <div class="form-group"><label>Cupo</label><input type="number" id="classCapacity" min="1" placeholder="Ej: 15"/></div>
-        </div>
-        <div class="edit-row">
           <div class="form-group"><label>Fecha</label><input type="date" id="classDate"/></div>
           <div class="form-group"><label>Hora inicio</label><input type="time" id="classStartTime" min="08:00" max="20:00"/></div>
         </div>
         <div class="form-group"><label>Hora fin</label><input type="time" id="classEndTime" min="08:00" max="20:00"/></div>
-        <div class="form-group"><label>Profesor inicial (opcional)</label><select id="classProfessor"></select></div>
-        <button class="btn btn-sm" id="createClassBtn" onclick="createClassFromAdmin()">Crear clase</button>
+        <div id="classDetailsFields" style="display:none">
+          <div class="edit-row">
+            <div class="form-group"><label>Sala</label><select id="classRoom"></select></div>
+            <div class="form-group"><label>Tipo</label><select id="classType"><option value="GRUPAL">Grupal</option><option value="INDIVIDUAL">Individual</option><option value="FIJA">Fija</option></select></div>
+          </div>
+        <div class="edit-row">
+          <div class="form-group"><label>Actividad</label><select id="classActivity"><option value="TREN_SUPERIOR">Tren superior</option><option value="TREN_MEDIO">Tren medio</option><option value="TREN_INFERIOR">Tren inferior</option></select></div>
+          <div class="form-group"><label>Cupo</label><input type="number" id="classCapacity" min="1" placeholder="Ej: 15"/></div>
+        </div>
+          <div class="form-group"><label>Profesor inicial (opcional)</label><select id="classProfessor"></select></div>
+        </div>
+        <button class="btn btn-sm" id="createClassBtn" onclick="createClassFromAdmin()" disabled>Crear clase</button>
       </div>
       <div class="section-card" id="adminProfessorRequests" style="display:none">
         <h3><svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg> Solicitudes de profesores</h3>
@@ -421,6 +423,38 @@
   </div>
 </div>
 
+<!-- Modal: Modificar cupo -->
+<div class="modal-overlay" id="capacityModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Modificar cupo</h3>
+      <button class="modal-close" onclick="closeCapacityModal()">✕</button>
+    </div>
+    <div id="capacityAlert" class="alert"></div>
+    <p style="font-size:.88rem;color:var(--muted);margin-bottom:14px">Cupo actual: <strong id="currentCapacityText">—</strong></p>
+    <div class="form-group"><label>Nuevo cupo</label><input type="number" id="newCapacityInput" min="1" placeholder="Ej: 20"/></div>
+    <p style="font-size:.78rem;color:var(--muted);margin-top:8px">Si el nuevo cupo es menor a los inscriptos actuales, la clase se cancelará automáticamente.</p>
+    <div class="modal-actions">
+      <button class="btn btn-sm" onclick="confirmUpdateCapacity()">Guardar</button>
+      <button class="btn btn-sm btn-outline" onclick="closeCapacityModal()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Ver inscriptos -->
+<div class="modal-overlay" id="studentsModal">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-header">
+      <h3 id="studentsModalTitle">Inscriptos</h3>
+      <button class="modal-close" onclick="closeStudentsModal()">✕</button>
+    </div>
+    <div id="studentsContainer"><div class="empty-state"><p>Cargando...</p></div></div>
+    <div class="modal-actions">
+      <button class="btn btn-sm btn-outline" onclick="closeStudentsModal()">Cerrar</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal: Registrar usuario (admin/recep) -->
 <div class="modal-overlay" id="registerUserModal">
   <div class="modal" style="max-width:520px">
@@ -471,6 +505,6 @@
   </div>
 </div>
 
-<script src="dashboard.js"></script>
+<script src="dashboard.js?v=20260526-class-form-flow"></script>
 </body>
 </html>
