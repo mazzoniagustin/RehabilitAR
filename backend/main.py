@@ -4,6 +4,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from routes.payments import routerPayments
 
+from routes.auth import router as auth_router
+from routes.staff import routerStaff as staff_router
+from routes.user import routerUser as user_router
+from routes.classes import router as classes_router
+
 app = FastAPI(
     title="RehabilitAR API",
     version="1.0.0"
@@ -25,25 +30,21 @@ app.add_middleware(
 )
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 app.mount(
     "/frontend",
     StaticFiles(directory=os.path.join(BASE_DIR, "frontend"), html=True),
     name="frontend"
 )
 
-from routes.auth import router as auth_router
-from routes.staff import routerStaff as staff_router
-from routes.user import routerUser as user_router
-
 app.include_router(auth_router)
 app.include_router(staff_router)
 app.include_router(user_router)
+app.include_router(classes_router)
+app.include_router(routerPayments)
 
 @app.get("/")
 def health_check():
     return {"status": "ok", "message": "RehabilitAR API corriendo"}
 
-app.include_router(auth_router)
-app.include_router(user_router)
-app.include_router(staff_router)
-app.include_router(routerPayments)
+

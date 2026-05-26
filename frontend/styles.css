@@ -233,6 +233,7 @@ input::placeholder { color:var(--muted) }
 /* Action buttons en tabla */
 .action-btn { padding:5px 10px; border-radius:7px; border:1.5px solid var(--border); background:none; font-size:.78rem; font-weight:500; color:var(--teal-dark); cursor:pointer; transition:all .15s }
 .action-btn:hover { background:var(--teal-glow); border-color:var(--teal) }
+.action-btn:disabled { opacity:.55; cursor:not-allowed; background:var(--bg); border-color:var(--border) }
 .action-btn.danger { color:var(--danger); border-color:#FECACA }
 .action-btn.danger:hover { background:#FEF2F2 }
 .action-btn.success { color:var(--success); border-color:#A7F3D0 }

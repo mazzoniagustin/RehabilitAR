@@ -315,3 +315,4 @@ def view_certificate(user_id):
     
     except Exception as e:
         raise HTTPException(status_code=400, detail=f'Error al obtener el certificado. {e}')
+
