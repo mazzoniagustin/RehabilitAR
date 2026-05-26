@@ -25,9 +25,10 @@ def register_user(data):
             'email': data.email,
             'dni': data.dni,
             'rol': 'NO_ABONADO',
-            'physical_certificate': 'Pendiente',
+            'physical_certificate': 'PENDIENTE',
             'account_status': 'ACTIVA',
-            'failed_attempts': 0                
+            'failed_attempts': 0,
+            'birth_date': data.birth_date.isoformat()          
         }).execute()
         
         return {"Mensaje": "Usuario registrado exitosamente. Queda pendiente de verificación del apto físico."}
@@ -53,9 +54,6 @@ def login_user(email,password):
         
         if not current_status.data:
             raise HTTPException(status_code=404, detail='Usuario no encontrado.')
-
-        if current_status.data['account_status'] == 'SUSPENDIDO':
-            raise HTTPException(status_code=403, detail='Cuenta suspendida. Contacte al administrador.')
 
         supabase.table('users').update({'failed_attempts': 0}).eq('id', user_id).execute() 
         return {'Mensaje': 'Usuario autenticado exitosamente', 'Token': response.session.access_token}
@@ -88,6 +86,15 @@ def recover_password(email):
     
     except Exception as e:
         raise HTTPException(status_code=400, detail=f'Error al enviar el correo de recuperación: {str(e)}')
+
+def reset_password(token, password):
+    try:
+        user_response = supabase.auth.get_user(token)
+        user_id = user_response.user.id
+        supabase.auth.admin.update_user_by_id(user_id, {'password': password})
+        return {'Mensaje': 'Contraseña actualizada exitosamente.'}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f'Error al actualizar la contraseña: {str(e)}')
 
 
 def log_out():

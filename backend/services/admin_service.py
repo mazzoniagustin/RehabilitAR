@@ -1,5 +1,5 @@
 from fastapi import HTTPException
-from backend.utils.notifications import send_account_created_email
+from utils.notifications import send_account_created_email
 from utils.password_utils import random_password
 from utils.permissions import check_user_existance
 from database import supabase
@@ -7,18 +7,20 @@ from database import supabase
 
 def register_user_by_staff(data):
     try:
-        check_user_existance(data.email)
-        password = random_password()
+        check_user_existance(data.email) 
+        
+        password = random_password()   
         auth_response = supabase.auth.admin.create_user({
             'email': data.email, 
             'password': password
         })
             
             
-        if not auth_response.user:
+        if not auth_response:
             raise HTTPException(status_code=400, detail='Error en el registro del usuario.')
 
         user_id = auth_response.user.id
+        supabase.auth.admin.update_user_by_id(user_id, {'email_confirm': True})
         
         supabase.table('users').insert({
             'id': user_id,
@@ -29,6 +31,7 @@ def register_user_by_staff(data):
             'rol': 'NO_ABONADO',
             'physical_certificate': 'PENDIENTE',
             'account_status': 'ACTIVA',
+            'birth_date': data.birth_date.isoformat(),
             'failed_attempts': 0                
         }).execute()
         
@@ -38,7 +41,7 @@ def register_user_by_staff(data):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f'Error en el registro del usuario.') 
+        raise HTTPException(status_code=400, detail=f'Error en el registro del usuario. {str(e)}') 
         
 def register_employee_by_admin(data):
     try:
@@ -56,7 +59,9 @@ def register_employee_by_admin(data):
 
         if not response:
             raise HTTPException(status_code=400, detail='Error en el registro del empleado.')
+
         user_id = response.user.id
+        supabase.auth.admin.update_user_by_id(user_id, {'email_confirm': True})
         
         supabase.table('users').insert({
             'id': user_id,
@@ -67,9 +72,11 @@ def register_employee_by_admin(data):
             'rol': data.rol,
             'account_status': 'ACTIVA',
             'specialty': data.specialty,
-            'failed_attempts': 0
+            'failed_attempts': 0,
+            'birth_date': data.birth_date.isoformat()
         }).execute()
 
+        send_account_created_email(data.email, data.name, password)
         return {"Mensaje": "Empleado registrado exitosamente."}
     
     except HTTPException:
@@ -208,16 +215,16 @@ def block_user(user_id, reason, acted_by):
     except HTTPException:
         raise
     except Exception as e:
-        print(f"ERROR REAL: {str(e)}")
-        raise HTTPException(status_code=400, detail=f'Error al suspender el usuario.')
+        raise HTTPException(status_code=400, detail=f'Error al suspender el usuario. {e}')
      
     
 def get_pending_certificates():
     try:
         response = (
         supabase.table('users').select
-        ('id, name, surname, email, dni')
+        ('id, name, surname, email, dni,physical_certificate, physical_certificate_url')
         .eq('physical_certificate', 'PENDIENTE')
+        .not_.is_('physical_certificate_url', None)
         .execute()
         )
         return response.data
@@ -286,7 +293,7 @@ def unblock_user(user_id, acted_by):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f'Error al desbloquear el usuario.')
+        raise HTTPException(status_code=400, detail=f'Error al desbloquear el usuario. {e}')
 
 def view_certificate(user_id):
     try:
@@ -302,9 +309,9 @@ def view_certificate(user_id):
         
         path = response.data.get('physical_certificate_url')
         
-        url = supabase.storage.from_('certificates').create_signed_url(path, 300)   
+        url = supabase.storage.from_('physical_certificates').create_signed_url(path, 300)   
         
         return {'url': url['signedURL']}
     
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f'Error al obtener el certificado.')
+        raise HTTPException(status_code=400, detail=f'Error al obtener el certificado. {e}')
