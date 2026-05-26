@@ -450,6 +450,10 @@ def evaluate_professor_request(class_id: str, request_id: str, data):
             
         # ACEPTADA
         clase = request_obj['classes']
+
+        if clase['status'] not in ('PROGRAMADA', 'EN CURSO'):
+            raise HTTPException(status_code=400, detail='La clase ya no está activa.')
+
         if clase['professor_id'] is not None:
             raise HTTPException(status_code=400, detail='La clase ya tiene un profesor asignado.')
             
@@ -459,13 +463,11 @@ def evaluate_professor_request(class_id: str, request_id: str, data):
         try:
             validate_professor_weekly_hours(request_obj['professor_id'], class_start, class_end)
         except HTTPException:
-            # Re-raise with specific message requested by HU
             raise HTTPException(status_code=400, detail='No se puede asignar el profesor porque supera el límite de 40 horas semanales')
             
         try:
             validate_professor_schedule_availability(request_obj['professor_id'], class_start, class_end)
         except HTTPException:
-            # Re-raise with specific message requested by HU
             raise HTTPException(status_code=400, detail='No se puede asignar el profesor por conflicto de horario')
             
         # All ok, update class and request
