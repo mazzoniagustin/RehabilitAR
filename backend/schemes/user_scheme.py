@@ -1,3 +1,5 @@
+from sqlite3 import Date
+
 from pydantic import BaseModel, EmailStr, Field
 from typing import Literal, Optional
 
@@ -9,6 +11,7 @@ class UserRegister(BaseModel):
     surname: str
     email: EmailStr
     dni: str
+    birth_date: Date
     password: str = Field(min_length=6)
 
 class UserLogin(BaseModel):
@@ -21,6 +24,7 @@ class UserRegisterByStaff(BaseModel):
     surname: str
     email: EmailStr
     dni: str
+    birth_date: Date
 
 
 class AproveCertificate(BaseModel):
@@ -35,6 +39,7 @@ class EmployeeRegisterByAdmin(BaseModel):
     surname: str
     email: EmailStr
     dni: str
+    birth_date: Date
     rol: Literal['ADMINISTRATIVO', 'RECEPCIONISTA', 'PROFESOR']
     specialty: Optional[str] = None  # Solo obligatorio para RECEPCIONISTA y PROFESOR
 
@@ -44,6 +49,10 @@ class RecoverPassword(BaseModel):
 class ChangePassword(BaseModel):
     new_password: str = Field(min_length=6)
     confirm_new_password: str = Field(min_length=6)
+
+class ResetPassword(BaseModel):
+    token: str
+    password: str = Field(min_length=6)
 
 class LogOut(BaseModel):
     user_id: str
@@ -59,6 +68,7 @@ class UserBaseResponse(BaseModel):
     dni: str
     phone: Optional[str] = None
     rol: str
+    birth_date: Date
     age: Optional[int] = None
     gender: Optional[str] = None
     account_status: str
@@ -82,6 +92,7 @@ class UserUpdate(BaseModel):
 class UserResponseByAdmin(BaseModel):
     name: str
     surname: str
+    birth_date: Date
     email: EmailStr
     dni: str
     rol: str
