@@ -3,6 +3,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import jwt, JWTError
 from database import supabase
 import os
+from datetime import date, datetime
 
 security = HTTPBearer()
 SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET")
@@ -61,3 +62,10 @@ def check_user_existance(email: str):
     exist_mail = supabase.table('users').select('email').eq('email', email).execute()
     if exist_mail.data:
         raise HTTPException(status_code=400, detail='El correo electrónico ya está en uso.')
+    
+def is_adult(birth_date):
+
+    today = date.today()
+    age = today.year - birth_date.year - ((today.month, today.day) < (birth_date.month, birth_date.day))
+    
+    return age >= 18
