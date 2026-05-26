@@ -101,6 +101,7 @@ const ICONS = {
   file:     '<path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/>',
   bell:   '<path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/>',
   users2: '<path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/>',
+  crown: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 7l5 5 5-8 5 8 5-5-3 13H5L2 7z"/></svg>`
 };
 
 const NAV_CONFIG = {
@@ -112,6 +113,7 @@ const NAV_CONFIG = {
     { label:'Mis reservas',    panel:'Reservas',  icon:'gift' },
     { label: 'Solicitar reactivación', panel:'Reactivacion', icon:'bell' },
     { label:'Seguridad',       panel:'Seguridad', icon:'lock' },
+    { label:'Mensualidad', panel:'Mensualidad', icon:'crown' },
   ],
   ABONADO: [
     { label:'Inicio',          panel:'Inicio',    icon:'grid' },
@@ -121,6 +123,7 @@ const NAV_CONFIG = {
     { label:'Mis reservas',    panel:'Reservas',  icon:'gift' },
     { label: 'Solicitar reactivación', panel:'Reactivacion', icon:'bell' },
     { label:'Seguridad',       panel:'Seguridad', icon:'lock' },
+    { label:'Mensualidad', panel:'Mensualidad', icon:'crown' },
   ],
   ADMINISTRATIVO: [
     { label:'Inicio',             panel:'Inicio',        icon:'grid' },
@@ -1139,6 +1142,26 @@ async function handleChangePassword() {
 }
 
 
+// Mensualidad
+async function paySubscription() {
+  const res = await fetch(`${API}/payments/subscription`, {
+    method: 'POST',
+    headers: authH()
+  });
+
+  const data = await res.json();
+
+  if (!res.ok) {
+    return showAlert('mensualidadAlert', data.detail || 'Error al generar pago.');
+  }
+
+  document.getElementById('paymentQrImage').src = data.qr_url;
+  document.getElementById('paymentQrModal').classList.add('open');
+}
+
+function closePaymentQrModal() {
+  document.getElementById('paymentQrModal').classList.remove('open');
+}
 // LOGOUT
 
 async function handleLogout() {

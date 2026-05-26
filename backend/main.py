@@ -2,6 +2,7 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from routes.payments import routerPayments
 
 app = FastAPI(
     title="RehabilitAR API",
@@ -41,3 +42,8 @@ app.include_router(user_router)
 @app.get("/")
 def health_check():
     return {"status": "ok", "message": "RehabilitAR API corriendo"}
+
+app.include_router(auth_router)
+app.include_router(user_router)
+app.include_router(staff_router)
+app.include_router(routerPayments)

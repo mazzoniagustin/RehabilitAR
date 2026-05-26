@@ -139,6 +139,50 @@ input::placeholder { color:var(--muted) }
   margin-bottom: 20px;
 }
 
+/* Benefits */
+.benefit-icon{
+  width:48px;
+  height:48px;
+  min-width:48px;
+
+  display:flex;
+  align-items:center;
+  justify-content:center;
+
+  border-radius:14px;
+  background:#e6f5f3;
+
+  margin-right:14px;
+}
+
+.benefit-icon svg{
+  width:24px;
+  height:24px;
+
+  stroke:#0f766e;
+  stroke-width:2;
+  fill:none;
+}
+
+.field-row{
+  display:flex;
+  align-items:flex-start;
+  gap:12px;
+
+  margin-bottom:18px;
+}
+
+.field-label{
+  display:block;
+  font-weight:600;
+  margin-bottom:4px;
+}
+
+.field-value{
+  display:block;
+  color:#6b7280;
+  font-size:.95rem;
+}
 /* Stats */
 .stats-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:14px; margin-bottom:24px }
 .stat-card { background:var(--surface); border:1.5px solid var(--border); border-radius:14px; padding:18px 20px; display:flex; align-items:center; gap:14px }

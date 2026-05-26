@@ -318,6 +318,69 @@
   </div>
 </div>
 
+<!--PANEL: Mensualidad (clientes)-->
+<div class="panel" id="panelMensualidad">
+  <div class="page-header">
+    <div class="page-header-left">
+      <h2>Mensualidad</h2>
+      <p>Conviertete en cliente abonado y disfruta de beneficios exclusivos</p>
+    </div>
+  </div>
+  <div id="mensualidadAlert" class="alert"></div>
+
+  <div class="section-card" style="max-width:1000px">
+    <h3>
+      Beneficios de ser cliente abonado
+    </h3>
+    <div class="field-row">
+      <div class="benefit-icon">
+      <svg viewBox="0 0 24 24"><path d="M12 1v22"/><path d="M17 5H9.5a3.5 3.5 0 000 7H14a3.5 3.5 0 010 7H6"/></svg>
+      </div>
+      <span class="field-label">Descuentos exclusivos</span>
+      <span class="field-value">Accedé a descuentos especiales en clases y servicios.</span>
+    </div>
+
+    <div class="field-row">
+       <div class="benefit-icon">
+        <svg viewBox="0 0 24 24">
+          <path d="M8 2v4"/>
+          <path d="M16 2v4"/>
+          <rect x="3" y="6" width="18" height="15" rx="2"/>
+          <path d="M3 10h18"/>
+          <path d="M8 14h.01"/>
+          <path d="M12 14h.01"/>
+          <path d="M16 14h.01"/>
+        </svg>
+      </div>
+      <span class="field-label">Prioridad en reservas</span>
+      <span class="field-value">Tenés prioridad para reservar tus horarios favoritos.</span>
+    </div>
+
+    <div class="field-row">
+      <div class="benefit-icon">
+        <svg viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="9"/>
+          <path d="M12 7v5l3 3"/>
+        </svg>
+      </div>
+      <span class="field-label">Cancelaciones flexibles</span>
+      <span class="field-value">Más flexibilidad para reprogramar o cancelar tus clases.</span>
+    </div>
+
+    <div class="field-row">
+      <div class="benefit-icon">
+        <svg viewBox="0 0 24 24">
+          <path d="M12 17.27L18.18 21 16.54 14 22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24 7.46 14 5.82 21z"/>
+        </svg>
+      </div>
+      <span class="field-label">Sistema de creditos</span>
+      <span class="field-value">Un sistema que permite recuperar hasta 3 clases.</span>
+    </div>
+
+    <button class="btn" onclick="paySubscription()">Pagar mensualidad</button>
+    
+  </div>
+</div>
 </main>
 </div>
 
@@ -454,7 +517,24 @@
     </div>
   </div>
 </div>
+<div class="modal-overlay" id="paymentQrModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Pagar mensualidad</h3>
+      <button class="modal-close" onclick="closePaymentQrModal()">✕</button>
+    </div>
 
+    <p>
+      Escaneá el QR con Mercado Pago para abonar la mensualidad.
+    </p>
+
+    <img
+      id="paymentQrImage"
+      style="width:260px;margin:20px auto;display:block"
+    >
+  </div>
+</div>
 <script src="dashboard.js"></script>
+
 </body>
 </html>
