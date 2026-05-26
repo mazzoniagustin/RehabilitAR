@@ -24,11 +24,11 @@ def register_user(data):
             'surname': data.surname,
             'email': data.email,
             'dni': data.dni,
-            'phone': data.phone,
             'rol': 'NO_ABONADO',
-            'physical_certificate': 'Pendiente',
+            'physical_certificate': 'PENDIENTE',
             'account_status': 'ACTIVA',
-            'failed_attempts': 0                
+            'failed_attempts': 0,
+            'birth_date': data.birth_date.isoformat()          
         }).execute()
         
         return {"Mensaje": "Usuario registrado exitosamente. Queda pendiente de verificación del apto físico."}
@@ -55,9 +55,6 @@ def login_user(email,password):
         if not current_status.data:
             raise HTTPException(status_code=404, detail='Usuario no encontrado.')
 
-        if current_status.data['account_status'] == 'SUSPENDIDO':
-            raise HTTPException(status_code=403, detail='Cuenta suspendida. Contacte al administrador.')
-
         supabase.table('users').update({'failed_attempts': 0}).eq('id', user_id).execute() 
         return {'Mensaje': 'Usuario autenticado exitosamente', 'Token': response.session.access_token}
     
@@ -80,34 +77,25 @@ def login_user(email,password):
 
 def recover_password(email):
     try:
-        supabase.auth.reset_password_for_email(email)
+        supabase.auth.reset_password_for_email(
+            email,
+            {
+                'redirect_to': 'http://localhost:8000/frontend/reset-password.html'
+            })
         return {'Mensaje': 'Correo de recuperación de contraseña enviado exitosamente.'}
     
     except Exception as e:
         raise HTTPException(status_code=400, detail=f'Error al enviar el correo de recuperación: {str(e)}')
 
-
-"""def change_password(data): Esta función va en user_service.py. Se deja como referencia de cómo se implementa el cambio de contraseña con Supabase.
+def reset_password(token, password):
     try:
-        if data.new_password != data.confirm_new_password:
-            raise HTTPException(status_code=400, detail='Las contraseñas no coinciden.')
-        
-        response = supabase.auth.update_user({
-            'password': data.new_password
-        })
-        if not response.user:
-            raise HTTPException(status_code=404, detail='Usuario no encontrado.')
-        
-        supabase.table('users').update({'failed_attempts': 0}).eq('id', response.user.id).execute()
-
+        user_response = supabase.auth.get_user(token)
+        user_id = user_response.user.id
+        supabase.auth.admin.update_user_by_id(user_id, {'password': password})
         return {'Mensaje': 'Contraseña actualizada exitosamente.'}
-
-    except HTTPException:
-        raise
-        
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f'Error al cambiar la contraseña')
-"""
+        raise HTTPException(status_code=400, detail=f'Error al actualizar la contraseña: {str(e)}')
+
 
 def log_out():
     try:
