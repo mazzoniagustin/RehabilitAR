@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Depends
-from services import class_cancellation, reservation_cancellation, subscription_cancellation
-from schemes.cancellation_scheme import CancelClass, CancelReservation, CancelSubscription
+from services.cancellations import classes_cancellation_service as class_cancellation
+from services.cancellations import reservation_cancellation_service as reservation_cancellation
+from services.cancellations import subscription_cancellation_service as subscription_cancellation
+from schemes.cancellations_scheme import CancelClass, CancelReservation, CancelSubscription
 from utils.permissions import check_permission
 
 router = APIRouter(
