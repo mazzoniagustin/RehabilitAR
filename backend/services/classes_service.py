@@ -151,7 +151,7 @@ def create_class(data):
         )
 
 
-def list_active_classes():
+def list_active_classes(user_id: str = None):
 
     try:
 
@@ -165,10 +165,22 @@ def list_active_classes():
 
         classes = response.data or []
 
-        # Filtrar clases con cupo disponible para evitar mostrar el botón "Reservar"
-        # en clases llenas. Si en el futuro se agrega lista de espera para INDIVIDUAL,
-        # reemplazar este filtro por una propiedad 'is_full' en cada clase y manejarlo en el front.
-        classes = [c for c in classes if c['current_capacity'] < c['max_capacity']]
+        # Los filtros de cupo y reservas solo aplican para clientes (user_id presente).
+        # Profesores ven todas las clases programadas sin importar cupo.
+        if user_id:
+            # Ocultar clases llenas
+            classes = [c for c in classes if c['current_capacity'] < c['max_capacity']]
+
+            # Ocultar clases que el usuario ya reservó (cualquier status excepto CANCELADA)
+            reservations_res = (
+                supabase.table('reservations')
+                .select('class_id')
+                .eq('user_id', str(user_id))
+                .neq('status', 'CANCELADA')
+                .execute()
+            )
+            reserved_class_ids = {r['class_id'] for r in (reservations_res.data or [])}
+            classes = [c for c in classes if c['id'] not in reserved_class_ids]
 
         professor_ids = list({c['professor_id'] for c in classes if c.get('professor_id')})
         professors_by_id = {}

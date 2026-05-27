@@ -23,41 +23,38 @@ def reservar_clase_fija(user_id: str, class_id: str):
         if user['account_status'] != 'ACTIVA':
             raise HTTPException(status_code=403, detail='Reserva fallida, no se encuentra habilitado para tomar la clase.')
 
-        # Verificar que no tenga ya una reserva confirmada para esta clase
+        # Verificar reserva existente sin filtrar por status, para cubrir cualquier estado previo
         existing = (
             supabase.table('reservations')
-            .select('id')
+            .select('id, status')
             .eq('user_id', user_id)
             .eq('class_id', class_id)
-            .eq('status', 'CONFIRMADA')
+            .neq('status', 'CANCELADA')
             .execute()
         )
         if existing.data:
-            raise HTTPException(status_code=400, detail='Ya tenés una reserva confirmada para esta clase.')
+            raise HTTPException(status_code=400, detail='Ya tenés una reserva para esta clase.')
 
         prioridad = 'ABONADO' if user['rol'] == 'ABONADO' else 'NO_ABONADO'
 
         if clase['current_capacity'] < clase['max_capacity']:
-            # Incrementar con condición en el WHERE para evitar race conditions
-            update_response = (
-                supabase.table('classes')
-                .update({'current_capacity': clase['current_capacity'] + 1})
-                .eq('id', class_id)
-                .eq('current_capacity', clase['current_capacity'])  # condición anti-race
-                .lt('current_capacity', clase['max_capacity'])
-                .select()  # necesario para que Supabase devuelva las filas afectadas
-                .execute()
-            )
+            # ORDEN CORRECTO: primero INSERT la reserva, luego actualizar el cupo.
+            # Así si el INSERT falla (ej: duplicate key), el cupo nunca se toca.
+            try:
+                supabase.table('reservations').insert({
+                    'user_id': user_id,
+                    'class_id': class_id,
+                    'status': 'CONFIRMADA'
+                }).execute()
+            except Exception as insert_err:
+                if '23505' in str(insert_err) or 'unique_user_class' in str(insert_err):
+                    raise HTTPException(status_code=400, detail='Ya tenés una reserva para esta clase.')
+                raise
 
-            if not update_response.data:
-                # La clase se llenó entre el check y el update — ir a waitlist
-                return _agregar_a_waitlist(user_id, class_id, prioridad)
+            supabase.table('classes').update({
+                'current_capacity': clase['current_capacity'] + 1
+            }).eq('id', class_id).execute()
 
-            supabase.table('reservations').insert({
-                'user_id': user_id,
-                'class_id': class_id,
-                'status': 'CONFIRMADA'
-            }).execute()
             return {'message': 'Inscripción exitosa.'}
 
         # Clase llena: agregar a la lista de espera con prioridad FIFO por tipo

@@ -57,7 +57,7 @@ def list_available_professors_for_class(
 def list_classes_available(
     user=Depends(check_permission(['NO_ABONADO', 'ABONADO', 'RECEPCIONISTA']))
 ):
-    return classes_service.list_active_classes()
+    return classes_service.list_active_classes(user_id=user['id'])
 
 
 @router.get('/available-for-professor')
@@ -95,10 +95,10 @@ def cancel_class(
     class_id: str,
     user=Depends(check_permission(['ADMINISTRATIVO']))
 ):
-    # FIX: delegamos al servicio completo para que cancele reservas y otorgue créditos
     return classes_cancellation_service.cancelar_clase(
         class_id,
-        cancel_reason='Cancelación manual desde el panel administrativo.'
+        cancel_reason='Cancelación manual desde el panel administrativo.',
+        user_id=str(user['id'])
     )
 
 

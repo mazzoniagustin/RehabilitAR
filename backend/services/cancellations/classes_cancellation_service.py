@@ -5,17 +5,20 @@ from services.classes_service import cancel_class
 from utils import benefits
 
 
-def _registrar_cancelacion(class_id: str, cancel_reason: str, tipo: str):
+def _registrar_cancelacion(class_id: str, cancel_reason: str, tipo: str, user_id: str = None):
     """
     Registra el motivo de cancelación en la tabla 'cancellations',
     que es el lugar correcto en el schema (la tabla classes no tiene
     columna cancellation_reason).
     """
-    supabase.table('cancellations').insert({
+    row = {
         'class_id': class_id,
         'reason': cancel_reason,
         'type': tipo,
-    }).execute()
+    }
+    if user_id:
+        row['user_id'] = user_id
+    supabase.table('cancellations').insert(row).execute()
 
 
 def _cancelar_reservas_de_clase(class_id: str):
@@ -41,7 +44,7 @@ def _cancelar_reservas_de_clase(class_id: str):
             pass
 
 
-def cancelar_clase(class_id: str, cancel_reason: str):
+def cancelar_clase(class_id: str, cancel_reason: str, user_id: str = None):
     try:
         if not cancel_reason or not cancel_reason.strip():
             raise HTTPException(status_code=400, detail='La razón de cancelación es obligatoria.')
@@ -50,7 +53,7 @@ def cancelar_clase(class_id: str, cancel_reason: str):
         cancel_class(class_id)
 
         # Registrar motivo en tabla cancellations (no en classes, que no tiene esa columna)
-        _registrar_cancelacion(class_id, cancel_reason.strip(), tipo='MANUAL')
+        _registrar_cancelacion(class_id, cancel_reason.strip(), tipo='MANUAL', user_id=user_id)
 
         # Cancelar reservas y aplicar beneficios
         _cancelar_reservas_de_clase(class_id)
