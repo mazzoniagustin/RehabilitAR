@@ -8,6 +8,8 @@ def reservar_clase_individual(user_id: str, class_id: str, payment_percentage: i
         if not clase.data:
             raise HTTPException(status_code=404, detail='Clase no encontrada.')
         clase = clase.data[0]
+        if clase['is_scheduled']:
+            raise HTTPException(status_code=400, detail='Esta clase es fija y no puede reservarse de esta manera.')
         user = supabase.table('users').select('*').eq('id', user_id).execute()
         if not user.data:
             raise HTTPException(status_code=404, detail='Usuario no encontrado.')
