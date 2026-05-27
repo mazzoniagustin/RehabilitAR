@@ -1,9 +1,12 @@
 from database import supabase
 from fastapi import HTTPException
-#from services.mercadoPago_service import pagar_Reserva #pendiente_de_implementar
+#from services.mercadoPago_service import pagar_Reserva  # pendiente de implementar
 
 def reservar_clase_individual(user_id: str, class_id: str, payment_percentage: int):
     try:
+        if payment_percentage not in (50, 100):
+            raise HTTPException(status_code=400, detail='El porcentaje de pago debe ser 50 o 100.')
+
         clase = supabase.table('classes').select('*').eq('id', class_id).single().execute()
         if not clase.data:
             raise HTTPException(status_code=404, detail='Clase no encontrada.')
@@ -20,7 +23,6 @@ def reservar_clase_individual(user_id: str, class_id: str, payment_percentage: i
         if user['account_status'] != 'ACTIVA':
             raise HTTPException(status_code=403, detail='Reserva fallida, no se encuentra habilitado para tomar la clase.')
 
-        # Verificar que no tenga ya una reserva confirmada para esta clase
         existing = (
             supabase.table('reservations')
             .select('id')
@@ -35,35 +37,33 @@ def reservar_clase_individual(user_id: str, class_id: str, payment_percentage: i
         if clase['current_capacity'] >= clase['max_capacity']:
             raise HTTPException(status_code=400, detail='Reserva fallida debido a que la clase ya se encuentra llena.')
 
-        # Incrementar capacidad con condición en el WHERE para evitar race conditions:
-        # si dos requests llegan al mismo tiempo, solo uno logrará hacer el update
-        # porque el segundo encontrará current_capacity ya igual a max_capacity.
         update_response = (
             supabase.table('classes')
             .update({'current_capacity': clase['current_capacity'] + 1})
             .eq('id', class_id)
-            .eq('current_capacity', clase['current_capacity'])  # condición anti-race
+            .eq('current_capacity', clase['current_capacity'])
             .lt('current_capacity', clase['max_capacity'])
             .execute()
         )
-
         if not update_response.data:
             raise HTTPException(status_code=400, detail='Reserva fallida debido a que la clase ya se encuentra llena.')
 
-        # precio pendiente de implementar junto al modulo de pagos
-        # total = clase['price']
-        # amount_paid = total * (payment_percentage / 100)
-        #pagar_Reserva = supabase.table('payments').insert({
-        #    'user_id': user_id,
-        #    'amount': amount_paid,
-        #    'status': 'PENDIENTE'
-        #}).execute()
+        # FIX: asignar payment_status según porcentaje abonado
+        # Con integración MercadoPago: 100% → 'PAGADO', 50% → 'SENADO_50'
+        # Sin integración activa, ambos quedan en pendiente pero diferenciados
+        payment_status = 'SENADO_50' if payment_percentage == 50 else 'PENDIENTE'
 
         supabase.table('reservations').insert({
             'user_id': user_id,
             'class_id': class_id,
-            'status': 'CONFIRMADA'
+            'status': 'CONFIRMADA',
+            'payment_status': payment_status,
         }).execute()
+
+        # FIX: actualizar contador histórico de reservas
+        supabase.table('users').update({
+            'total_reservations_count': user['total_reservations_count'] + 1
+        }).eq('id', user_id).execute()
 
         if payment_percentage == 50:
             return {'message': 'Inscripción exitosa. Debe pagar el 50% restante antes de la clase.'}

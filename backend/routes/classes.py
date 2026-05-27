@@ -1,6 +1,7 @@
 from typing import Optional
 from fastapi import APIRouter, Depends, Query
 from services import classes_service
+from services.cancellations import classes_cancellation_service
 from schemes.class_scheme import ClassCreate, AssignProfessor, UpdateCapacity, EvaluateRequest
 from utils.permissions import check_permission
 
@@ -88,12 +89,18 @@ def assign_professor(
 ):
     return classes_service.assign_professor(class_id, data)
 
+
 @router.patch('/{class_id}/cancel')
 def cancel_class(
     class_id: str,
     user=Depends(check_permission(['ADMINISTRATIVO']))
 ):
-    return classes_service.cancel_class(class_id)
+    # FIX: delegamos al servicio completo para que cancele reservas y otorgue créditos
+    return classes_cancellation_service.cancelar_clase(
+        class_id,
+        cancel_reason='Cancelación manual desde el panel administrativo.'
+    )
+
 
 @router.patch('/{class_id}/capacity')
 def update_capacity(
@@ -103,12 +110,14 @@ def update_capacity(
 ):
     return classes_service.update_capacity(class_id, data.new_capacity)
 
+
 @router.post('/{class_id}/request')
 def create_professor_request(
     class_id: str,
     user=Depends(check_permission(['PROFESOR']))
 ):
     return classes_service.create_professor_request(class_id, user['id'])
+
 
 @router.patch('/{class_id}/request/{request_id}')
 def evaluate_professor_request(
@@ -118,6 +127,7 @@ def evaluate_professor_request(
     user=Depends(check_permission(['ADMINISTRATIVO']))
 ):
     return classes_service.evaluate_professor_request(class_id, request_id, data)
+
 
 @router.get('/{class_id}/students')
 def list_class_students(

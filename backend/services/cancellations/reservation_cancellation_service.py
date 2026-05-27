@@ -2,7 +2,7 @@ from database import supabase
 from fastapi import HTTPException
 from datetime import datetime, timezone
 from utils import benefits
-#from services.mercadoPago_service import depositar_reserva #pendiente_de_implementar
+#from services.mercadoPago_service import depositar_reserva  # pendiente de implementar
 
 
 def cancelar_reserva(reservation_id: str, current_user_id: str):
@@ -49,13 +49,17 @@ def cancelar_reserva(reservation_id: str, current_user_id: str):
         ahora = datetime.now(timezone.utc)
         diferencia_horas = (start_time - ahora).total_seconds() / 3600
 
-        # Cancelar reserva y decrementar capacidad sin RPC
         supabase.table('reservations').update({'status': 'CANCELADA'}).eq('id', reservation_id).execute()
 
         nueva_capacidad = max(clase['current_capacity'] - 1, 0)
         supabase.table('classes').update({'current_capacity': nueva_capacidad}).eq('id', clase['id']).execute()
 
-        # Promover al primero de la waitlist si hay alguien esperando
+        # FIX: actualizar ambos contadores (mensual e histórico)
+        supabase.table('users').update({
+            'monthly_cancellations': user['monthly_cancellations'] + 1,
+            'cancellation_count': user['cancellation_count'] + 1,
+        }).eq('id', user['id']).execute()
+
         _promover_waitlist(reserva['class_id'], nueva_capacidad)
 
         mensaje = 'Reserva cancelada exitosamente.'
@@ -68,12 +72,9 @@ def cancelar_reserva(reservation_id: str, current_user_id: str):
                     benefits.cancelar_descuentos(user['id'])
                     benefits.retirar_Todoscredito(user['id'])
                     mensaje = 'Has alcanzado el límite de cancelaciones. Se han retirado tus créditos y descuentos.'
-                supabase.table('users').update(
-                    {'monthly_cancellations': user['monthly_cancellations'] + 1}
-                ).eq('id', user['id']).execute()
             else:
                 # NO_ABONADO: devolver seña (pendiente integración MercadoPago)
-                #depositar_reserva(reserva['amount_paid'], user['email']) #pendiente_de_implementar
+                # depositar_reserva(reserva['amount_paid'], user['email'])
                 pass
 
         elif diferencia_horas >= 24:
@@ -87,9 +88,6 @@ def cancelar_reserva(reservation_id: str, current_user_id: str):
                     benefits.cancelar_descuentos(user['id'])
                     benefits.retirar_Todoscredito(user['id'])
                     mensaje = 'Has alcanzado el límite de cancelaciones. Se han retirado tus créditos y descuentos.'
-                supabase.table('users').update(
-                    {'monthly_cancellations': user['monthly_cancellations'] + 1}
-                ).eq('id', user['id']).execute()
             else:
                 pass
 
@@ -136,7 +134,8 @@ def _promover_waitlist(class_id: str, capacidad_actual: int):
                 supabase.table('reservations').insert({
                     'user_id': entrada['user_id'],
                     'class_id': class_id,
-                    'status': 'CONFIRMADA'
+                    'status': 'CONFIRMADA',
+                    'payment_status': 'PENDIENTE',
                 }).execute()
 
                 supabase.table('classes').update(
@@ -144,7 +143,7 @@ def _promover_waitlist(class_id: str, capacidad_actual: int):
                 ).eq('id', class_id).execute()
 
                 supabase.table('waitlist').delete().eq('id', entrada['id']).execute()
-                # TODO: notificar al usuario que fue asignado a la clase
+                # TODO: notificar al usuario que fue promovido desde la lista de espera
                 return
     except Exception:
         # No interrumpir el flujo principal si la promoción falla

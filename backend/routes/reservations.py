@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends
-from services import individual_class_reservation_service, regular_class_reservation_service
+from services.reservations import individual_class_reservation_service, regular_class_reservation_service
 from schemes.reservations_scheme import IndividualReservation, RegularReservation
 from utils.permissions import check_permission
 
