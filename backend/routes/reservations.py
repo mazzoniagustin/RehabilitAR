@@ -1,5 +1,9 @@
 from fastapi import APIRouter, Depends
-from services.reservations import individual_class_reservation_service, regular_class_reservation_service
+from services.reservations import (
+    individual_class_reservation_service,
+    regular_class_reservation_service,
+    my_reservations_service,
+)
 from schemes.reservations_scheme import IndividualReservation, RegularReservation
 from utils.permissions import check_permission
 
@@ -7,6 +11,12 @@ router = APIRouter(
     prefix="/reservations",
     tags=["Reservations"]
 )
+
+@router.get('/me')
+def get_my_reservations(
+    current_user=Depends(check_permission(['ABONADO', 'NO_ABONADO']))
+):
+    return my_reservations_service.get_my_reservations(current_user['id'])
 
 @router.post('/regular')
 def reservar_clase_fija(

@@ -723,7 +723,7 @@ async function loadClases() {
             <td>${c.current_capacity}/${c.max_capacity}</td>
             <td>${c.professor_name || '<span style="color:var(--muted)">Sin asignar</span>'}</td>
             <td style="display:flex;gap:6px">
-              <button class="action-btn" ${buttonDisabled ? 'disabled' : ''} onclick="${isProfessor ? `requestProfessorClass('${c.id}')` : `reserveClass('${c.id}')`}">${isProfessor ? buttonLabel : 'Reservar'}</button>
+              <button class="action-btn" ${buttonDisabled ? 'disabled' : ''} onclick="${isProfessor ? `requestProfessorClass('${c.id}')` : `reserveClass('${c.id}', ${c.is_scheduled})`}">${isProfessor ? buttonLabel : 'Reservar'}</button>
               ${isMyClass ? `<button class="action-btn" onclick="openStudentsModal('${c.id}', '${(c.activity_type || '').replace(/_/g, ' ')}')">Inscriptos</button>` : ''}
             </td>
           </tr>`;
@@ -978,12 +978,20 @@ async function assignProfessorToClass(classId) {
   }
 }
 
-async function reserveClass(classId) {
+async function reserveClass(classId, isScheduled) {
   try {
-    const res  = await fetch(`${API}/reservations`, { method:'POST', headers:authH(), body:JSON.stringify({ class_id: classId }) });
+    // FIX: endpoint correcto según tipo de clase
+    // is_scheduled=true  → clase fija (ABONADO) → /reservations/regular
+    // is_scheduled=false → clase individual      → /reservations/individual
+    const url  = isScheduled ? `${API}/reservations/regular` : `${API}/reservations/individual`;
+    const body = isScheduled
+      ? { class_id: classId }
+      : { class_id: classId, payment_percentage: 100 }; // payment_percentage: pendiente módulo de pagos
+
+    const res  = await fetch(url, { method: 'POST', headers: authH(), body: JSON.stringify(body) });
     const data = await res.json();
     if (!res.ok) return showAlert('clasesAlert', typeof data.detail === 'string' ? data.detail : 'Error al reservar.');
-    showAlert('clasesAlert', '¡Reserva realizada!', 'success');
+    showAlert('clasesAlert', data.message || '¡Reserva realizada!', 'success');
     loadClases();
   } catch { showAlert('clasesAlert', 'No se pudo conectar.'); }
 }
@@ -1015,12 +1023,17 @@ async function loadReservas() {
 async function cancelReserva(id) {
   if (!confirm('¿Confirmás la cancelación? Se aplicarán las políticas del centro.')) return;
   try {
-    const res  = await fetch(`${API}/reservations/${id}/cancel`, { method:'POST', headers:authH() });
+    // FIX: endpoint y body correctos
+    const res  = await fetch(`${API}/cancellations/reservation`, {
+      method: 'POST',
+      headers: authH(),
+      body: JSON.stringify({ reservation_id: id })
+    });
     const data = await res.json();
-    if (!res.ok) return showAlert('clasesAlert', typeof data.detail === 'string' ? data.detail : 'Error.');
-    showAlert('clasesAlert', 'Reserva cancelada.', 'success');
+    if (!res.ok) return showAlert('reservasAlert', typeof data.detail === 'string' ? data.detail : 'Error.');
+    showAlert('reservasAlert', data.message || 'Reserva cancelada.', 'success');
     loadReservas();
-  } catch { showAlert('clasesAlert', 'No se pudo conectar.'); }
+  } catch { showAlert('reservasAlert', 'No se pudo conectar.'); }
 }
 
 
