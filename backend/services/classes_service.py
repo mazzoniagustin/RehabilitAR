@@ -165,6 +165,11 @@ def list_active_classes():
 
         classes = response.data or []
 
+        # Filtrar clases con cupo disponible para evitar mostrar el botón "Reservar"
+        # en clases llenas. Si en el futuro se agrega lista de espera para INDIVIDUAL,
+        # reemplazar este filtro por una propiedad 'is_full' en cada clase y manejarlo en el front.
+        classes = [c for c in classes if c['current_capacity'] < c['max_capacity']]
+
         professor_ids = list({c['professor_id'] for c in classes if c.get('professor_id')})
         professors_by_id = {}
         if professor_ids:

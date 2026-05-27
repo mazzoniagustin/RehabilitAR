@@ -4,6 +4,10 @@ from fastapi import HTTPException
 
 def reservar_clase_individual(user_id: str, class_id: str, payment_percentage: int):
     try:
+        # Normalizar a str por si llegan como objetos UUID desde Pydantic
+        user_id = str(user_id)
+        class_id = str(class_id)
+
         if payment_percentage not in (50, 100):
             raise HTTPException(status_code=400, detail='El porcentaje de pago debe ser 50 o 100.')
 
@@ -43,9 +47,11 @@ def reservar_clase_individual(user_id: str, class_id: str, payment_percentage: i
             .eq('id', class_id)
             .eq('current_capacity', clase['current_capacity'])
             .lt('current_capacity', clase['max_capacity'])
+            .select()  # necesario para que Supabase devuelva las filas afectadas
             .execute()
         )
         if not update_response.data:
+            # El UPDATE no afectó ninguna fila: la clase se llenó entre el SELECT y el UPDATE.
             raise HTTPException(status_code=400, detail='Reserva fallida debido a que la clase ya se encuentra llena.')
 
         # FIX: asignar payment_status según porcentaje abonado
