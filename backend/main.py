@@ -7,6 +7,7 @@ from routes.auth import router as auth_router
 from routes.staff import routerStaff as staff_router
 from routes.user import routerUser as user_router
 from routes.classes import router as classes_router
+from routes.cancellations import router as cancellations_router
 
 app = FastAPI(
     title="RehabilitAR API",
@@ -40,6 +41,7 @@ app.include_router(auth_router)
 app.include_router(staff_router)
 app.include_router(user_router)
 app.include_router(classes_router)
+app.include_router(cancellations_router)
 
 @app.get("/")
 def health_check():
