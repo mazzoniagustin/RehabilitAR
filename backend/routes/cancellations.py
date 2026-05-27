@@ -22,7 +22,7 @@ def cancelar_reserva(
     data: CancelReservation,
     user=Depends(check_permission(['ABONADO', 'NO_ABONADO']))
 ):
-    return reservation_cancellation.cancelar_reserva(data.reservation_id)
+    return reservation_cancellation.cancelar_reserva(data.reservation_id, user['id'])
 
 @router.post('/subscription')
 def cancelar_suscripcion(

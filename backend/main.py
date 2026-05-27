@@ -15,16 +15,25 @@ app = FastAPI(
     version="1.0.0"
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
+# En producción, setear ALLOWED_ORIGINS como variable de entorno con los dominios
+# separados por coma. Ej: ALLOWED_ORIGINS="https://rehabilitar.com,https://www.rehabilitar.com"
+# Si no está definida, se usan los orígenes locales de desarrollo.
+_raw_origins = os.getenv("ALLOWED_ORIGINS", "")
+if _raw_origins.strip():
+    allowed_origins = [o.strip() for o in _raw_origins.split(",") if o.strip()]
+else:
+    allowed_origins = [
         "http://localhost",
         "http://127.0.0.1",
         "http://localhost:5500",
         "http://127.0.0.1:5500",
         "http://localhost:8000",
         "http://127.0.0.1:8000",
-    ],
+    ]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

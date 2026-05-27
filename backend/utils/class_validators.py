@@ -63,28 +63,30 @@ def validate_room_capacity(room_capacity, requested_capacity):
 
 
 def validate_room_availability(room_id, start_time, end_time):
+    from datetime import datetime, timezone
+
+    def _to_utc(dt):
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
 
     response = (
         supabase.table('classes')
         .select('id, start_time, end_time')
         .eq('room_id', str(room_id))
-        .neq('status', 'CANCELADA')  # FIX: era 'cancelada' (minúscula)
+        .neq('status', 'CANCELADA')
         .execute()
     )
 
-    existing_classes = response.data
+    start_utc = _to_utc(start_time)
+    end_utc = _to_utc(end_time)
 
-    for existing_class in existing_classes:
+    for existing_class in (response.data or []):
+        existing_start = _to_utc(datetime.fromisoformat(existing_class['start_time'].replace('Z', '+00:00')))
+        existing_end = _to_utc(datetime.fromisoformat(existing_class['end_time'].replace('Z', '+00:00')))
 
-        existing_start = existing_class['start_time']
-        existing_end = existing_class['end_time']
-
-        if (
-            start_time.isoformat() < existing_end
-            and
-            end_time.isoformat() > existing_start
-        ):
+        if start_utc < existing_end and end_utc > existing_start:
             raise HTTPException(
                 status_code=409,
-                detail='Sala ocupada para el horario seleccionado'
+                detail='Sala ocupada para el horario seleccionado.'
             )

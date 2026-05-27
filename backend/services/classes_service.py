@@ -402,6 +402,12 @@ def assign_professor(class_id: str, data):
 
 
 def cancel_class(class_id: str):
+    """
+    Actualiza el status de la clase a CANCELADA.
+    No registra el motivo — ese es responsabilidad del llamador
+    (cancelar_clase en classes_cancellation_service), que inserta
+    en la tabla 'cancellations' con el reason correspondiente.
+    """
     try:
         class_response = (
             supabase.table('classes')
@@ -412,7 +418,7 @@ def cancel_class(class_id: str):
         )
         if not class_response.data:
             raise HTTPException(status_code=404, detail='La clase seleccionada no existe.')
-        
+
         clase = class_response.data
         if clase['status'] == 'CANCELADA':
             raise HTTPException(status_code=400, detail='La clase ya se encuentra cancelada.')
@@ -425,69 +431,76 @@ def cancel_class(class_id: str):
             .execute()
         )
 
-        updated_rows = updated_class.data or []
-        if not updated_rows:
+        if not (updated_class.data or []):
             raise HTTPException(
                 status_code=500,
                 detail='No se pudo cancelar la clase. Intente nuevamente.'
             )
 
-        confirm_response = (
-            supabase.table('classes')
-            .select('id, status')
-            .eq('id', class_id)
-            .single()
-            .execute()
-        )
-
-        if not confirm_response.data or confirm_response.data.get('status') != 'CANCELADA':
-            raise HTTPException(
-                status_code=500,
-                detail='No se pudo cancelar la clase. Intente nuevamente.'
-            )
-        
         return {
             'message': 'Clase cancelada exitosamente',
-            'data': confirm_response.data
+            'data': updated_class.data[0]
         }
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'Error al cancelar la clase: {str(e)}')
 
+
 def update_capacity(class_id: str, new_capacity: int):
     try:
-        class_response = supabase.table('classes').select('id, max_capacity, room_id, status, rooms(capacity)').eq('id', class_id).single().execute()
-        
+        class_response = (
+            supabase.table('classes')
+            .select('id, max_capacity, current_capacity, room_id, status, rooms(capacity)')
+            .eq('id', class_id)
+            .single()
+            .execute()
+        )
+
         if not class_response.data:
             raise HTTPException(status_code=404, detail='La clase seleccionada no existe.')
-            
+
         clase = class_response.data
-        
-        if clase['status'] != 'PROGRAMADA' and clase['status'] != 'EN CURSO':
+
+        if clase['status'] not in ('PROGRAMADA', 'EN CURSO'):
             raise HTTPException(status_code=400, detail='Solo se puede modificar el cupo de clases activas.')
-            
+
         room_capacity = clase['rooms']['capacity']
-        
+
         if new_capacity > room_capacity:
-            raise HTTPException(status_code=400, detail='El cupo ingresado supera la capacidad máxima de la sala')
-            
-        # Get current inscribed students count
-        reservations_response = supabase.table('reservations').select('id', count='exact').eq('class_id', class_id).in_('status', ['CONFIRMADA']).execute()
+            raise HTTPException(status_code=400, detail='El cupo ingresado supera la capacidad máxima de la sala.')
+
+        reservations_response = (
+            supabase.table('reservations')
+            .select('id', count='exact')
+            .eq('class_id', class_id)
+            .eq('status', 'CONFIRMADA')
+            .execute()
+        )
         current_inscribed = reservations_response.count if reservations_response.count is not None else 0
-        
+
         if new_capacity < current_inscribed:
-            # Cancel class automatically
-            updated_class = supabase.table('classes').update({'status': 'CANCELADA'}).eq('id', class_id).select().execute()
+            # Delegar toda la lógica de cancelación al servicio correspondiente,
+            # que cancela reservas, otorga créditos y registra el motivo correctamente.
+            from services.cancellations.classes_cancellation_service import cancelar_clase
+            cancelar_clase(
+                class_id,
+                cancel_reason='Cancelación automática: el nuevo cupo es menor a los inscriptos.'
+            )
             return {
-                'message': 'El nuevo cupo es menor a los inscriptos. La clase ha sido cancelada.',
-                'data': updated_class.data[0]
+                'message': 'El nuevo cupo es menor a los inscriptos. La clase ha sido cancelada y se procesaron los reembolsos.'
             }
-            
-        updated_class = supabase.table('classes').update({'max_capacity': new_capacity}).eq('id', class_id).select().execute()
-        
+
+        updated_class = (
+            supabase.table('classes')
+            .update({'max_capacity': new_capacity})
+            .eq('id', class_id)
+            .select()
+            .execute()
+        )
+
         return {
-            'message': 'Cupo de clase actualizado exitosamente',
+            'message': 'Cupo de clase actualizado exitosamente.',
             'data': updated_class.data[0]
         }
     except HTTPException:
@@ -646,11 +659,17 @@ def evaluate_professor_request(class_id: str, request_id: str, data):
             # Re-raise with specific message requested by HU
             raise HTTPException(status_code=400, detail='No se puede asignar el profesor por conflicto de horario')
             
-        # All ok, update class and request
+        # Asignar profesor y aceptar esta solicitud
         supabase.table('classes').update({'professor_id': request_obj['professor_id']}).eq('id', class_id).execute()
         updated = supabase.table('professor_requests').update({'status': 'ACEPTADA'}).eq('id', request_id).execute()
-        
-        return {'message': 'Se aceptó la solicitud correctamente', 'data': updated.data[0]}
+
+        # Rechazar automáticamente las demás solicitudes pendientes de la misma clase
+        supabase.table('professor_requests').update({
+            'status': 'RECHAZADA',
+            'reject_reason': 'Otra solicitud fue aceptada para esta clase.'
+        }).eq('class_id', class_id).eq('status', 'PENDIENTE').neq('id', request_id).execute()
+
+        return {'message': 'Se aceptó la solicitud correctamente.', 'data': updated.data[0]}
         
     except HTTPException:
         raise

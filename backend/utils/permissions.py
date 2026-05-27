@@ -49,13 +49,17 @@ def get_current_user(
         raise HTTPException(status_code=401, detail="Token inválido.")
 
 def check_permission(allowed_roles: list[str]):
-    
+
     def permission_checker(current_user: dict = Depends(get_current_user)):
-        
+
+        if current_user['account_status'] != 'ACTIVA':
+            raise HTTPException(status_code=403, detail='Acceso denegado. Tu cuenta no se encuentra activa.')
+
         if current_user['rol'] not in allowed_roles:
             raise HTTPException(status_code=403, detail='Acceso denegado. Permisos insuficientes.')
+
         return current_user
-    
+
     return permission_checker
 
 def check_user_existance(email: str):
