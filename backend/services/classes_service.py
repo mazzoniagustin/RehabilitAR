@@ -478,13 +478,13 @@ def update_capacity(class_id: str, new_capacity: int):
         
         if new_capacity < current_inscribed:
             # Cancel class automatically
-            updated_class = supabase.table('classes').update({'status': 'CANCELADA'}).eq('id', class_id).execute()
+            updated_class = supabase.table('classes').update({'status': 'CANCELADA'}).eq('id', class_id).select().execute()
             return {
                 'message': 'El nuevo cupo es menor a los inscriptos. La clase ha sido cancelada.',
                 'data': updated_class.data[0]
             }
             
-        updated_class = supabase.table('classes').update({'max_capacity': new_capacity}).eq('id', class_id).execute()
+        updated_class = supabase.table('classes').update({'max_capacity': new_capacity}).eq('id', class_id).select().execute()
         
         return {
             'message': 'Cupo de clase actualizado exitosamente',
@@ -623,7 +623,7 @@ def evaluate_professor_request(class_id: str, request_id: str, data):
             if not data.reason or not data.reason.strip():
                 raise HTTPException(status_code=400, detail='El rechazo debe incluir un motivo obligatorio')
                 
-            updated = supabase.table('professor_requests').update({'status': 'RECHAZADA', 'reject_reason': data.reason}).eq('id', request_id).execute()
+            updated = supabase.table('professor_requests').update({'status': 'RECHAZADA', 'reject_reason': data.reason}).eq('id', request_id).select().execute()
             return {'message': 'Solicitud rechazada correctamente con motivo', 'data': updated.data[0]}
             
         # ACEPTADA
