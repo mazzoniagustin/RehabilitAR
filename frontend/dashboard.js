@@ -9,6 +9,57 @@ const authH     = () => ({ 'Content-Type': 'application/json', 'Authorization': 
 const setUser   = u  => localStorage.setItem('currentUser', JSON.stringify(u));
 const getUser   = () => JSON.parse(localStorage.getItem('currentUser') || 'null');
 
+function getAge(birthDateStr) {
+  const today = new Date();
+  const birth = new Date(birthDateStr);
+  let age = today.getFullYear() - birth.getFullYear();
+  if ((today.getMonth(), today.getDate()) < (birth.getMonth(), birth.getDate())) age--;
+  return age;
+}
+function initBirthdatePicker(prefix = 'reg') {
+  const dayEl   = document.getElementById(`${prefix}BirthdateDay`);
+  const monthEl = document.getElementById(`${prefix}BirthdateMonth`);
+  const yearEl  = document.getElementById(`${prefix}BirthdateYear`);
+
+  // Poblar meses
+  const meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
+                  'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  monthEl.innerHTML = '<option value="">Mes</option>';
+  meses.forEach((m, i) => {
+    const o = document.createElement('option');
+    o.value = i + 1; o.textContent = m;
+    monthEl.appendChild(o);
+  });
+
+  // Poblar años (hasta hoy - 18)
+  const maxYear = new Date().getFullYear() - 18;
+  yearEl.innerHTML = '<option value="">Año</option>';
+  for (let y = maxYear; y >= maxYear - 82; y--) {
+    const o = document.createElement('option');
+    o.value = y; o.textContent = y;
+    yearEl.appendChild(o);
+  }
+
+  // Poblar días según mes/año
+  function populateDays() {
+    const m = parseInt(monthEl.value);
+    const y = parseInt(yearEl.value);
+    const prev = dayEl.value;
+    dayEl.innerHTML = '<option value="">Día</option>';
+    const count = (m && y) ? new Date(y, m, 0).getDate() : 31;
+    for (let d = 1; d <= count; d++) {
+      const o = document.createElement('option');
+      o.value = d; o.textContent = d;
+      dayEl.appendChild(o);
+    }
+    if (prev) dayEl.value = prev;
+  }
+
+  monthEl.addEventListener('change', populateDays);
+  yearEl.addEventListener('change', populateDays);
+  populateDays();
+}
+
 const EMPLOYEE_ROLES = ['ADMINISTRATIVO', 'RECEPCIONISTA', 'PROFESOR'];
 
 function showAlert(id, msg, type = 'error') {
@@ -39,7 +90,7 @@ const ROL_LABELS = {
   NO_ABONADO:'No abonado', ABONADO:'Abonado',
   ADMINISTRATIVO:'Administrativo', PROFESOR:'Profesor', RECEPCIONISTA:'Recepcionista'
 };
-const STATUS_LABELS = { ACTIVA:'Activa', SUSPENDIDA:'Suspendido' };
+const STATUS_LABELS = { ACTIVA:'Activa', SUSPENDIDA:'Suspendida' };
 const CERT_LABELS   = { APROBADO:'APROBADO', RECHAZADO:'RECHAZADO', PENDIENTE:'PENDIENTE'};
 
 
@@ -143,11 +194,11 @@ function onPanelShow(panel) {
 }
 // CARGA DEL DASHBOARD
 const STAT_MAPS = {
-  NO_ABONADO:    [{ label:'Reservas totales', key:'total_reservations' }, { label:'Ausencias', key:'total_absences' }, { label:'Cancelaciones', key:'total_cancellations' }],
-  ABONADO:       [{ label:'Reservas totales', key:'total_reservations' }, { label:'Ausencias', key:'total_absences' }, { label:'Cancelaciones', key:'total_cancellations' }, { label:'Créditos disponibles', key:'credits' }],
-  ADMINISTRATIVO:[{ label:'Usuarios gestionados', key:'_na' }],
-  RECEPCIONISTA: [{ label:'Usuarios registrados', key:'_na' }],
-  PROFESOR:      [{ label:'Clases dictadas', key:'_na' }],
+  NO_ABONADO:    [{ label:'Reservas totales', key:'total_reservations' }, { label:'Ausencias', key:'total_absences' }],
+  ABONADO:       [{ label:'Reservas totales', key:'total_reservations' }, { label:'Ausencias', key:'total_absences' }, { label:'Créditos disponibles', key:'credits' }],
+  ADMINISTRATIVO:[{ label:'Usuarios registrados', key:'total_users' }],
+  RECEPCIONISTA: [{ label:'Usuarios registrados', key:'total_users' }],
+  PROFESOR:      [{ label:'Clases dictadas', key:'total_classes' }],
 };
 
 async function loadDashboard() {
@@ -183,7 +234,8 @@ async function loadDashboard() {
   document.getElementById('pfDni').textContent     = u.dni     || '—';
   document.getElementById('pfPhone').textContent   = u.phone   || '—';
   document.getElementById('pfGender').textContent  = u.gender  || '—';
-  document.getElementById('pfAge').textContent     = u.age     || '—';
+  document.getElementById('pfBirthdate').textContent = u.birth_date ? u.birth_date.split('-').reverse().join('/') : '—';
+  document.getElementById('pfAge').textContent = u.age ? `${u.age} años` : '—';
   document.getElementById('pfAddress').textContent = u.address || '—';
   document.getElementById('pfRol').innerHTML    = badge(u.rol,            ROL_LABELS);
   document.getElementById('pfStatus').innerHTML = badge(u.account_status, STATUS_LABELS);
@@ -253,7 +305,6 @@ function toggleEdit() {
     document.getElementById('editPhone').value   = u?.phone   || '';
     document.getElementById('editAddress').value = u?.address || '';
     document.getElementById('editGender').value  = u?.gender  || '';
-    document.getElementById('editAge').value     = u?.age     || '';
     view.style.display = 'none';
     edit.style.display = 'block';
   } else {
@@ -266,14 +317,12 @@ async function saveProfile() {
   const name    = document.getElementById('editName').value.trim();
   const surname = document.getElementById('editSurname').value.trim();
   if (!name || !surname) return showAlert('perfilAlert', 'Nombre y apellido son obligatorios.');
-
-  const ageVal = document.getElementById('editAge').value;
+  
   const body = {
     name, surname,
     phone:   document.getElementById('editPhone').value.trim()   || null,
     address: document.getElementById('editAddress').value.trim() || null,
     gender:  document.getElementById('editGender').value         || null,
-    age:     ageVal === '' ? null : Number(ageVal),
   };
 
   try {
@@ -289,7 +338,7 @@ async function saveProfile() {
     document.getElementById('pfPhone').textContent   = body.phone   || '—';
     document.getElementById('pfAddress').textContent = body.address || '—';
     document.getElementById('pfGender').textContent  = body.gender  || '—';
-    document.getElementById('pfAge').textContent     = body.age     ?? '—';
+    document.getElementById('pfBirthdate').textContent = '—';
 
     const u = getUser();
     if (u) { Object.assign(u, body); setUser(u); }
@@ -1228,12 +1277,14 @@ function closeUserModal() { document.getElementById('userProfileModal').classLis
 async function unblockUser(userId) {
   if (!confirm('¿Reactivar esta cuenta?')) return;
   try {
-    const res  = await fetch(`${API}/staff/unblock_user/${user_id}`, { method:'POST', headers:authH() });
-    const data = await res.json();
+    const res  = await fetch(`${API}/staff/unblock_user/${userId}`, { method:'POST', headers:authH() });
     if (!res.ok) return showAlert('usuariosAlert', typeof data.detail === 'string' ? data.detail : 'Error.');
     showAlert('usuariosAlert', 'Cuenta reactivada.', 'success');
-    filterByRole();
-  } catch { showAlert('usuariosAlert', 'No se pudo conectar.'); }
+    loadUsers();
+  } catch (e) { 
+    console.error(e);
+    showAlert('usuariosAlert', 'No se pudo conectar.'); 
+  }
 }
 
 async function unblockFromModal(userId) {
@@ -1253,12 +1304,14 @@ async function confirmBlock() {
   if (!reason) return showAlert('usuariosAlert', 'El motivo es obligatorio.');
   try {
     const res  = await fetch(`${API}/staff/block_user/${blockTargetId}`, { method:'POST', headers:authH(), body:JSON.stringify({ reason }) });
-    const data = await res.json();
     if (!res.ok) return showAlert('usuariosAlert', typeof data.detail === 'string' ? data.detail : 'Error.');
     closeBlockModal();
     showAlert('usuariosAlert', 'Usuario suspendido.', 'success');
-    filterByRole();
-  } catch { showAlert('usuariosAlert', 'No se pudo conectar.'); }
+    loadUsers();
+  } catch (e){ 
+    console.error(e);
+    showAlert('usuariosAlert', 'No se pudo conectar.'); 
+  }
 }
 
 
@@ -1279,7 +1332,17 @@ async function loadCertificados() {
           <tr>
             <td><strong>${u.name} ${u.surname}</strong><span style="display:block;font-size:.78rem;color:var(--muted)">${u.email}</span></td>
             <td>${u.dni}</td>
-            <td>${u.physical_certificate_url ? `<a href="${u.physical_certificate_url}" target="_blank" style="color:var(--teal);font-size:.85rem">Ver archivo ↗</a>` : '—'}</td>
+          <td>
+            ${
+              u.physical_certificate_url
+                ? `<button
+                    class="action-btn secondary"
+                    onclick="viewCert('${u.id}')">
+                    Ver archivo
+                  </button>`
+                : '—'
+            }
+          </td>
             <td style="display:flex;gap:6px">
               <button class="action-btn success" onclick="approveCert('${u.id}')">Aprobar</button>
               <button class="action-btn danger"  onclick="openRejectModal('${u.id}')">Rechazar</button>
@@ -1507,15 +1570,13 @@ function clearValue(id) {
 function openRegisterModal() {
   document.getElementById('registerType').value = 'cliente';
   document.getElementById('employeeFields').style.display = 'none';
-
-  const today = new Date().toISOString().split('T')[0];
-  document.getElementById('rBirthdate').max = today;
+  document.getElementById('registerUserAlert').className = 'alert';
+  initBirthdatePicker('r'); 
 
   clearValue('rName');
   clearValue('rSurname');
   clearValue('rEmail');
   clearValue('rDni');
-  clearValue('rBirthdate');
   clearValue('rSpecialty');
 
   document.getElementById('registerUserAlert').className = 'alert';
@@ -1550,15 +1611,11 @@ async function submitRegisterUser() {
   const name    = document.getElementById('rName').value.trim();
   const surname = document.getElementById('rSurname').value.trim();
   const email   = document.getElementById('rEmail').value.trim();
-  const birthdate = document.getElementById('rBirthdate').value;
-
-  if (!birthdate)
-    return showAlert(
-      'registerUserAlert',
-      'La fecha de nacimiento es obligatoria.'
-    );
-
+  const d = document.getElementById('rBirthdateDay').value;
+  const m = document.getElementById('rBirthdateMonth').value;
+  const y = document.getElementById('rBirthdateYear').value;
   const dni     = document.getElementById('rDni').value.trim();
+  const birth_date = (y && m && d) ? `${y}-${m.padStart(2, '0')}-${d.toString().padStart(2, '0')}` : null;
 
   if (!name || !surname || !email || !dni)
     return showAlert('registerUserAlert', 'Completá todos los campos obligatorios.');
@@ -1573,25 +1630,24 @@ async function submitRegisterUser() {
       surname,
       email,
       dni,
-      birth_date: birthdate
-  };
+      birth_date,
+    };
   } else {
     const rol       = document.getElementById('rRol').value;
     const specialty = document.getElementById('rSpecialty').value.trim();
     if (rol !== 'ADMINISTRATIVO' && !specialty)
       return showAlert('registerUserAlert', 'La especialidad es obligatoria para este rol.');
-      url  = `${API}/staff/register_employee`;
-      body = {
-          name,
-          surname,
-          email,
-          dni,
-          rol,
-          specialty: specialty || null,
-          birth_date: birthdate
+    url  = `${API}/staff/register_employee`;
+    body = {
+        name,
+        surname,
+        email,
+        dni,
+        rol,
+        specialty: specialty || null,
+        birth_date
     };
-}
-  
+  }
 
   const btn = document.getElementById('registerUserBtn');
   btn.disabled = true;
@@ -1603,8 +1659,9 @@ async function submitRegisterUser() {
     if (!res.ok) return showAlert('registerUserAlert', typeof data.detail === 'string' ? data.detail : 'Error al registrar.');
     showAlert('registerUserAlert', 'Usuario registrado exitosamente. Se enviará la contraseña por mail.', 'success');
     setTimeout(() => closeRegisterModal(), 2500);
-    filterByRole();
-  } catch { showAlert('registerUserAlert', 'No se pudo conectar.'); }
+    loadUsers();
+  } catch (e) {;
+    showAlert('registerUserAlert', 'No se pudo conectar.'); }
   finally { btn.disabled = false; btn.textContent = 'Registrar'; }
 }
 

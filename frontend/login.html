@@ -16,7 +16,6 @@
   <div class="card">
 
     <div class="brand">
-      <!-- Reemplazar con: <img src="logo.png" class="brand-logo" alt="RehabilitAR"/> -->
       <img src="assets/RehabilitAR.png" class="brand-logo" alt="RehabilitAR"/>
       <h1>RehabilitAR</h1>
       <p>Centro de rehabilitación física</p>
@@ -59,6 +58,15 @@
       <div class="form-group">
         <label>Contraseña</label>
         <input type="password" id="regPassword" placeholder="Mínimo 6 caracteres"/>
+      </div>
+      <div class="form-group">
+        <label>Fecha de nacimiento</label>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+          <select id="regBirthdateDay"><option value="">Día</option></select>
+          <select id="regBirthdateMonth"><option value="">Mes</option></select>
+          <select id="regBirthdateYear"><option value="">Año</option></select>
+        </div>
+        <p id="regBirthdateError" style="font-size:12px;color:var(--color-text-danger);margin:4px 0 0;display:none"></p>
       </div>
       <button class="btn" id="registerBtn" onclick="handleRegister()">Crear cuenta</button>
       <div class="link-row"><a href="#" onclick="switchTab('login')">¿Ya tenés cuenta? Iniciá sesión</a></div>
