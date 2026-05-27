@@ -1,6 +1,6 @@
 from database import supabase
 from fastapi import HTTPException
-from services.mercadoPago_service import pagar_Reserva #pendiente_de_implementar
+#from services.mercadoPago_service import pagar_Reserva #pendiente_de_implementar
 
 def reservar_clase_individual(user_id: str, class_id: str, payment_percentage: int):
     try:

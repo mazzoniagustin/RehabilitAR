@@ -11,13 +11,13 @@ router = APIRouter(
 @router.post('/regular')
 def reservar_clase_fija(
     data: RegularReservation,
-    user=Depends(check_permission(get_current_user))
+    current_user=Depends(check_permission(['ABONADO']))
 ):
     return regular_class_reservation_service.reservar_clase_fija(current_user['id'], data.class_id)
 
 @router.post('/individual')
 def reservar_clase_individual(
     data: IndividualReservation,
-    user=Depends(check_permission(get_current_user))
+    current_user=Depends(check_permission(['NO_ABONADO', 'ABONADO']))
 ):
     return individual_class_reservation_service.reservar_clase_individual(current_user['id'], data.class_id, data.payment_percentage)
