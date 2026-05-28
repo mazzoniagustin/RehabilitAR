@@ -23,7 +23,13 @@ def _parse_optional_datetime(value: Optional[str], field_name: str):
         return None
 
     try:
-        return datetime.fromisoformat(value.replace('Z', '+00:00'))
+        # Normalizar distintos formatos que puede devolver Supabase:
+        # '2026-06-01 11:00:00+00', '2026-06-01T11:00:00+00:00', '2026-06-01T11:00:00Z'
+        normalized = value.replace('Z', '+00:00').replace(' ', 'T')
+        # Asegurar que el offset tenga dos puntos: +00 -> +00:00
+        if normalized.endswith('+00') or normalized.endswith('-00'):
+            normalized += ':00'
+        return datetime.fromisoformat(normalized)
     except ValueError:
         raise HTTPException(
             status_code=400,
@@ -363,11 +369,11 @@ def assign_professor(class_id: str, data):
                 detail='No se puede asignar un profesor a una clase que no está activa.'
             )
 
-        # Validar que no se intente asignar el mismo profesor que ya tiene la clase
-        if clase['professor_id'] and clase['professor_id'] == str(data.professor_id):
+        # Bloquear si la clase ya tiene un profesor asignado (sea el mismo u otro)
+        if clase['professor_id']:
             raise HTTPException(
                 status_code=400,
-                detail='El profesor seleccionado ya está asignado a esta clase.'
+                detail='La clase ya tiene un profesor asignado. Para cambiar el profesor, primero desasignalo.'
             )
 
         # Parsear horarios de la clase (Supabase devuelve timestamptz)
@@ -400,8 +406,22 @@ def assign_professor(class_id: str, data):
             supabase.table('classes')
             .update({'professor_id': str(data.professor_id)})
             .eq('id', class_id)
+            .select()
             .execute()
         )
+
+        # Rechazar automáticamente todas las solicitudes pendientes de otros profesores
+        supabase.table('professor_requests').update({
+            'status': 'RECHAZADA',
+            'reject_reason': 'El administrador asignó directamente a otro profesor.'
+        }).eq('class_id', class_id).eq('status', 'PENDIENTE').execute()
+
+        # Si había una solicitud ACEPTADA de otro profesor (caso reasignación previa),
+        # también pasarla a RECHAZADA para que no la sigan viendo en su panel.
+        supabase.table('professor_requests').update({
+            'status': 'RECHAZADA',
+            'reject_reason': 'El administrador reasignó la clase a otro profesor.'
+        }).eq('class_id', class_id).eq('status', 'ACEPTADA').neq('professor_id', str(data.professor_id)).execute()
 
         return {
             'message': 'Se asignó el profesor correctamente.',

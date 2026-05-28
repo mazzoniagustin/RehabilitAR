@@ -553,6 +553,7 @@ async function loadAdminClasses() {
       return;
     }
 
+    console.log('CLASES DATA:', JSON.stringify(data.map(c => ({id: c.id, professor_id: c.professor_id, professor_name: c.professor_name}))));
     const availableProfessorsByClass = await fetchAvailableProfessorsForClasses(data);
 
     container.innerHTML = `
@@ -562,6 +563,8 @@ async function loadAdminClasses() {
           const assignedName = c.professor_name || professorName(c.professor_id);
           const availableProfessors = availableProfessorsByClass[c.id] || [];
           const hasAvailableProfessors = availableProfessors.length > 0;
+          const alreadyAssigned = !!c.professor_id;
+          const assignDisabled = alreadyAssigned || !hasAvailableProfessors;
           return `
           <tr>
             <td><strong>${(c.activity_type || '').replace(/_/g, ' ')}</strong></td>
@@ -572,11 +575,11 @@ async function loadAdminClasses() {
             <td>${assignedName || '<span style="color:var(--muted)">Sin asignar</span>'}</td>
             <td>
               <div style="display:flex;gap:6px;align-items:center;min-width:260px">
-                <select id="assignProfessor_${c.id}" style="min-width:170px">
-                  <option value="">${hasAvailableProfessors ? 'Seleccionar' : 'Sin disponibles'}</option>
-                  ${availableProfessors.map(p => `<option value="${p.id}" ${p.id === c.professor_id ? 'selected' : ''}>${p.name} ${p.surname}</option>`).join('')}
+                <select id="assignProfessor_${c.id}" style="min-width:170px" ${assignDisabled ? 'disabled' : ''}>
+                  <option value="">${alreadyAssigned ? 'Profesor ya asignado' : (hasAvailableProfessors ? 'Seleccionar profesor' : 'Sin disponibles')}</option>
+                  ${!alreadyAssigned ? availableProfessors.map(p => `<option value="${p.id}">${p.name} ${p.surname}</option>`).join('') : ''}
                 </select>
-                <button class="action-btn" ${hasAvailableProfessors ? '' : 'disabled'} onclick="assignProfessorToClass('${c.id}')">Asignar</button>
+                <button class="action-btn" ${assignDisabled ? 'disabled' : ''} onclick="assignProfessorToClass('${c.id}')">Asignar</button>
               </div>
             </td>
             <td>
