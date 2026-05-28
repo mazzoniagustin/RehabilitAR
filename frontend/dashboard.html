@@ -340,17 +340,17 @@
   </div>
 </div>
 
-<!--PANEL: Mensualidad (clientes)-->
-<div class="panel" id="panelMensualidad">
+<!--PANEL: Pagos (clientes)-->
+<div class="panel" id="panelPagos">
   <div class="page-header">
     <div class="page-header-left">
-      <h2>Mensualidad</h2>
+      <h2>Pagos</h2>
       <p>Conviertete en cliente abonado y disfruta de beneficios exclusivos</p>
     </div>
   </div>
-  <div id="mensualidadAlert" class="alert"></div>
+  <div id="pagosAlert" class="alert"></div>
 
-  <div class="section-card" style="max-width:1000px">
+  <div class="section-card" style="max-width:700px">
     <h3>
       Beneficios de ser cliente abonado
     </h3>
@@ -400,8 +400,9 @@
     </div>
 
     <button class="btn" onclick="paySubscription()">Pagar mensualidad</button>
-    
   </div>
+  <div id="debtsContainer">
+</div>
 </div>
 </main>
 </div>
@@ -559,12 +560,12 @@
 <div class="modal-overlay" id="paymentQrModal">
   <div class="modal">
     <div class="modal-header">
-      <h3>Pagar mensualidad</h3>
+      <h3 id="paymentQrTitle">Pagar</h3>
       <button class="modal-close" onclick="closePaymentQrModal()">✕</button>
     </div>
 
-    <p>
-      Escaneá el QR con Mercado Pago para abonar la mensualidad.
+    <p id="paymentQrSubtitle">
+      Escaneá el QR con Mercado Pago para abonar.
     </p>
 
     <img

@@ -1,12 +1,19 @@
 import qrcode
 import base64
+from datetime import datetime
+from database import supabase
 from io import BytesIO
 from services.mp_service import sdk
 
 
-def create_payment(items):
+def create_payment(items, user_id, payment_type = None, debt_id=None):
     data = {
-        "items": items
+        "items": items,
+        "external_reference": str(user_id),
+        "metadata": {
+            "payment_type": payment_type,
+            "debt_id": debt_id
+        }
     }
 
     response = sdk.preference().create(data)
@@ -17,7 +24,13 @@ def create_payment(items):
 
     return response["response"]["init_point"]
 
+def create_qr(link):
+    img = qrcode.make(link)
+    buffer = BytesIO()
+    img.save(buffer, format="PNG")
+    qr_base64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
 
+    return f"data:image/png;base64,{qr_base64}"
 
 def pay_deposit():
     item = [
@@ -31,7 +44,12 @@ def pay_deposit():
     return link
 
 
-def pay_subscription():
+def pay_subscription(user_id):
+    today = datetime.now()
+    if today.day > 10:
+        return {
+            "Error": "No puede pagar su mensualidad debido a que ya pasaron los 10 días limites de iniciado el mes"
+        }
     item = [
         {
             "id": "Mensualidad RehabilitAR",
@@ -40,32 +58,45 @@ def pay_subscription():
             "unit_price" : 16
         }
     ]
-    link = create_payment (item)
+    link = create_payment (item, user_id, "SUBSCRIPTION")
     qr = create_qr (link)
     return {
         "payment_url": link,
         "qr_url": qr
     }
 
-def pay_debt(amount):
+def get_user_debts(user_id):
+    response = supabase.table("payments") \
+        .select("*") \
+        .eq("user_id", user_id) \
+        .execute()
+
+    return [
+        p for p in response.data
+        if p.get("status", "").strip() == "PENDIENTE"
+    ]
+            
+
+
+
+
+def pay_debt(user_id, debt_id, amount):
     item = [
         {
-            "title" : "Deuda",
+            "id": f"deuda_{debt_id}",
+            "title" : "Pago de deuda",
             "quantity" : 1,
-            "unit_price" : amount
+            "unit_price" : float(amount)
         }
     ]
-    link = create_payment (item)
-    return link
+    link = create_payment (item, user_id, "DEBT", debt_id)
+    qr = create_qr (link)
+    return {
+        "payment_url": link,
+        "qr_url": qr
+    }
 
 
-def create_qr(link):
-    img = qrcode.make(link)
-    buffer = BytesIO()
-    img.save(buffer, format="PNG")
-    qr_base64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
-
-    return f"data:image/png;base64,{qr_base64}"
 
 def generate_receipt():
     print()
