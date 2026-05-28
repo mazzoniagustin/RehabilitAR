@@ -4,7 +4,7 @@ from utils.password_utils import random_password
 from utils.permissions import check_user_existance
 from database import supabase
 #Aplicacion de las reglas de negocio.
-
+ 
 def register_user_by_staff(data):
     try:
         check_user_existance(data.email) 
@@ -18,7 +18,7 @@ def register_user_by_staff(data):
             
         if not auth_response:
             raise HTTPException(status_code=400, detail='Error en el registro del usuario.')
-
+ 
         user_id = auth_response.user.id
         supabase.auth.admin.update_user_by_id(user_id, {'email_confirm': True})
         
@@ -36,7 +36,7 @@ def register_user_by_staff(data):
         }).execute()
         
         send_account_created_email(data.email, data.name, password)
-
+ 
         return {"Mensaje": "Usuario registrado exitosamente."}
     except HTTPException:
         raise
@@ -47,19 +47,19 @@ def register_employee_by_admin(data):
     try:
         
         check_user_existance(data.email)
-
+ 
         if data.rol in ['RECEPCIONISTA', 'PROFESOR'] and not data.specialty:
             raise HTTPException(status_code=400, detail='La especialidad es obligatoria para recepcionistas y profesores.')
-
+ 
         password = random_password()
         response = supabase.auth.admin.create_user({
             'email': data.email,
             'password': password
         })
-
+ 
         if not response:
             raise HTTPException(status_code=400, detail='Error en el registro del empleado.')
-
+ 
         user_id = response.user.id
         supabase.auth.admin.update_user_by_id(user_id, {'email_confirm': True})
         
@@ -75,7 +75,7 @@ def register_employee_by_admin(data):
             'failed_attempts': 0,
             'birth_date': data.birth_date.isoformat()
         }).execute()
-
+ 
         send_account_created_email(data.email, data.name, password)
         return {"Mensaje": "Empleado registrado exitosamente."}
     
@@ -83,8 +83,8 @@ def register_employee_by_admin(data):
         raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=f'Error en el registro del empleado. {str(e)}')
-
-
+ 
+ 
 def approve_certificate(data):
     try:
         response = supabase.table('users').select('physical_certificate').eq('id', data.id).execute()
@@ -116,12 +116,12 @@ def reject_certificate(data, reason):
             'physical_certificate': 'RECHAZADO',
             'physical_rejection_reason': reason_text}).eq('id', data.id).execute()
         return {'Mensaje': 'Apto físico rechazado.'}
-
+ 
     except HTTPException:
         raise   
     except Exception as e:
         raise HTTPException(status_code=400, detail=f'Error al rechazar el certificado físico.')
-
+ 
 def get_filtered_users(name: str = None, role: str = None, status: str = None):
     try:
         response = supabase.table('users').select('id, name, surname, email, dni, rol, account_status, specialty, credits, age, gender')
@@ -137,8 +137,8 @@ def get_filtered_users(name: str = None, role: str = None, status: str = None):
         return response.data
     except Exception as e:
         raise HTTPException(status_code=400, detail=f'Error al obtener los usuarios: {str(e)}')
-
-
+ 
+ 
 def reject_unblock_request(user_id, reason, acted_by):
     try:
         reason_text = reason.reason if hasattr(reason, 'reason') else reason
@@ -162,7 +162,7 @@ def reject_unblock_request(user_id, reason, acted_by):
         raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=f'Error al rechazar la solicitud de reactivacion.')
-
+ 
 def approve_unblock_request(user_id, acted_by):
     try:
         response = supabase.table('users').select('account_status').eq('id', user_id).single().execute()
@@ -182,12 +182,12 @@ def approve_unblock_request(user_id, acted_by):
         
         supabase.table('users').update({'account_status': 'ACTIVA'}).eq('id', user_id).execute()
         return {'Mensaje': 'Solicitud de reactivacion aprobada.'}
-
+ 
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=f'Error al aprobar la solicitud de reactivacion.')
-
+ 
 def block_user(user_id, reason, acted_by):
     try:
         reason_text = reason.reason if hasattr(reason, 'reason') else reason
@@ -230,7 +230,7 @@ def get_pending_certificates():
         return response.data
     except Exception as e:
         raise HTTPException(status_code=400, detail=f'Error al obtener los certificados pendientes.')
-
+ 
 def get_pending_unblock_requests():
     try:
         res = supabase.table('user_status_history')\
@@ -268,8 +268,8 @@ def get_pending_unblock_requests():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al obtener solicitudes: {str(e)}")
     
-
-
+ 
+ 
 def unblock_user(user_id, acted_by):
     try:
         response = supabase.table('users').select('account_status').eq('id', user_id).single().execute()
@@ -289,12 +289,12 @@ def unblock_user(user_id, acted_by):
         
         supabase.table('users').update({'account_status': 'ACTIVA'}).eq('id', user_id).execute()
         return {'Mensaje': 'Cuenta reactivada.'}
-
+ 
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=f'Error al desbloquear el usuario. {e}')
-
+ 
 def view_certificate(user_id):
     try:
         response = (
@@ -315,4 +315,3 @@ def view_certificate(user_id):
     
     except Exception as e:
         raise HTTPException(status_code=400, detail=f'Error al obtener el certificado. {e}')
-
