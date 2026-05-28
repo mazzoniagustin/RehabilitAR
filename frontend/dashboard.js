@@ -427,7 +427,11 @@ function apiErrorMessage(data, fallback = 'Error.') {
 }
 
 function combineDateAndTime(date, time) {
-  return date && time ? new Date(`${date}T${time}`).toISOString() : null;
+  if (!date || !time) return null;
+  // Mandamos la hora local de Argentina tal cual, sin conversión UTC.
+  // El backend opera en hora Argentina, así que "2026-06-01T17:00:00" se
+  // interpreta directamente como 17:00 AR y no como 17:00 UTC (= 20:00 AR).
+  return `${date}T${time}:00`;
 }
 
 function professorName(professorId) {
