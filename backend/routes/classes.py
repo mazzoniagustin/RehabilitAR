@@ -108,7 +108,9 @@ def update_capacity(
     data: UpdateCapacity,
     user=Depends(check_permission(['ADMINISTRATIVO']))
 ):
-    return classes_service.update_capacity(class_id, data.new_capacity)
+    # Bug 2 fix: pasar el id del admin para que quede registrado como responsable
+    # de la cancelación en caso de que el nuevo cupo fuerce una cancelación automática.
+    return classes_service.update_capacity(class_id, data.new_capacity, admin_user_id=str(user['id']))
 
 
 @router.post('/{class_id}/request')

@@ -26,8 +26,8 @@ def reservar_clase_individual(user_id: str, class_id: str, payment_percentage: i
         if user['account_status'] != 'ACTIVA':
             raise HTTPException(status_code=403, detail='Reserva fallida, no se encuentra habilitado para tomar la clase.')
 
-        # Verificar reserva existente sin filtrar por status, para cubrir cualquier estado previo
-        existing = (
+        # Verificar si ya hay una reserva activa (no cancelada) para esta clase
+        existing_active = (
             supabase.table('reservations')
             .select('id, status')
             .eq('user_id', user_id)
@@ -35,7 +35,7 @@ def reservar_clase_individual(user_id: str, class_id: str, payment_percentage: i
             .neq('status', 'CANCELADA')
             .execute()
         )
-        if existing.data:
+        if existing_active.data:
             raise HTTPException(status_code=400, detail='Ya tenés una reserva para esta clase.')
 
         if clase['current_capacity'] >= clase['max_capacity']:
@@ -43,19 +43,37 @@ def reservar_clase_individual(user_id: str, class_id: str, payment_percentage: i
 
         payment_status = 'SENADO_50' if payment_percentage == 50 else 'PENDIENTE'
 
-        # ORDEN CORRECTO: primero INSERT la reserva, luego actualizar el cupo.
-        # Así si el INSERT falla (ej: duplicate key), el cupo nunca se toca.
-        try:
-            supabase.table('reservations').insert({
-                'user_id': user_id,
-                'class_id': class_id,
+        # Buscar si existe una reserva CANCELADA previa para reutilizarla (UPDATE)
+        # en lugar de INSERT, evitando conflictos con unique constraint (user_id, class_id).
+        existing_cancelled = (
+            supabase.table('reservations')
+            .select('id')
+            .eq('user_id', user_id)
+            .eq('class_id', class_id)
+            .eq('status', 'CANCELADA')
+            .limit(1)
+            .execute()
+        )
+
+        if existing_cancelled.data:
+            supabase.table('reservations').update({
                 'status': 'CONFIRMADA',
                 'payment_status': payment_status,
-            }).execute()
-        except Exception as insert_err:
-            if '23505' in str(insert_err) or 'unique_user_class' in str(insert_err):
-                raise HTTPException(status_code=400, detail='Ya tenés una reserva para esta clase.')
-            raise
+                'cancellation_reason': None,
+                'cancelled_at': None,
+            }).eq('id', existing_cancelled.data[0]['id']).execute()
+        else:
+            try:
+                supabase.table('reservations').insert({
+                    'user_id': user_id,
+                    'class_id': class_id,
+                    'status': 'CONFIRMADA',
+                    'payment_status': payment_status,
+                }).execute()
+            except Exception as insert_err:
+                if '23505' in str(insert_err) or 'unique_user_class' in str(insert_err):
+                    raise HTTPException(status_code=400, detail='Ya tenés una reserva para esta clase.')
+                raise
 
         # Recién acá se actualiza el cupo, una vez que la reserva está confirmada
         supabase.table('classes').update({

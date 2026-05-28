@@ -585,7 +585,7 @@ async function loadAdminClasses() {
             <td>
               <div style="display:flex;gap:6px;flex-wrap:wrap">
                 <button class="action-btn" onclick="openStudentsModal('${c.id}', '${(c.activity_type || '').replace(/_/g, ' ')} ${formatDate(c.start_time)}')">Inscriptos</button>
-                <button class="action-btn" onclick="openCapacityModal('${c.id}', ${c.current_capacity}, ${c.max_capacity})">Cupo</button>
+                <button class="action-btn" onclick="openCapacityModal('${c.id}', ${c.current_capacity}, ${c.max_capacity}, '${c.status}')">Cupo</button>
                 <button class="action-btn danger" onclick="cancelClass('${c.id}')">Cancelar</button>
               </div>
             </td>
@@ -893,12 +893,27 @@ async function cancelClass(classId) {
 
 let capacityTargetId = null;
 
-function openCapacityModal(classId, currentCapacity, maxCapacity) {
+function openCapacityModal(classId, currentCapacity, maxCapacity, status) {
   capacityTargetId = classId;
   document.getElementById('currentCapacityText').textContent = `${currentCapacity} inscriptos / ${maxCapacity} cupo`;
   document.getElementById('newCapacityInput').value = maxCapacity;
   document.getElementById('capacityAlert').className = 'alert';
   document.getElementById('capacityModal').classList.add('open');
+
+  // Bug 1 fix: si la clase cambio de estado entre que se cargó la lista y que
+  // el admin abrió el modal (race condition), mostramos el error de inmediato
+  // y bloqueamos el input/botón para evitar un PATCH que el backend rechazará.
+  const isActive = status === 'PROGRAMADA' || status === 'EN CURSO';
+  const saveBtn = document.querySelector('#capacityModal .btn:not(.btn-outline)');
+  const input = document.getElementById('newCapacityInput');
+  if (!isActive) {
+    showAlert('capacityAlert', 'Solo se puede modificar el cupo de clases activas.');
+    if (saveBtn) saveBtn.disabled = true;
+    if (input) input.disabled = true;
+  } else {
+    if (saveBtn) saveBtn.disabled = false;
+    if (input) input.disabled = false;
+  }
 }
 
 function closeCapacityModal() {
@@ -909,6 +924,11 @@ function closeCapacityModal() {
 async function confirmUpdateCapacity() {
   const newCapacity = Number(document.getElementById('newCapacityInput').value);
   if (!newCapacity || newCapacity < 1) return showAlert('capacityAlert', 'Ingresá un cupo válido mayor a 0.');
+
+  // Bug 4 fix: deshabilitar el botón durante la llamada para evitar doble envío.
+  const saveBtn = document.querySelector('#capacityModal .btn:not(.btn-outline)');
+  if (saveBtn) saveBtn.disabled = true;
+
   try {
     const res = await fetch(`${API}/classes/${capacityTargetId}/capacity`, {
       method: 'PATCH',
@@ -916,11 +936,20 @@ async function confirmUpdateCapacity() {
       body: JSON.stringify({ new_capacity: newCapacity })
     });
     const data = await res.json();
-    if (!res.ok) return showAlert('capacityAlert', apiErrorMessage(data, 'Error al modificar el cupo.'));
+    if (!res.ok) {
+      showAlert('capacityAlert', apiErrorMessage(data, 'Error al modificar el cupo.'));
+      return;
+    }
     showAlert('clasesAlert', data.message || 'Cupo actualizado.', 'success');
     closeCapacityModal();
     await loadAdminClasses();
-  } catch { showAlert('capacityAlert', 'No se pudo conectar.'); }
+  } catch {
+    showAlert('capacityAlert', 'No se pudo conectar.');
+  } finally {
+    // Rehabilitar siempre, incluso si closeCapacityModal ya lo cerró,
+    // para que el estado quede limpio si el modal se reabre.
+    if (saveBtn) saveBtn.disabled = false;
+  }
 }
 
 async function openStudentsModal(classId, className) {

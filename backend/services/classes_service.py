@@ -484,7 +484,7 @@ def cancel_class(class_id: str):
         raise HTTPException(status_code=500, detail=f'Error al cancelar la clase: {str(e)}')
 
 
-def update_capacity(class_id: str, new_capacity: int):
+def update_capacity(class_id: str, new_capacity: int, admin_user_id: str = None):
     try:
         class_response = (
             supabase.table('classes')
@@ -507,6 +507,8 @@ def update_capacity(class_id: str, new_capacity: int):
         if new_capacity > room_capacity:
             raise HTTPException(status_code=400, detail='El cupo ingresado supera la capacidad máxima de la sala.')
 
+        # Bug 3 fix: usar el conteo real de reservas confirmadas en lugar de
+        # current_capacity (que puede estar desincronizado por concurrencia).
         reservations_response = (
             supabase.table('reservations')
             .select('id', count='exact')
@@ -519,10 +521,13 @@ def update_capacity(class_id: str, new_capacity: int):
         if new_capacity < current_inscribed:
             # Delegar toda la lógica de cancelación al servicio correspondiente,
             # que cancela reservas, otorga créditos y registra el motivo correctamente.
+            # Bug 2 fix: pasar admin_user_id para que quede registrado en cancellations
+            # quién inició la cancelación, en lugar de un UUID random.
             from services.cancellations.classes_cancellation_service import cancelar_clase
             cancelar_clase(
                 class_id,
-                cancel_reason='Cancelación automática: el nuevo cupo es menor a los inscriptos.'
+                cancel_reason='Cancelación automática: el nuevo cupo es menor a los inscriptos.',
+                user_id=admin_user_id
             )
             return {
                 'message': 'El nuevo cupo es menor a los inscriptos. La clase ha sido cancelada y se procesaron los reembolsos.'
