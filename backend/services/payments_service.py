@@ -45,6 +45,18 @@ def pay_deposit():
 
 
 def pay_subscription(user_id):
+    user_response = supabase.table("users") \
+        .select("rol") \
+        .eq("id", user_id) \
+        .single() \
+        .execute()
+
+    rol = user_response.data["rol"]
+
+    if rol == "ABONADO":
+        return {
+            "Error": "Ya sos cliente abonado. No podés volver a pagar la mensualidad."
+        }
     today = datetime.now()
     if today.day > 10:
         return {
