@@ -54,9 +54,11 @@ def cancelar_reserva(reservation_id: str, current_user_id: str):
         nueva_capacidad = max(clase['current_capacity'] - 1, 0)
         supabase.table('classes').update({'current_capacity': nueva_capacidad}).eq('id', clase['id']).execute()
 
-        # FIX: actualizar ambos contadores (mensual e histórico)
+        # Calcular el nuevo valor ANTES de persistir y usar ese mismo valor
+        # en todas las evaluaciones de beneficios siguientes.
+        new_monthly_cancellations = user['monthly_cancellations'] + 1
         supabase.table('users').update({
-            'monthly_cancellations': user['monthly_cancellations'] + 1,
+            'monthly_cancellations': new_monthly_cancellations,
             'cancellation_count': user['cancellation_count'] + 1,
         }).eq('id', user['id']).execute()
 
@@ -65,33 +67,34 @@ def cancelar_reserva(reservation_id: str, current_user_id: str):
         mensaje = 'Reserva cancelada exitosamente.'
 
         if diferencia_horas >= 48:
+            # Con 48hs o más de anticipación se aplican beneficios por cancelación.
+            # Según entrevista:
+            #   1ra cancelación del mes → descuento 20% en próxima cuota
+            #   2da cancelación del mes → descuento 30% en próxima cuota
+            #   3ra cancelación en adelante → se pierden descuentos acumulados
+            # El NO_ABONADO recibe devolución de seña (pendiente integración MercadoPago).
             if user['rol'] == 'ABONADO':
-                if user['monthly_cancellations'] < 2:
-                    benefits.otorgar_credito(user['id'])
-                elif user['monthly_cancellations'] == 2:
+                if new_monthly_cancellations == 1:
+                    benefits.otorgar_descuento20(user['id'])
+                elif new_monthly_cancellations == 2:
+                    benefits.otorgar_descuento30(user['id'])
+                else:
+                    # 3ra cancelación o más: se pierden todos los descuentos acumulados
                     benefits.cancelar_descuentos(user['id'])
-                    benefits.retirar_Todoscredito(user['id'])
-                    mensaje = 'Has alcanzado el límite de cancelaciones. Se han retirado tus créditos y descuentos.'
+                    mensaje = 'Has alcanzado el límite de cancelaciones. Se han retirado tus descuentos.'
             else:
                 # NO_ABONADO: devolver seña (pendiente integración MercadoPago)
                 # depositar_reserva(reserva['amount_paid'], user['email'])
                 pass
 
         elif diferencia_horas >= 24:
-            if user['rol'] == 'ABONADO':
-                if user['monthly_cancellations'] < 2:
-                    if user['monthly_cancellations'] == 0:
-                        benefits.otorgar_descuento20(user['id'])
-                    else:
-                        benefits.otorgar_descuento30(user['id'])
-                elif user['monthly_cancellations'] == 2:
-                    benefits.cancelar_descuentos(user['id'])
-                    benefits.retirar_Todoscredito(user['id'])
-                    mensaje = 'Has alcanzado el límite de cancelaciones. Se han retirado tus créditos y descuentos.'
-            else:
-                pass
+            # Entre 24hs y 48hs: se pierde el beneficio, no se otorga nada.
+            # Según entrevista: "con 24hs antes pierde el beneficio".
+            # El NO_ABONADO tampoco recupera la seña en este rango.
+            mensaje = 'Reserva cancelada. No se otorgan beneficios por cancelaciones con menos de 48hs de anticipación.'
 
         else:
+            # Menos de 24hs: sin beneficio para ningún tipo de usuario.
             mensaje = 'Reserva cancelada. No se otorgan beneficios por cancelaciones con menos de 24hs de anticipación.'
 
         return {'message': mensaje}

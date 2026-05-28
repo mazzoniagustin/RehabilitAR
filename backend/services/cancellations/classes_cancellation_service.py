@@ -26,6 +26,8 @@ def _cancelar_reservas_de_clase(class_id: str):
     Cancela todas las reservas confirmadas de la clase y aplica
     los beneficios correspondientes (crédito a abonados, reembolso
     pendiente de implementar para no abonados).
+    Al finalizar, resetea current_capacity a 0 para que la clase
+    quede consistente aunque su status sea CANCELADA.
     """
     reservas = (
         supabase.table('reservations')
@@ -42,6 +44,10 @@ def _cancelar_reservas_de_clase(class_id: str):
         else:
             # depositar_reserva(reserva['amount_paid'], user['email']) #pendiente_de_implementar
             pass
+
+    # Resetear el cupo ocupado a 0: todas las reservas fueron canceladas,
+    # no quedan inscriptos independientemente del status de la clase.
+    supabase.table('classes').update({'current_capacity': 0}).eq('id', class_id).execute()
 
 
 def cancelar_clase(class_id: str, cancel_reason: str, user_id: str = None):
