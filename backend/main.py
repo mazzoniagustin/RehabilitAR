@@ -9,10 +9,7 @@ from routes.staff import routerStaff as staff_router
 from routes.user import routerUser as user_router
 from routes.classes import router as classes_router
 from routes.cancellations import router as cancellations_router
-<<<<<<< HEAD
 from routes.mp_webhook import routerMPWebhook
-=======
->>>>>>> origin/feature/reserve_mangment
 from routes.reservations import router as reservations_router
 
 app = FastAPI(
