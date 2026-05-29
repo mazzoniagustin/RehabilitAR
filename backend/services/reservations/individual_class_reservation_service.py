@@ -116,11 +116,12 @@ def _agregar_a_waitlist_individual(user_id: str, class_id: str):
         .select('position, priority_order')
         .eq('class_id', class_id)
         .order('position', desc=True)
+        .limit(1)
         .execute()
     )
     entradas = waitlist_response.data or []
     nueva_posicion = (entradas[0]['position'] + 1) if entradas else 1
-    nuevo_priority_order = (max(e['priority_order'] for e in entradas) + 1) if entradas else 1
+    nuevo_priority_order = (entradas[0]['priority_order'] + 1) if entradas else 1
 
     supabase.table('waitlist').insert({
         'user_id': user_id,

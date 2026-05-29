@@ -484,6 +484,9 @@ def cancel_class(class_id: str):
         if not (updated_class.data or []):
             raise HTTPException(status_code=500, detail='No se pudo cancelar la clase. Intente nuevamente.')
 
+        # Limpiar waitlist de la clase cancelada
+        supabase.table('waitlist').delete().eq('class_id', class_id).execute()
+
         return {'message': 'Clase cancelada exitosamente', 'data': updated_class.data[0]}
 
     except HTTPException:
