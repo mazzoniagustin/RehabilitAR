@@ -789,7 +789,7 @@ async function checkFijaAvailability() {
     }
   }
 
-  const endH = Math.floor(endMinutes / 60);
+  const endH = String(Math.floor(endMinutes / 60)).padStart(2, '0');
   const endM = String(endMinutes % 60).padStart(2, '0');
   const endStr = `${endH}:${endM}`;
 
