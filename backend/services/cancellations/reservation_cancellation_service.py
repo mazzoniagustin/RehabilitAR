@@ -174,4 +174,29 @@ def _confirmar_desde_waitlist(entrada: dict, class_id: str, capacidad_actual: in
     ).eq('id', class_id).execute()
 
     supabase.table('waitlist').delete().eq('id', entrada['id']).execute()
+
+    # Reordenar posiciones globales de los restantes en la waitlist
+    restantes = (
+        supabase.table('waitlist')
+        .select('id, priority')
+        .eq('class_id', class_id)
+        .order('position', desc=False)
+        .execute()
+    ).data or []
+    for i, fila in enumerate(restantes, start=1):
+        supabase.table('waitlist').update({'position': i}).eq('id', fila['id']).execute()
+
+    # Reordenar priority_order dentro de cada grupo de prioridad
+    for prioridad in ['ABONADO', 'NO_ABONADO']:
+        grupo = (
+            supabase.table('waitlist')
+            .select('id')
+            .eq('class_id', class_id)
+            .eq('priority', prioridad)
+            .order('position', desc=False)
+            .execute()
+        ).data or []
+        for i, fila in enumerate(grupo, start=1):
+            supabase.table('waitlist').update({'priority_order': i}).eq('id', fila['id']).execute()
+
     # TODO: notificar al usuario que fue promovido desde la lista de espera
