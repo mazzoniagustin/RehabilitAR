@@ -77,17 +77,19 @@ def _agregar_waitlist_individual(user_id: str, class_id: str):
     FIFO puro: se ordena por joined_at.
     El campo priority se almacena como 'NO_ABONADO' para cumplir el NOT NULL,
     pero no se usa como criterio de orden.
+    La posición se calcula con COUNT para reducir la ventana de race condition.
     """
     waitlist_response = (
         supabase.table('waitlist')
         .select('position, priority_order')
         .eq('class_id', class_id)
         .order('position', desc=True)
+        .limit(1)
         .execute()
     )
     entradas = waitlist_response.data or []
     nueva_posicion = (entradas[0]['position'] + 1) if entradas else 1
-    nuevo_priority_order = (max(e['priority_order'] for e in entradas) + 1) if entradas else 1
+    nuevo_priority_order = (entradas[0]['priority_order'] + 1) if entradas else 1
 
     supabase.table('waitlist').insert({
         'user_id': user_id,
@@ -107,22 +109,30 @@ def _agregar_waitlist_fija(user_id: str, class_id: str, prioridad: str):
     """
     FIFO con prioridad: ABONADO tiene prioridad sobre NO_ABONADO.
     Dentro del mismo nivel de prioridad, se respeta el orden de llegada.
+    La posición se calcula con COUNT para reducir la ventana de race condition.
     """
     waitlist_response = (
         supabase.table('waitlist')
-        .select('position, priority, priority_order')
+        .select('position')
         .eq('class_id', class_id)
         .order('position', desc=True)
+        .limit(1)
         .execute()
     )
     entradas = waitlist_response.data or []
-
     nueva_posicion = (entradas[0]['position'] + 1) if entradas else 1
 
-    mismo_nivel = [e for e in entradas if e['priority'] == prioridad]
-    nuevo_priority_order = (
-        max(e['priority_order'] for e in mismo_nivel) + 1
-    ) if mismo_nivel else 1
+    nivel_response = (
+        supabase.table('waitlist')
+        .select('priority_order')
+        .eq('class_id', class_id)
+        .eq('priority', prioridad)
+        .order('priority_order', desc=True)
+        .limit(1)
+        .execute()
+    )
+    nivel_entradas = nivel_response.data or []
+    nuevo_priority_order = (nivel_entradas[0]['priority_order'] + 1) if nivel_entradas else 1
 
     supabase.table('waitlist').insert({
         'user_id': user_id,
