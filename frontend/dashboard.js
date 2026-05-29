@@ -423,6 +423,7 @@ let adminClassProfessors = [];
 let adminClassFormProfessors = [];
 let professorClassRequests = [];
 let classAvailabilityListenersReady = false;
+let currentClassTab = 'individual'; // 'individual' | 'fija'
 
 function apiErrorMessage(data, fallback = 'Error.') {
   if (typeof data?.detail === 'string') return data.detail;
@@ -432,9 +433,6 @@ function apiErrorMessage(data, fallback = 'Error.') {
 
 function combineDateAndTime(date, time) {
   if (!date || !time) return null;
-  // Mandamos la hora local de Argentina tal cual, sin conversión UTC.
-  // El backend opera en hora Argentina, así que "2026-06-01T17:00:00" se
-  // interpreta directamente como 17:00 AR y no como 17:00 UTC (= 20:00 AR).
   return `${date}T${time}:00`;
 }
 
@@ -443,12 +441,43 @@ function professorName(professorId) {
   return professor ? `${professor.name} ${professor.surname}` : '';
 }
 
+// ── Tab switching ─────────────────────────────────────────────────────────────
+
+function switchClassTab(tab) {
+  currentClassTab = tab;
+
+  const tabIndividual = document.getElementById('tabIndividual');
+  const tabFija = document.getElementById('tabFija');
+  const formIndividual = document.getElementById('formIndividual');
+  const formFija = document.getElementById('formFija');
+
+  if (tab === 'individual') {
+    tabIndividual.style.borderBottomColor = 'var(--accent)';
+    tabIndividual.style.color = 'var(--accent)';
+    tabIndividual.style.fontWeight = '600';
+    tabFija.style.borderBottomColor = 'transparent';
+    tabFija.style.color = 'var(--muted)';
+    tabFija.style.fontWeight = '500';
+    formIndividual.style.display = 'block';
+    formFija.style.display = 'none';
+  } else {
+    tabFija.style.borderBottomColor = 'var(--accent)';
+    tabFija.style.color = 'var(--accent)';
+    tabFija.style.fontWeight = '600';
+    tabIndividual.style.borderBottomColor = 'transparent';
+    tabIndividual.style.color = 'var(--muted)';
+    tabIndividual.style.fontWeight = '500';
+    formIndividual.style.display = 'none';
+    formFija.style.display = 'block';
+  }
+}
+
+// ── Individual: disponibilidad dinámica ───────────────────────────────────────
+
 async function loadAdminClassData() {
   const professorsRes = await fetch(`${API}/classes/professors`, { headers: authH() });
   const professors = await professorsRes.json();
-
   if (!professorsRes.ok) throw new Error(apiErrorMessage(professors, 'No se pudieron cargar los profesores.'));
-
   adminClassProfessors = professors || [];
   bindClassAvailabilityInputs();
   await refreshClassAvailabilityOptions();
@@ -456,11 +485,9 @@ async function loadAdminClassData() {
 
 function bindClassAvailabilityInputs() {
   if (classAvailabilityListenersReady) return;
-
   ['classDate', 'classStartTime', 'classEndTime'].forEach(id => {
     document.getElementById(id)?.addEventListener('change', refreshClassAvailabilityOptions);
   });
-
   classAvailabilityListenersReady = true;
 }
 
@@ -468,9 +495,7 @@ function getClassFormTimeRange() {
   const classDate = document.getElementById('classDate').value;
   const startTime = document.getElementById('classStartTime').value;
   const endTime = document.getElementById('classEndTime').value;
-
   if (!classDate || !startTime || !endTime) return null;
-
   return {
     start_time: combineDateAndTime(classDate, startTime),
     end_time: combineDateAndTime(classDate, endTime)
@@ -513,22 +538,128 @@ async function refreshClassAvailabilityOptions() {
     if (createButton) createButton.disabled = adminClassRooms.length === 0;
 
     roomSelect.innerHTML = adminClassRooms.length
-      ? adminClassRooms.map(room => `
-        <option value="${room.id}">${room.name} - cupo ${room.capacity}</option>
-      `).join('')
+      ? adminClassRooms.map(r => `<option value="${r.id}">${r.name} — cupo sala: ${r.capacity}</option>`).join('')
       : '<option value="">No hay salas disponibles</option>';
 
-    professorSelect.innerHTML = '<option value="">Sin profesor inicial</option>' + adminClassFormProfessors.map(professor => `
-      <option value="${professor.id}">${professor.name} ${professor.surname}${professor.specialty ? ` - ${professor.specialty}` : ''}</option>
-    `).join('');
+    professorSelect.innerHTML = '<option value="">Sin profesor inicial</option>'
+      + adminClassFormProfessors.map(p => `<option value="${p.id}">${p.name} ${p.surname}${p.specialty ? ` — ${p.specialty}` : ''}</option>`).join('');
+
   } catch (e) {
     adminClassRooms = [];
     adminClassFormProfessors = [];
     if (detailsFields) detailsFields.style.display = 'block';
     if (createButton) createButton.disabled = true;
-    roomSelect.innerHTML = '<option value="">No se pudieron cargar salas</option>';
-    professorSelect.innerHTML = '<option value="">No se pudieron cargar profesores</option>';
+    if (roomSelect) roomSelect.innerHTML = '<option value="">No se pudieron cargar salas</option>';
+    if (professorSelect) professorSelect.innerHTML = '<option value="">No se pudieron cargar profesores</option>';
     showAlert('clasesAlert', e.message || 'No se pudo cargar disponibilidad.');
+  }
+}
+
+// ── Fija: preview y disponibilidad ───────────────────────────────────────────
+
+async function checkFijaAvailability() {
+  const dayOfWeek = parseInt(document.getElementById('fijaDayOfWeek').value);
+  const startTime = document.getElementById('fijaStartTime').value;
+  const duration = parseInt(document.getElementById('fijaDuration').value);
+
+  if (!startTime || !duration || duration < 1) {
+    return showAlert('clasesAlert', 'Completá la hora de inicio y duración para verificar disponibilidad.');
+  }
+
+  const [startHour, startMinute] = startTime.split(':').map(Number);
+  const endMinutes = startHour * 60 + startMinute + duration;
+  if (endMinutes > 20 * 60) {
+    return showAlert('clasesAlert', `Con esa duración la clase termina a las ${Math.floor(endMinutes/60)}:${String(endMinutes%60).padStart(2,'0')}, fuera del horario del centro (hasta 20:00).`);
+  }
+
+  const dayNames = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes'];
+
+  // Calcular el mes objetivo (mismo que el backend)
+  const today = new Date();
+  let year = today.getFullYear();
+  let month = today.getMonth(); // 0-indexed
+  const daysInCurrentMonth = new Date(year, month + 1, 0).getDate();
+  let hasOccurrenceThisMonth = false;
+  for (let d = today.getDate(); d <= daysInCurrentMonth; d++) {
+    if (new Date(year, month, d).getDay() === (dayOfWeek === 6 ? 0 : dayOfWeek + 1) % 7 ||
+        // convertir 0=lun a JS donde 0=dom
+        new Date(year, month, d).getDay() === [1,2,3,4,5][dayOfWeek]) {
+      hasOccurrenceThisMonth = true;
+      break;
+    }
+  }
+  // Si no quedan ocurrencias este mes, pasar al siguiente
+  if (!hasOccurrenceThisMonth) {
+    month = (month + 1) % 12;
+    if (month === 0) year++;
+  }
+
+  // Calcular todas las fechas del mes que caen en el día elegido
+  const jsDayOfWeek = [1,2,3,4,5][dayOfWeek]; // 0=lun→1, 4=vie→5
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const monthNames = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  const occurrences = [];
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dt = new Date(year, month, d);
+    if (dt.getDay() === jsDayOfWeek) {
+      occurrences.push(`${d} de ${monthNames[month]} ${year}`);
+    }
+  }
+
+  const endH = Math.floor(endMinutes / 60);
+  const endM = String(endMinutes % 60).padStart(2, '0');
+  const endStr = `${endH}:${endM}`;
+
+  const preview = document.getElementById('fijaPreview');
+  preview.style.display = 'block';
+  preview.innerHTML = `
+    <strong>Se crearán ${occurrences.length} clase(s)</strong> para todos los <strong>${dayNames[dayOfWeek]}</strong> de <strong>${monthNames[month]} ${year}</strong>:<br>
+    ${occurrences.map(o => `• ${o} — ${startTime} a ${endStr}`).join('<br>')}
+    <br><br>Las salas y profesores disponibles se verifican para cada fecha individualmente.
+  `;
+
+  // Cargar salas y profesores disponibles para la primera ocurrencia como referencia
+  const fijaDetailsFields = document.getElementById('fijaDetailsFields');
+  const createFijaBtn = document.getElementById('createFijaBtn');
+  const fijaRoomSelect = document.getElementById('fijaRoom');
+  const fijaProfessorSelect = document.getElementById('fijaProfessor');
+
+  fijaDetailsFields.style.display = 'block';
+  fijaRoomSelect.innerHTML = '<option value="">Cargando salas...</option>';
+  fijaProfessorSelect.innerHTML = '<option value="">Cargando profesores...</option>';
+  createFijaBtn.style.display = 'none';
+
+  try {
+    // Usar la primera fecha del mes como referencia para listar salas y profesores
+    if (occurrences.length === 0) {
+      fijaRoomSelect.innerHTML = '<option value="">No hay fechas disponibles</option>';
+      return;
+    }
+    const firstDate = new Date(year, month, parseInt(occurrences[0]));
+    const startISO = `${firstDate.getFullYear()}-${String(firstDate.getMonth()+1).padStart(2,'0')}-${String(firstDate.getDate()).padStart(2,'0')}T${startTime}:00`;
+    const endISO = `${firstDate.getFullYear()}-${String(firstDate.getMonth()+1).padStart(2,'0')}-${String(firstDate.getDate()).padStart(2,'0')}T${endStr}:00`;
+
+    const params = new URLSearchParams({ start_time: startISO, end_time: endISO });
+    const [roomsRes, profsRes] = await Promise.all([
+      fetch(`${API}/classes/rooms?${params.toString()}`, { headers: authH() }),
+      fetch(`${API}/classes/professors?${params.toString()}`, { headers: authH() })
+    ]);
+    const rooms = await roomsRes.json();
+    const profs = await profsRes.json();
+
+    fijaRoomSelect.innerHTML = (rooms && rooms.length)
+      ? rooms.map(r => `<option value="${r.id}">${r.name} — cupo sala: ${r.capacity}</option>`).join('')
+      : '<option value="">No hay salas disponibles</option>';
+
+    fijaProfessorSelect.innerHTML = '<option value="">Sin profesor inicial</option>'
+      + (profs || []).map(p => `<option value="${p.id}">${p.name} ${p.surname}${p.specialty ? ` — ${p.specialty}` : ''}</option>`).join('');
+
+    createFijaBtn.style.display = rooms && rooms.length ? 'inline-flex' : 'none';
+
+  } catch (e) {
+    fijaRoomSelect.innerHTML = '<option value="">No se pudieron cargar salas</option>';
+    fijaProfessorSelect.innerHTML = '<option value="">No se pudieron cargar profesores</option>';
+    showAlert('clasesAlert', 'No se pudo verificar disponibilidad.');
   }
 }
 
@@ -816,9 +947,10 @@ async function confirmRejectProfessorRequest() {
   if (ok) closeRejectProfessorRequestModal();
 }
 
-async function createClassFromAdmin() {
+// ── Crear clase INDIVIDUAL ────────────────────────────────────────────────────
+
+async function createIndividualClass() {
   const room_id = document.getElementById('classRoom').value;
-  const type = document.getElementById('classType').value;
   const activity_type = document.getElementById('classActivity').value;
   const max_capacity = Number(document.getElementById('classCapacity').value);
   const class_date = document.getElementById('classDate').value;
@@ -826,8 +958,8 @@ async function createClassFromAdmin() {
   const end_time = document.getElementById('classEndTime').value;
   const professor_id = document.getElementById('classProfessor').value || null;
 
-  if (!room_id || !type || !activity_type || !max_capacity || !class_date || !start_time || !end_time) {
-    return showAlert('clasesAlert', 'Completa todos los campos obligatorios.');
+  if (!room_id || !activity_type || !max_capacity || !class_date || !start_time || !end_time) {
+    return showAlert('clasesAlert', 'Completá todos los campos obligatorios.');
   }
 
   const apiStartTime = combineDateAndTime(class_date, start_time);
@@ -839,28 +971,24 @@ async function createClassFromAdmin() {
   if (selectedDate.getDay() === 0 || selectedDate.getDay() === 6) {
     return showAlert('clasesAlert', 'Las clases solo pueden programarse de lunes a viernes.');
   }
-
   if (startMinutes < 8 * 60 || endMinutes > 20 * 60) {
     return showAlert('clasesAlert', 'Las clases deben estar dentro del horario del centro: 08:00 a 20:00.');
   }
-
   if (new Date(apiEndTime) <= new Date(apiStartTime)) {
     return showAlert('clasesAlert', 'La hora de fin debe ser mayor a la hora de inicio.');
   }
 
   const btn = document.getElementById('createClassBtn');
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span>Creando...';
+  btn.textContent = 'Creando...';
 
   try {
-    const res = await fetch(`${API}/classes/`, {
+    const res = await fetch(`${API}/classes/individual`, {
       method: 'POST',
       headers: authH(),
       body: JSON.stringify({
         room_id,
-        type,
         activity_type,
-        is_scheduled: false,
         max_capacity,
         start_time: apiStartTime,
         end_time: apiEndTime,
@@ -871,7 +999,7 @@ async function createClassFromAdmin() {
     const data = await res.json();
     if (!res.ok) return showAlert('clasesAlert', apiErrorMessage(data, 'Error al crear la clase.'));
 
-    showAlert('clasesAlert', data.message || 'La clase se creo exitosamente.', 'success');
+    showAlert('clasesAlert', data.message || 'Clase individual creada exitosamente.', 'success');
     document.getElementById('classCapacity').value = '';
     document.getElementById('classDate').value = '';
     document.getElementById('classStartTime').value = '';
@@ -883,7 +1011,66 @@ async function createClassFromAdmin() {
     showAlert('clasesAlert', 'No se pudo conectar.');
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Crear clase';
+    btn.textContent = 'Crear clase individual';
+  }
+}
+
+// ── Crear clases FIJA ─────────────────────────────────────────────────────────
+
+async function createFijaClass() {
+  const room_id = document.getElementById('fijaRoom').value;
+  const activity_type = document.getElementById('fijaActivity').value;
+  const max_capacity = Number(document.getElementById('fijaCapacity').value);
+  const day_of_week = parseInt(document.getElementById('fijaDayOfWeek').value);
+  const startTime = document.getElementById('fijaStartTime').value;
+  const duration = parseInt(document.getElementById('fijaDuration').value);
+  const professor_id = document.getElementById('fijaProfessor').value || null;
+
+  if (!room_id || !activity_type || !max_capacity || !startTime || !duration) {
+    return showAlert('clasesAlert', 'Completá todos los campos obligatorios.');
+  }
+
+  const [startHour, startMinute] = startTime.split(':').map(Number);
+
+  const btn = document.getElementById('createFijaBtn');
+  btn.disabled = true;
+  btn.textContent = 'Creando...';
+
+  try {
+    const res = await fetch(`${API}/classes/fija`, {
+      method: 'POST',
+      headers: authH(),
+      body: JSON.stringify({
+        room_id,
+        activity_type,
+        max_capacity,
+        day_of_week,
+        start_hour: startHour,
+        start_minute: startMinute,
+        duration_minutes: duration,
+        professor_id
+      })
+    });
+
+    const data = await res.json();
+    if (!res.ok) return showAlert('clasesAlert', apiErrorMessage(data, 'Error al crear las clases fijas.'));
+
+    showAlert('clasesAlert', data.message || 'Clases fijas creadas exitosamente.', 'success');
+
+    // Limpiar formulario fijo
+    document.getElementById('fijaCapacity').value = '';
+    document.getElementById('fijaRoom').innerHTML = '';
+    document.getElementById('fijaProfessor').innerHTML = '';
+    document.getElementById('fijaDetailsFields').style.display = 'none';
+    document.getElementById('fijaPreview').style.display = 'none';
+    document.getElementById('createFijaBtn').style.display = 'none';
+
+    await loadAdminClasses();
+  } catch {
+    showAlert('clasesAlert', 'No se pudo conectar.');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Crear clases del mes';
   }
 }
 
