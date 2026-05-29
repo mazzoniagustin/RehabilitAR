@@ -1,6 +1,9 @@
 from database import supabase
 from fastapi import HTTPException
 
+#from services.mp_service import pagar_Reserva #pendiente_de_implementar
+
+
 def reservar_clase_individual(user_id: str, class_id: str, payment_percentage: int):
     try:
         # Normalizar a str por si llegan como objetos UUID desde Pydantic

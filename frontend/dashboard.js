@@ -106,6 +106,7 @@ const ICONS = {
   file:     '<path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/>',
   bell:   '<path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/>',
   users2: '<path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/>',
+  crown: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 7l5 5 5-8 5 8 5-5-3 13H5L2 7z"/></svg>`
 };
 
 const NAV_CONFIG = {
@@ -117,6 +118,7 @@ const NAV_CONFIG = {
     { label:'Mis reservas',    panel:'Reservas',  icon:'gift' },
     { label: 'Solicitar reactivación', panel:'Reactivacion', icon:'bell' },
     { label:'Seguridad',       panel:'Seguridad', icon:'lock' },
+    { label:'Pagos', panel:'Pagos', icon:'crown' },
   ],
   ABONADO: [
     { label:'Inicio',          panel:'Inicio',    icon:'grid' },
@@ -126,6 +128,7 @@ const NAV_CONFIG = {
     { label:'Mis reservas',    panel:'Reservas',  icon:'gift' },
     { label: 'Solicitar reactivación', panel:'Reactivacion', icon:'bell' },
     { label:'Seguridad',       panel:'Seguridad', icon:'lock' },
+    { label:'Pagos', panel:'Pagos', icon:'crown' },
   ],
   ADMINISTRATIVO: [
     { label:'Inicio',             panel:'Inicio',        icon:'grid' },
@@ -191,6 +194,7 @@ function onPanelShow(panel) {
   if (panel === 'Solicitudes')  loadSolicitudes();
   if (panel === 'Reactivacion') loadReactivacionPanel();
   if (panel === 'Buscar')       initUserPanel();
+  if (panel === 'Pagos') loadDebts();
 }
 // CARGA DEL DASHBOARD
 const STAT_MAPS = {
@@ -1733,6 +1737,128 @@ async function handleChangePassword() {
 }
 
 
+// Pagos
+async function paySubscription() {
+
+  try {
+    const user = getUser();
+    const res = await fetch(`${API}/payments/subscription`, {
+      method: 'POST',
+      headers: authH(),
+      body: JSON.stringify({
+        user_id: user.id
+      })
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      return showAlert('pagosAlert', data.detail || 'No se pudo generar el pago.');
+    }
+    document.getElementById('paymentQrTitle').textContent = 'Pagar mensualidad';
+    document.getElementById('paymentQrSubtitle').textContent = 'Escaneá el QR con Mercado Pago para abonar la mensualidad.';
+    document.getElementById('paymentQrImage').src = data.qr_url;
+    document.getElementById('paymentQrModal').classList.add('open');
+
+  } catch (error) {
+
+    console.error(error);
+
+    showAlert(
+      'pagosAlert',
+      'No se pudo conectar con el servidor.'
+    );
+  } 
+}
+
+function closePaymentQrModal() {
+  document.getElementById('paymentQrModal').classList.remove('open');
+}
+async function loadDebts() {
+  const user = getUser();
+
+  const res = await fetch(`${API}/payments/debts/${user.id}`, {
+    headers: authH()
+  });
+
+  const debts = await res.json();
+  console.log("DEUDAS RECIBIDAS:", debts);
+  console.log("CANTIDAD:", debts.length);
+  const container = document.getElementById('debtsContainer');
+
+  if (!debts.length) {
+    container.innerHTML = `
+    <div class="section-card debts-card no-debts-card">
+
+      <h3>Deudas pendientes</h3>
+
+      <div class="no-debts-content">
+
+        <div class="no-debts-icon">
+          ✓
+        </div>
+
+        <h4>No tenés deudas pendientes</h4>
+
+        <p>
+          ¡Excelente! Estás al día con tus pagos.
+        </p>
+
+      </div>
+
+    </div>
+    `;
+    return;
+  }
+  
+
+  container.innerHTML = `
+    <div class="section-card debts-card">
+      <h3>Deudas pendientes</h3>
+
+      ${debts.map(d => `
+        <div class="debt-item">
+          <div class="debt-info">
+            <strong>Deuda #${d.id}</strong>
+            <span>Fecha de vencimiento: ${d.due_date}</span>
+          </div>
+
+          <div class="debt-amount">$${d.amount}</div>
+
+          <button class="btn btn-sm" onclick="payDebt('${d.id}', ${d.amount})">
+            Pagar deuda
+          </button>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+
+async function payDebt(debtId, amount) {
+  const user = getUser();
+
+  const res = await fetch(`${API}/payments/debt`, {
+    method: 'POST',
+    headers: authH(),
+    body: JSON.stringify({
+      user_id: user.id,
+      debt_id: debtId,
+      amount: amount
+    })
+  });
+
+  const data = await res.json();
+
+  if (!res.ok) {
+    return showAlert('pagosAlert', data.detail || 'No se pudo generar el pago.');
+  }
+
+  document.getElementById('paymentQrTitle').textContent = 'Pagar deuda';
+  document.getElementById('paymentQrSubtitle').textContent = 'Escaneá el QR con Mercado Pago para abonar tu deuda.';
+  document.getElementById('paymentQrImage').src = data.qr_url;
+  document.getElementById('paymentQrModal').classList.add('open');
+}
 // LOGOUT
 
 async function handleLogout() {

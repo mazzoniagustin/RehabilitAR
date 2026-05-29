@@ -2,12 +2,14 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from routes.payments import routerPayments
 
 from routes.auth import router as auth_router
 from routes.staff import routerStaff as staff_router
 from routes.user import routerUser as user_router
 from routes.classes import router as classes_router
 from routes.cancellations import router as cancellations_router
+from routes.mp_webhook import routerMPWebhook
 from routes.reservations import router as reservations_router
 
 app = FastAPI(
@@ -49,11 +51,15 @@ app.mount(
 
 app.include_router(auth_router)
 app.include_router(staff_router)
-app.include_router(user_router)
+app.include_router(user_router) 
 app.include_router(classes_router)
+app.include_router(routerPayments)
 app.include_router(cancellations_router)
+app.include_router(routerMPWebhook)
 app.include_router(reservations_router)
 
 @app.get("/")
 def health_check():
     return {"status": "ok", "message": "RehabilitAR API corriendo"}
+
+
