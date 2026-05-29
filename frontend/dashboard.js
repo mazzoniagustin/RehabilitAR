@@ -521,6 +521,23 @@ function syncClassTime(which) {
   const min = document.getElementById(`class${which}Minute`).value;
   const hidden = document.getElementById(`class${which}Time`);
   hidden.value = (h && min !== undefined) ? `${h}:${min}` : '';
+  if (which === 'Start') syncClassEndTime();
+  else refreshClassAvailabilityOptions();
+}
+
+// Calcula end_time a partir de start + duración y actualiza el hidden
+function syncClassEndTime() {
+  const startTime = document.getElementById('classStartTime').value;
+  const duration = parseInt(document.getElementById('classDuration').value);
+  if (!startTime || !duration || duration < 1) {
+    document.getElementById('classEndTime').value = '';
+    return;
+  }
+  const [sh, sm] = startTime.split(':').map(Number);
+  const endMinutes = sh * 60 + sm + duration;
+  const eh = String(Math.floor(endMinutes / 60)).padStart(2, '0');
+  const em = String(endMinutes % 60).padStart(2, '0');
+  document.getElementById('classEndTime').value = `${eh}:${em}`;
   refreshClassAvailabilityOptions();
 }
 
@@ -617,13 +634,15 @@ function initClassDateSelects() {
   yearSel.addEventListener('change', repopulateMonths);
   monthSel.addEventListener('change', repopulateDays);
 
+  yearSel.value = ty;
   repopulateMonths();
+  monthSel.value = tm;
+  repopulateDays();
 
   // Selects de hora individual (08–20)
   _populateHourSelect('classStartHour', 22);
-  _populateHourSelect('classEndHour', 22);
   _populateMinuteSelect('classStartMinute');
-  _populateMinuteSelect('classEndMinute');
+  _populateHourSelect('fijaStartHour', 22);
   _populateMinuteSelect('fijaStartMinute');
 
   // Sync inicial de fijaStartTime
@@ -635,7 +654,6 @@ function initClassDateSelects() {
 function applyIndividualDateConstraints() {
   const dateInput  = document.getElementById('classDate');
   const startInput = document.getElementById('classStartTime');
-  const endInput   = document.getElementById('classEndTime');
   if (!dateInput) return;
 
   const today = todayArgentina();
@@ -644,7 +662,7 @@ function applyIndividualDateConstraints() {
   const isToday = dateInput.value === today;
   const minTime = isToday ? nowTimeArgentina() : '08:00';
   if (startInput) { startInput.min = minTime; startInput.max = '20:00'; }
-  if (endInput)   { endInput.min   = minTime; endInput.max   = '20:00'; }
+  syncClassEndTime();
 }
 
 function bindClassAvailabilityInputs() {
@@ -819,6 +837,9 @@ async function checkFijaAvailability() {
     fijaProfessorSelect.innerHTML = '<option value="">Sin profesor inicial</option>'
       + (profs || []).map(p => `<option value="${p.id}">${p.name} ${p.surname}${p.specialty ? ` — ${p.specialty}` : ''}</option>`).join('');
 
+    if (!rooms || !rooms.length) {
+      showAlert('clasesAlert', 'No hay salas disponibles para ese horario. No se pueden crear las clases.');
+    }
     createFijaBtn.style.display = rooms && rooms.length ? 'inline-flex' : 'none';
 
   } catch (e) {
@@ -1126,27 +1147,34 @@ async function createIndividualClass() {
   const max_capacity = Number(document.getElementById('classCapacity').value);
   const class_date = document.getElementById('classDate').value;
   const start_time = document.getElementById('classStartTime').value;
-  const end_time = document.getElementById('classEndTime').value;
+  const duration = parseInt(document.getElementById('classDuration').value);
   const professor_id = document.getElementById('classProfessor').value || null;
 
-  if (!room_id || !activity_type || !max_capacity || !class_date || !start_time || !end_time) {
+  if (!room_id || !activity_type || !max_capacity || !class_date || !start_time || !duration) {
     return showAlert('clasesAlert', 'Completá todos los campos obligatorios.');
   }
+
+  // Calcular end_time a partir de duración
+  const [sh, sm] = start_time.split(':').map(Number);
+  const endMinutes = sh * 60 + sm + duration;
+  const end_time = `${String(Math.floor(endMinutes / 60)).padStart(2, '0')}:${String(endMinutes % 60).padStart(2, '0')}`;
 
   const apiStartTime = combineDateAndTime(class_date, start_time);
   const apiEndTime = combineDateAndTime(class_date, end_time);
   const selectedDate = new Date(`${class_date}T00:00`);
-  const startMinutes = Number(start_time.slice(0, 2)) * 60 + Number(start_time.slice(3, 5));
-  const endMinutes = Number(end_time.slice(0, 2)) * 60 + Number(end_time.slice(3, 5));
+  const startMinutes = sh * 60 + sm;
 
   if (selectedDate.getDay() === 0 || selectedDate.getDay() === 6) {
     return showAlert('clasesAlert', 'Las clases solo pueden programarse de lunes a viernes.');
   }
-  if (startMinutes < 8 * 60 || endMinutes > 22 * 60) {
+  if (startMinutes < 8 * 60) {
     return showAlert('clasesAlert', 'Las clases deben estar dentro del horario del centro: 08:00 a 22:00.');
   }
-  if (new Date(apiEndTime) <= new Date(apiStartTime)) {
-    return showAlert('clasesAlert', 'La hora de fin debe ser mayor a la hora de inicio.');
+  if (endMinutes > 22 * 60) {
+    return showAlert('clasesAlert', `Con esa duración la clase termina a las ${end_time}, fuera del horario del centro (hasta 22:00).`);
+  }
+  if (duration < 15) {
+    return showAlert('clasesAlert', 'La duración mínima de una clase es 15 minutos.');
   }
   const nowAR = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Argentina/Buenos_Aires' }));
   if (new Date(apiStartTime) <= nowAR) {
@@ -1179,8 +1207,9 @@ async function createIndividualClass() {
     document.getElementById('classDate').value = '';
     document.getElementById('classStartTime').value = '';
     document.getElementById('classEndTime').value = '';
+    document.getElementById('classDuration').value = '60';
     document.getElementById('classProfessor').value = '';
-    ['classDateDay','classDateMonth','classDateYear','classStartHour','classStartMinute','classEndHour','classEndMinute'].forEach(id => {
+    ['classDateDay','classDateMonth','classDateYear','classStartHour','classStartMinute'].forEach(id => {
       const el = document.getElementById(id); if (el) el.value = '';
     });
     await refreshClassAvailabilityOptions();

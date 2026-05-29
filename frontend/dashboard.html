@@ -208,12 +208,8 @@
             </div>
           </div>
           <div class="form-group">
-            <label>Hora fin</label>
-            <div style="display:flex;gap:6px">
-              <select id="classEndHour" style="flex:1" onchange="syncClassTime('End')">
-              </select>
-              <select id="classEndMinute" style="flex:1" onchange="syncClassTime('End')"></select>
-            </div>
+            <label>Duración (minutos)</label>
+            <input type="number" id="classDuration" min="15" max="480" placeholder="Ej: 60" value="60" oninput="syncClassEndTime()"/>
           </div>
 
           <div id="classDetailsFields" style="display:none">
