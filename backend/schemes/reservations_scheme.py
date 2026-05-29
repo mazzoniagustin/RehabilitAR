@@ -7,3 +7,6 @@ class IndividualReservation(BaseModel):
 
 class RegularReservation(BaseModel):
     class_id: UUID
+
+class WaitlistJoin(BaseModel):
+    class_id: UUID

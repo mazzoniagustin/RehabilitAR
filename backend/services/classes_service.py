@@ -259,7 +259,7 @@ def list_active_classes(user_id: str = None):
         classes = response.data or []
 
         if user_id:
-            classes = [c for c in classes if c['current_capacity'] < c['max_capacity']]
+            # Reservas activas del usuario (para excluir clases ya reservadas)
             reservations_res = (
                 supabase.table('reservations')
                 .select('class_id')
@@ -268,7 +268,22 @@ def list_active_classes(user_id: str = None):
                 .execute()
             )
             reserved_class_ids = {r['class_id'] for r in (reservations_res.data or [])}
-            classes = [c for c in classes if c['id'] not in reserved_class_ids]
+
+            # Entradas del usuario en la waitlist (para saber si ya está anotado)
+            waitlist_res = (
+                supabase.table('waitlist')
+                .select('class_id')
+                .eq('user_id', str(user_id))
+                .execute()
+            )
+            waitlisted_class_ids = {w['class_id'] for w in (waitlist_res.data or [])}
+
+            # Excluir clases donde el usuario ya tiene reserva activa o ya está en waitlist
+            classes = [c for c in classes if c['id'] not in reserved_class_ids and c['id'] not in waitlisted_class_ids]
+
+            # Marcar cada clase con is_full para que el front decida qué botón mostrar
+            for c in classes:
+                c['is_full'] = c['current_capacity'] >= c['max_capacity']
 
         professor_ids = list({c['professor_id'] for c in classes if c.get('professor_id')})
         professors_by_id = {}

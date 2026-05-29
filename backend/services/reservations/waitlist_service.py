@@ -1,0 +1,138 @@
+from database import supabase
+from fastapi import HTTPException
+
+
+def unirse_a_waitlist(user_id: str, class_id: str):
+    """
+    Permite a cualquier usuario unirse a la lista de espera de una clase llena.
+    - Clase INDIVIDUAL: FIFO puro (sin prioridades; priority se guarda como 'NO_ABONADO'
+      por el NOT NULL del schema, pero el orden real se determina por joined_at).
+    - Clase FIJA: FIFO con prioridad (ABONADO antes que NO_ABONADO).
+    """
+    try:
+        user_id = str(user_id)
+        class_id = str(class_id)
+
+        clase_response = supabase.table('classes').select('id, type, is_scheduled, status, current_capacity, max_capacity').eq('id', class_id).single().execute()
+        if not clase_response.data:
+            raise HTTPException(status_code=404, detail='Clase no encontrada.')
+        clase = clase_response.data
+
+        if clase['status'] != 'PROGRAMADA':
+            raise HTTPException(status_code=400, detail='No se puede unirse a la lista de espera de una clase que no está programada.')
+
+        if clase['current_capacity'] < clase['max_capacity']:
+            raise HTTPException(
+                status_code=400,
+                detail='La clase tiene lugares disponibles. Podés reservarla directamente.'
+            )
+
+        user_response = supabase.table('users').select('id, rol, account_status').eq('id', user_id).single().execute()
+        if not user_response.data:
+            raise HTTPException(status_code=404, detail='Usuario no encontrado.')
+        user = user_response.data
+
+        if user['account_status'] != 'ACTIVA':
+            raise HTTPException(status_code=403, detail='No estás habilitado para unirte a la lista de espera.')
+
+        # Verificar que no tenga ya una reserva activa
+        existing_reservation = (
+            supabase.table('reservations')
+            .select('id')
+            .eq('user_id', user_id)
+            .eq('class_id', class_id)
+            .neq('status', 'CANCELADA')
+            .execute()
+        )
+        if existing_reservation.data:
+            raise HTTPException(status_code=400, detail='Ya tenés una reserva activa para esta clase.')
+
+        # Verificar que no esté ya en la waitlist
+        ya_en_lista = (
+            supabase.table('waitlist')
+            .select('id')
+            .eq('user_id', user_id)
+            .eq('class_id', class_id)
+            .execute()
+        )
+        if ya_en_lista.data:
+            raise HTTPException(status_code=400, detail='Ya estás en la lista de espera para esta clase.')
+
+        class_type = clase['type']
+
+        if class_type == 'INDIVIDUAL':
+            return _agregar_waitlist_individual(user_id, class_id)
+        else:
+            prioridad = 'ABONADO' if user['rol'] == 'ABONADO' else 'NO_ABONADO'
+            return _agregar_waitlist_fija(user_id, class_id, prioridad)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f'Error al unirse a la lista de espera: {str(e)}')
+
+
+def _agregar_waitlist_individual(user_id: str, class_id: str):
+    """
+    FIFO puro: se ordena por joined_at.
+    El campo priority se almacena como 'NO_ABONADO' para cumplir el NOT NULL,
+    pero no se usa como criterio de orden.
+    """
+    waitlist_response = (
+        supabase.table('waitlist')
+        .select('position, priority_order')
+        .eq('class_id', class_id)
+        .order('position', desc=True)
+        .execute()
+    )
+    entradas = waitlist_response.data or []
+    nueva_posicion = (entradas[0]['position'] + 1) if entradas else 1
+    nuevo_priority_order = (max(e['priority_order'] for e in entradas) + 1) if entradas else 1
+
+    supabase.table('waitlist').insert({
+        'user_id': user_id,
+        'class_id': class_id,
+        'position': nueva_posicion,
+        'priority': 'NO_ABONADO',
+        'priority_order': nuevo_priority_order,
+    }).execute()
+
+    return {
+        'message': f'Te uniste a la lista de espera. Posición: {nueva_posicion}.',
+        'position': nueva_posicion
+    }
+
+
+def _agregar_waitlist_fija(user_id: str, class_id: str, prioridad: str):
+    """
+    FIFO con prioridad: ABONADO tiene prioridad sobre NO_ABONADO.
+    Dentro del mismo nivel de prioridad, se respeta el orden de llegada.
+    """
+    waitlist_response = (
+        supabase.table('waitlist')
+        .select('position, priority, priority_order')
+        .eq('class_id', class_id)
+        .order('position', desc=True)
+        .execute()
+    )
+    entradas = waitlist_response.data or []
+
+    nueva_posicion = (entradas[0]['position'] + 1) if entradas else 1
+
+    mismo_nivel = [e for e in entradas if e['priority'] == prioridad]
+    nuevo_priority_order = (
+        max(e['priority_order'] for e in mismo_nivel) + 1
+    ) if mismo_nivel else 1
+
+    supabase.table('waitlist').insert({
+        'user_id': user_id,
+        'class_id': class_id,
+        'position': nueva_posicion,
+        'priority': prioridad,
+        'priority_order': nuevo_priority_order,
+    }).execute()
+
+    return {
+        'message': f'Te uniste a la lista de espera. Posición: {nueva_posicion}.',
+        'position': nueva_posicion
+    }

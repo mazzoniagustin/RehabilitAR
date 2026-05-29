@@ -83,7 +83,7 @@ function badge(val, map) {
 
 function formatDate(iso) {
   if (!iso) return '—';
-  return new Date(iso).toLocaleString('es-AR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
+  return new Date(iso).toLocaleString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
 }
 
 const ROL_LABELS = {
@@ -857,15 +857,21 @@ async function loadClases() {
             : hasProfessor ? 'Asignada' : 'Solicitar';
           const buttonDisabled = isProfessor && (!!request || hasProfessor);
           const isMyClass = isProfessor && request?.status === 'ACEPTADA';
+          const isFull = !isProfessor && !!c.is_full;
+          const clientBtn = isFull
+            ? `<button class="action-btn" style="background:var(--color-background-warning);color:var(--color-text-warning)" onclick="joinWaitlist('${c.id}')" title="La clase está llena — anotate en la lista de espera">Lista de espera</button>`
+            : `<button class="action-btn" onclick="reserveClass('${c.id}', ${c.is_scheduled})">Reservar</button>`;
           return `
           <tr>
             <td><strong>${(c.activity_type || '').replace(/_/g, ' ')}</strong></td>
             <td>${c.type || '—'}</td>
             <td>${formatDate(c.start_time)}</td>
-            <td>${c.current_capacity}/${c.max_capacity}</td>
+            <td>${c.current_capacity}/${c.max_capacity}${isFull ? ' <span style="color:var(--color-text-warning);font-size:11px">LLENA</span>' : ''}</td>
             <td>${c.professor_name || '<span style="color:var(--muted)">Sin asignar</span>'}</td>
             <td style="display:flex;gap:6px">
-              <button class="action-btn" ${buttonDisabled ? 'disabled' : ''} onclick="${isProfessor ? `requestProfessorClass('${c.id}')` : `reserveClass('${c.id}', ${c.is_scheduled})`}">${isProfessor ? buttonLabel : 'Reservar'}</button>
+              ${isProfessor
+                ? `<button class="action-btn" ${buttonDisabled ? 'disabled' : ''} onclick="requestProfessorClass('${c.id}')">${buttonLabel}</button>`
+                : clientBtn}
               ${isMyClass ? `<button class="action-btn" onclick="openStudentsModal('${c.id}', '${(c.activity_type || '').replace(/_/g, ' ')}')">Inscriptos</button>` : ''}
             </td>
           </tr>`;
@@ -1207,9 +1213,8 @@ async function assignProfessorToClass(classId) {
 
 async function reserveClass(classId, isScheduled) {
   try {
-    // FIX: endpoint correcto según tipo de clase
-    // is_scheduled=true  → clase fija (ABONADO) → /reservations/regular
-    // is_scheduled=false → clase individual      → /reservations/individual
+    // Clases FIJA (is_scheduled=true) → /reservations/regular (ABONADO y NO_ABONADO)
+    // Clases INDIVIDUAL (is_scheduled=false) → /reservations/individual
     const url  = isScheduled ? `${API}/reservations/regular` : `${API}/reservations/individual`;
     const body = isScheduled
       ? { class_id: classId }
@@ -1219,6 +1224,20 @@ async function reserveClass(classId, isScheduled) {
     const data = await res.json();
     if (!res.ok) return showAlert('clasesAlert', typeof data.detail === 'string' ? data.detail : 'Error al reservar.');
     showAlert('clasesAlert', data.message || '¡Reserva realizada!', 'success');
+    loadClases();
+  } catch { showAlert('clasesAlert', 'No se pudo conectar.'); }
+}
+
+async function joinWaitlist(classId) {
+  try {
+    const res  = await fetch(`${API}/reservations/waitlist`, {
+      method: 'POST',
+      headers: authH(),
+      body: JSON.stringify({ class_id: classId })
+    });
+    const data = await res.json();
+    if (!res.ok) return showAlert('clasesAlert', typeof data.detail === 'string' ? data.detail : 'Error al unirse a la lista de espera.');
+    showAlert('clasesAlert', data.message || 'Te anotaste en la lista de espera.', 'success');
     loadClases();
   } catch { showAlert('clasesAlert', 'No se pudo conectar.'); }
 }
