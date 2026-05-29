@@ -433,7 +433,8 @@ function apiErrorMessage(data, fallback = 'Error.') {
 
 function combineDateAndTime(date, time) {
   if (!date || !time) return null;
-  return `${date}T${time}:00`;
+  // Argentina es UTC-3 fijo (no usa horario de verano)
+  return `${date}T${time}:00-03:00`;
 }
 
 function professorName(professorId) {
@@ -483,11 +484,175 @@ async function loadAdminClassData() {
   await refreshClassAvailabilityOptions();
 }
 
+// Devuelve la fecha de hoy en Argentina como string YYYY-MM-DD
+function todayArgentina() {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' });
+}
+
+// Devuelve la hora actual en Argentina como string HH:MM
+function nowTimeArgentina() {
+  return new Date().toLocaleTimeString('es-AR', {
+    timeZone: 'America/Argentina/Buenos_Aires',
+    hour: '2-digit', minute: '2-digit', hour12: false
+  });
+}
+// ── Selects custom de fecha y hora ───────────────────────────────────────────
+
+function _pad(n) { return String(n).padStart(2, '0'); }
+
+// Sincroniza los selects de fecha → hidden #classDate y dispara refreshClassAvailabilityOptions
+function syncClassDate() {
+  const d = document.getElementById('classDateDay').value;
+  const m = document.getElementById('classDateMonth').value;
+  const y = document.getElementById('classDateYear').value;
+  const hidden = document.getElementById('classDate');
+  if (d && m && y) {
+    hidden.value = `${y}-${_pad(m)}-${_pad(d)}`;
+  } else {
+    hidden.value = '';
+  }
+  applyIndividualDateConstraints();
+  refreshClassAvailabilityOptions();
+}
+
+// Sincroniza selects de hora → hidden #classStartTime / #classEndTime
+function syncClassTime(which) {
+  const h = document.getElementById(`class${which}Hour`).value;
+  const min = document.getElementById(`class${which}Minute`).value;
+  const hidden = document.getElementById(`class${which}Time`);
+  hidden.value = (h && min !== undefined) ? `${h}:${min}` : '';
+  refreshClassAvailabilityOptions();
+}
+
+// Sincroniza selects de hora fija → hidden #fijaStartTime
+function syncFijaTime() {
+  const h = document.getElementById('fijaStartHour').value;
+  const min = document.getElementById('fijaStartMinute').value;
+  document.getElementById('fijaStartTime').value = `${h}:${min}`;
+}
+
+// Popula el select de minutos 00-59
+function _populateMinuteSelect(selectId) {
+  const sel = document.getElementById(selectId);
+  if (!sel) return;
+  const prev = sel.value;
+  sel.innerHTML = '';
+  for (let m = 0; m < 60; m++) {
+    const opt = document.createElement('option');
+    opt.value = String(m).padStart(2, '0');
+    opt.textContent = ':' + String(m).padStart(2, '0');
+    sel.appendChild(opt);
+  }
+  if (prev) sel.value = prev;
+}
+
+// Popula el select de horas (08–maxHour inclusive) filtrando horas pasadas si es hoy
+function _populateHourSelect(selectId, maxHour) {
+  const sel = document.getElementById(selectId);
+  if (!sel) return;
+  const prev = sel.value;
+  sel.innerHTML = '<option value="">hh</option>';
+  for (let h = 8; h <= maxHour; h++) {
+    const opt = document.createElement('option');
+    opt.value = _pad(h);
+    opt.textContent = _pad(h);
+    sel.appendChild(opt);
+  }
+  if (prev) sel.value = prev;
+}
+
+// Popula día/mes/año con restricción de no pasado (Argentina)
+function initClassDateSelects() {
+  const today = todayArgentina(); // YYYY-MM-DD
+  const [ty, tm, td] = today.split('-').map(Number);
+
+  const yearSel  = document.getElementById('classDateYear');
+  const monthSel = document.getElementById('classDateMonth');
+  const daySel   = document.getElementById('classDateDay');
+  if (!yearSel) return;
+
+  // Años: este año y el próximo
+  yearSel.innerHTML = '<option value="">Año</option>';
+  for (let y = ty; y <= ty + 1; y++) {
+    const opt = document.createElement('option');
+    opt.value = y; opt.textContent = y;
+    yearSel.appendChild(opt);
+  }
+
+  // Al cambiar mes o año, repopular días válidos
+  function repopulateDays() {
+    const y = parseInt(yearSel.value) || ty;
+    const m = parseInt(monthSel.value) || tm;
+    const prevDay = daySel.value;
+    daySel.innerHTML = '<option value="">Día</option>';
+    const daysInMonth = new Date(y, m, 0).getDate();
+    const minDay = (y === ty && m === tm) ? td : 1;
+    for (let d = minDay; d <= daysInMonth; d++) {
+      const dow = new Date(y, m - 1, d).getDay();
+      if (dow === 0 || dow === 6) continue; // excluir sábado y domingo
+      const opt = document.createElement('option');
+      opt.value = d; opt.textContent = d;
+      daySel.appendChild(opt);
+    }
+    if (prevDay && parseInt(prevDay) >= minDay) daySel.value = prevDay;
+  }
+
+  // Meses: si es este año, desde el mes actual; si es año siguiente, todos
+  function repopulateMonths() {
+    const y = parseInt(yearSel.value) || ty;
+    const prevMonth = monthSel.value;
+    const meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
+                   'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+    monthSel.innerHTML = '<option value="">Mes</option>';
+    const minMonth = (y === ty) ? tm : 1;
+    for (let m = minMonth; m <= 12; m++) {
+      const opt = document.createElement('option');
+      opt.value = m; opt.textContent = meses[m - 1];
+      monthSel.appendChild(opt);
+    }
+    if (prevMonth && parseInt(prevMonth) >= minMonth) monthSel.value = prevMonth;
+    repopulateDays();
+  }
+
+  yearSel.addEventListener('change', repopulateMonths);
+  monthSel.addEventListener('change', repopulateDays);
+
+  repopulateMonths();
+
+  // Selects de hora individual (08–20)
+  _populateHourSelect('classStartHour', 22);
+  _populateHourSelect('classEndHour', 22);
+  _populateMinuteSelect('classStartMinute');
+  _populateMinuteSelect('classEndMinute');
+  _populateMinuteSelect('fijaStartMinute');
+
+  // Sync inicial de fijaStartTime
+  syncFijaTime();
+}
+
+
+// Aplica min/max al campo de fecha y ajusta el minimo de hora segun si es hoy
+function applyIndividualDateConstraints() {
+  const dateInput  = document.getElementById('classDate');
+  const startInput = document.getElementById('classStartTime');
+  const endInput   = document.getElementById('classEndTime');
+  if (!dateInput) return;
+
+  const today = todayArgentina();
+  dateInput.min = today;
+
+  const isToday = dateInput.value === today;
+  const minTime = isToday ? nowTimeArgentina() : '08:00';
+  if (startInput) { startInput.min = minTime; startInput.max = '20:00'; }
+  if (endInput)   { endInput.min   = minTime; endInput.max   = '20:00'; }
+}
+
 function bindClassAvailabilityInputs() {
   if (classAvailabilityListenersReady) return;
-  ['classDate', 'classStartTime', 'classEndTime'].forEach(id => {
-    document.getElementById(id)?.addEventListener('change', refreshClassAvailabilityOptions);
-  });
+
+  // Inicializa selects custom de fecha y hora (ambos formularios)
+  initClassDateSelects();
+
   classAvailabilityListenersReady = true;
 }
 
@@ -977,11 +1142,15 @@ async function createIndividualClass() {
   if (selectedDate.getDay() === 0 || selectedDate.getDay() === 6) {
     return showAlert('clasesAlert', 'Las clases solo pueden programarse de lunes a viernes.');
   }
-  if (startMinutes < 8 * 60 || endMinutes > 20 * 60) {
-    return showAlert('clasesAlert', 'Las clases deben estar dentro del horario del centro: 08:00 a 20:00.');
+  if (startMinutes < 8 * 60 || endMinutes > 22 * 60) {
+    return showAlert('clasesAlert', 'Las clases deben estar dentro del horario del centro: 08:00 a 22:00.');
   }
   if (new Date(apiEndTime) <= new Date(apiStartTime)) {
     return showAlert('clasesAlert', 'La hora de fin debe ser mayor a la hora de inicio.');
+  }
+  const nowAR = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Argentina/Buenos_Aires' }));
+  if (new Date(apiStartTime) <= nowAR) {
+    return showAlert('clasesAlert', 'La fecha y hora de inicio deben ser posteriores al momento actual.');
   }
 
   const btn = document.getElementById('createClassBtn');
@@ -1011,6 +1180,9 @@ async function createIndividualClass() {
     document.getElementById('classStartTime').value = '';
     document.getElementById('classEndTime').value = '';
     document.getElementById('classProfessor').value = '';
+    ['classDateDay','classDateMonth','classDateYear','classStartHour','classStartMinute','classEndHour','classEndMinute'].forEach(id => {
+      const el = document.getElementById(id); if (el) el.value = '';
+    });
     await refreshClassAvailabilityOptions();
     await loadAdminClasses();
   } catch {
@@ -1034,6 +1206,11 @@ async function createFijaClass() {
 
   if (!room_id || !activity_type || !max_capacity || !startTime || !duration) {
     return showAlert('clasesAlert', 'Completá todos los campos obligatorios.');
+  }
+  const [_sh, _sm] = startTime.split(':').map(Number);
+  const endMinutesFija = _sh * 60 + _sm + duration;
+  if (_sh < 8 || endMinutesFija > 22 * 60) {
+    return showAlert('clasesAlert', 'Las clases deben estar dentro del horario del centro: 08:00 a 22:00.');
   }
 
   const [startHour, startMinute] = startTime.split(':').map(Number);

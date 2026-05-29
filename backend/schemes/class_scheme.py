@@ -46,7 +46,7 @@ class FijaClassCreate(BaseModel):
     max_capacity: int = Field(gt=0, description='El cupo debe ser mayor a 0.')
     # 0=Lunes … 4=Viernes
     day_of_week: Literal[0, 1, 2, 3, 4]
-    start_hour: int = Field(ge=8, le=19, description='Hora de inicio (8–19).')
+    start_hour: int = Field(ge=8, le=21, description='Hora de inicio (8–21).')
     start_minute: int = Field(default=0, ge=0, le=59, description='Minuto de inicio.')
     duration_minutes: int = Field(gt=0, description='Duración en minutos.')
     professor_id: Optional[UUID] = None
@@ -58,9 +58,9 @@ class FijaClassCreate(BaseModel):
         start_minute = info.data.get('start_minute', 0)
         total_start = start_hour * 60 + start_minute
         total_end = total_start + value
-        if total_end > 20 * 60:
+        if total_end > 22 * 60:
             raise ValueError(
-                'La clase debe finalizar antes de las 20:00 (horario del centro).'
+                'La clase debe finalizar antes de las 22:00 (horario del centro).'
             )
         return value
 

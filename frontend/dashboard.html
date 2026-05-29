@@ -180,11 +180,41 @@
           <p style="font-size:.82rem;color:var(--muted);margin-bottom:14px">
             Sesión puntual con fecha y hora exactas. Lista de espera FIFO sin prioridades.
           </p>
+          <input type="hidden" id="classDate"/>
+          <input type="hidden" id="classStartTime"/>
+          <input type="hidden" id="classEndTime"/>
           <div class="edit-row">
-            <div class="form-group"><label>Fecha</label><input type="date" id="classDate"/></div>
-            <div class="form-group"><label>Hora inicio</label><input type="time" id="classStartTime" min="08:00" max="20:00"/></div>
+            <div class="form-group">
+              <label>Fecha</label>
+              <div style="display:flex;gap:6px">
+                <select id="classDateDay" style="flex:1" onchange="syncClassDate()"><option value="">Día</option></select>
+                <select id="classDateMonth" style="flex:1.4" onchange="syncClassDate()">
+                  <option value="">Mes</option>
+                  <option value="1">Enero</option><option value="2">Febrero</option><option value="3">Marzo</option>
+                  <option value="4">Abril</option><option value="5">Mayo</option><option value="6">Junio</option>
+                  <option value="7">Julio</option><option value="8">Agosto</option><option value="9">Septiembre</option>
+                  <option value="10">Octubre</option><option value="11">Noviembre</option><option value="12">Diciembre</option>
+                </select>
+                <select id="classDateYear" style="flex:1" onchange="syncClassDate()"><option value="">Año</option></select>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Hora inicio</label>
+              <div style="display:flex;gap:6px">
+                <select id="classStartHour" style="flex:1" onchange="syncClassTime('Start')">
+                </select>
+                <select id="classStartMinute" style="flex:1" onchange="syncClassTime('Start')"></select>
+              </div>
+            </div>
           </div>
-          <div class="form-group"><label>Hora fin</label><input type="time" id="classEndTime" min="08:00" max="20:00"/></div>
+          <div class="form-group">
+            <label>Hora fin</label>
+            <div style="display:flex;gap:6px">
+              <select id="classEndHour" style="flex:1" onchange="syncClassTime('End')">
+              </select>
+              <select id="classEndMinute" style="flex:1" onchange="syncClassTime('End')"></select>
+            </div>
+          </div>
 
           <div id="classDetailsFields" style="display:none">
             <div class="edit-row">
@@ -222,7 +252,11 @@
             </div>
             <div class="form-group">
               <label>Hora de inicio</label>
-              <input type="time" id="fijaStartTime" min="08:00" max="19:59" value="09:00"/>
+              <input type="hidden" id="fijaStartTime"/>
+              <div style="display:flex;gap:6px">
+                <select id="fijaStartHour" style="flex:1" onchange="syncFijaTime()"></select>
+                <select id="fijaStartMinute" style="flex:1" onchange="syncFijaTime()"></select>
+              </div>
             </div>
           </div>
           <div class="edit-row">

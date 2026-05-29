@@ -2,6 +2,9 @@ from typing import Optional, List
 from fastapi import HTTPException
 from database import supabase
 from datetime import datetime, timezone, timedelta, date
+from zoneinfo import ZoneInfo
+
+TZ_AR = ZoneInfo('America/Argentina/Buenos_Aires')
 import calendar
 
 from utils.class_validators import (
@@ -56,7 +59,8 @@ def _parse_time_range(start_time: Optional[str], end_time: Optional[str]):
 
 def _to_utc(dt: datetime) -> datetime:
     if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
+        # Naive datetimes se interpretan como hora argentina (UTC-3)
+        return dt.replace(tzinfo=ZoneInfo('America/Argentina/Buenos_Aires')).astimezone(timezone.utc)
     return dt.astimezone(timezone.utc)
 
 
@@ -173,7 +177,7 @@ def create_fija_class(data):
             start_dt = datetime(
                 occ_date.year, occ_date.month, occ_date.day,
                 data.start_hour, data.start_minute,
-                # sin tzinfo: hora local Argentina, igual que clase INDIVIDUAL
+                tzinfo=TZ_AR
             )
             end_dt = start_dt + timedelta(minutes=data.duration_minutes)
 
