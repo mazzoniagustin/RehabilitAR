@@ -83,7 +83,7 @@ function badge(val, map) {
 
 function formatDate(iso) {
   if (!iso) return '—';
-  return new Date(iso).toLocaleString('es-AR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
+  return new Date(iso).toLocaleString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
 }
 
 const ROL_LABELS = {
@@ -423,6 +423,7 @@ let adminClassProfessors = [];
 let adminClassFormProfessors = [];
 let professorClassRequests = [];
 let classAvailabilityListenersReady = false;
+let currentClassTab = 'individual'; // 'individual' | 'fija'
 
 function apiErrorMessage(data, fallback = 'Error.') {
   if (typeof data?.detail === 'string') return data.detail;
@@ -431,7 +432,9 @@ function apiErrorMessage(data, fallback = 'Error.') {
 }
 
 function combineDateAndTime(date, time) {
-  return date && time ? new Date(`${date}T${time}`).toISOString() : null;
+  if (!date || !time) return null;
+  // Argentina es UTC-3 fijo (no usa horario de verano)
+  return `${date}T${time}:00-03:00`;
 }
 
 function professorName(professorId) {
@@ -439,23 +442,234 @@ function professorName(professorId) {
   return professor ? `${professor.name} ${professor.surname}` : '';
 }
 
+// ── Tab switching ─────────────────────────────────────────────────────────────
+
+function switchClassTab(tab) {
+  currentClassTab = tab;
+
+  const tabIndividual = document.getElementById('tabIndividual');
+  const tabFija = document.getElementById('tabFija');
+  const formIndividual = document.getElementById('formIndividual');
+  const formFija = document.getElementById('formFija');
+
+  if (tab === 'individual') {
+    tabIndividual.style.borderBottomColor = 'var(--accent)';
+    tabIndividual.style.color = 'var(--accent)';
+    tabIndividual.style.fontWeight = '600';
+    tabFija.style.borderBottomColor = 'transparent';
+    tabFija.style.color = 'var(--muted)';
+    tabFija.style.fontWeight = '500';
+    formIndividual.style.display = 'block';
+    formFija.style.display = 'none';
+  } else {
+    tabFija.style.borderBottomColor = 'var(--accent)';
+    tabFija.style.color = 'var(--accent)';
+    tabFija.style.fontWeight = '600';
+    tabIndividual.style.borderBottomColor = 'transparent';
+    tabIndividual.style.color = 'var(--muted)';
+    tabIndividual.style.fontWeight = '500';
+    formIndividual.style.display = 'none';
+    formFija.style.display = 'block';
+  }
+}
+
+// ── Individual: disponibilidad dinámica ───────────────────────────────────────
+
 async function loadAdminClassData() {
   const professorsRes = await fetch(`${API}/classes/professors`, { headers: authH() });
   const professors = await professorsRes.json();
-
   if (!professorsRes.ok) throw new Error(apiErrorMessage(professors, 'No se pudieron cargar los profesores.'));
-
   adminClassProfessors = professors || [];
   bindClassAvailabilityInputs();
   await refreshClassAvailabilityOptions();
 }
 
+// Devuelve la fecha de hoy en Argentina como string YYYY-MM-DD
+function todayArgentina() {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' });
+}
+
+// Devuelve la hora actual en Argentina como string HH:MM
+function nowTimeArgentina() {
+  return new Date().toLocaleTimeString('es-AR', {
+    timeZone: 'America/Argentina/Buenos_Aires',
+    hour: '2-digit', minute: '2-digit', hour12: false
+  });
+}
+// ── Selects custom de fecha y hora ───────────────────────────────────────────
+
+function _pad(n) { return String(n).padStart(2, '0'); }
+
+// Sincroniza los selects de fecha → hidden #classDate y dispara refreshClassAvailabilityOptions
+function syncClassDate() {
+  const d = document.getElementById('classDateDay').value;
+  const m = document.getElementById('classDateMonth').value;
+  const y = document.getElementById('classDateYear').value;
+  const hidden = document.getElementById('classDate');
+  if (d && m && y) {
+    hidden.value = `${y}-${_pad(m)}-${_pad(d)}`;
+  } else {
+    hidden.value = '';
+  }
+  applyIndividualDateConstraints();
+  refreshClassAvailabilityOptions();
+}
+
+// Sincroniza selects de hora → hidden #classStartTime / #classEndTime
+function syncClassTime(which) {
+  const h = document.getElementById(`class${which}Hour`).value;
+  const min = document.getElementById(`class${which}Minute`).value;
+  const hidden = document.getElementById(`class${which}Time`);
+  hidden.value = (h && min !== undefined) ? `${h}:${min}` : '';
+  if (which === 'Start') syncClassEndTime();
+  else refreshClassAvailabilityOptions();
+}
+
+// Calcula end_time a partir de start + duración y actualiza el hidden
+function syncClassEndTime() {
+  const startTime = document.getElementById('classStartTime').value;
+  const duration = parseInt(document.getElementById('classDuration').value);
+  if (!startTime || !duration || duration < 1) {
+    document.getElementById('classEndTime').value = '';
+    return;
+  }
+  const [sh, sm] = startTime.split(':').map(Number);
+  const endMinutes = sh * 60 + sm + duration;
+  const eh = String(Math.floor(endMinutes / 60)).padStart(2, '0');
+  const em = String(endMinutes % 60).padStart(2, '0');
+  document.getElementById('classEndTime').value = `${eh}:${em}`;
+  refreshClassAvailabilityOptions();
+}
+
+// Sincroniza selects de hora fija → hidden #fijaStartTime
+function syncFijaTime() {
+  const h = document.getElementById('fijaStartHour').value;
+  const min = document.getElementById('fijaStartMinute').value;
+  document.getElementById('fijaStartTime').value = `${h}:${min}`;
+}
+
+// Popula el select de minutos 00-59
+function _populateMinuteSelect(selectId) {
+  const sel = document.getElementById(selectId);
+  if (!sel) return;
+  const prev = sel.value;
+  sel.innerHTML = '';
+  for (let m = 0; m < 60; m++) {
+    const opt = document.createElement('option');
+    opt.value = String(m).padStart(2, '0');
+    opt.textContent = ':' + String(m).padStart(2, '0');
+    sel.appendChild(opt);
+  }
+  if (prev) sel.value = prev;
+}
+
+// Popula el select de horas (08–maxHour inclusive) filtrando horas pasadas si es hoy
+function _populateHourSelect(selectId, maxHour) {
+  const sel = document.getElementById(selectId);
+  if (!sel) return;
+  const prev = sel.value;
+  sel.innerHTML = '<option value="">hh</option>';
+  for (let h = 8; h <= maxHour; h++) {
+    const opt = document.createElement('option');
+    opt.value = _pad(h);
+    opt.textContent = _pad(h);
+    sel.appendChild(opt);
+  }
+  if (prev) sel.value = prev;
+}
+
+// Popula día/mes/año con restricción de no pasado (Argentina)
+function initClassDateSelects() {
+  const today = todayArgentina(); // YYYY-MM-DD
+  const [ty, tm, td] = today.split('-').map(Number);
+
+  const yearSel  = document.getElementById('classDateYear');
+  const monthSel = document.getElementById('classDateMonth');
+  const daySel   = document.getElementById('classDateDay');
+  if (!yearSel) return;
+
+  // Años: este año y el próximo
+  yearSel.innerHTML = '<option value="">Año</option>';
+  for (let y = ty; y <= ty + 1; y++) {
+    const opt = document.createElement('option');
+    opt.value = y; opt.textContent = y;
+    yearSel.appendChild(opt);
+  }
+
+  // Al cambiar mes o año, repopular días válidos
+  function repopulateDays() {
+    const y = parseInt(yearSel.value) || ty;
+    const m = parseInt(monthSel.value) || tm;
+    const prevDay = daySel.value;
+    daySel.innerHTML = '<option value="">Día</option>';
+    const daysInMonth = new Date(y, m, 0).getDate();
+    const minDay = (y === ty && m === tm) ? td : 1;
+    for (let d = minDay; d <= daysInMonth; d++) {
+      const dow = new Date(y, m - 1, d).getDay();
+      if (dow === 0 || dow === 6) continue; // excluir sábado y domingo
+      const opt = document.createElement('option');
+      opt.value = d; opt.textContent = d;
+      daySel.appendChild(opt);
+    }
+    if (prevDay && parseInt(prevDay) >= minDay) daySel.value = prevDay;
+  }
+
+  // Meses: si es este año, desde el mes actual; si es año siguiente, todos
+  function repopulateMonths() {
+    const y = parseInt(yearSel.value) || ty;
+    const prevMonth = monthSel.value;
+    const meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
+                   'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+    monthSel.innerHTML = '<option value="">Mes</option>';
+    const minMonth = (y === ty) ? tm : 1;
+    for (let m = minMonth; m <= 12; m++) {
+      const opt = document.createElement('option');
+      opt.value = m; opt.textContent = meses[m - 1];
+      monthSel.appendChild(opt);
+    }
+    if (prevMonth && parseInt(prevMonth) >= minMonth) monthSel.value = prevMonth;
+    repopulateDays();
+  }
+
+  yearSel.addEventListener('change', repopulateMonths);
+  monthSel.addEventListener('change', repopulateDays);
+
+  yearSel.value = ty;
+  repopulateMonths();
+  monthSel.value = tm;
+  repopulateDays();
+
+  // Selects de hora individual (08–20)
+  _populateHourSelect('classStartHour', 22);
+  _populateMinuteSelect('classStartMinute');
+  _populateHourSelect('fijaStartHour', 22);
+  _populateMinuteSelect('fijaStartMinute');
+
+  // Sync inicial de fijaStartTime
+  syncFijaTime();
+}
+
+
+// Aplica min/max al campo de fecha y ajusta el minimo de hora segun si es hoy
+function applyIndividualDateConstraints() {
+  const dateInput  = document.getElementById('classDate');
+  const startInput = document.getElementById('classStartTime');
+  if (!dateInput) return;
+
+  const today = todayArgentina();
+  dateInput.min = today;
+
+  const isToday = dateInput.value === today;
+  const minTime = isToday ? nowTimeArgentina() : '08:00';
+  if (startInput) { startInput.min = minTime; startInput.max = '20:00'; }
+  syncClassEndTime();
+}
+
 function bindClassAvailabilityInputs() {
   if (classAvailabilityListenersReady) return;
 
-  ['classDate', 'classStartTime', 'classEndTime'].forEach(id => {
-    document.getElementById(id)?.addEventListener('change', refreshClassAvailabilityOptions);
-  });
+  // Inicializa selects custom de fecha y hora (ambos formularios)
+  initClassDateSelects();
 
   classAvailabilityListenersReady = true;
 }
@@ -464,9 +678,7 @@ function getClassFormTimeRange() {
   const classDate = document.getElementById('classDate').value;
   const startTime = document.getElementById('classStartTime').value;
   const endTime = document.getElementById('classEndTime').value;
-
   if (!classDate || !startTime || !endTime) return null;
-
   return {
     start_time: combineDateAndTime(classDate, startTime),
     end_time: combineDateAndTime(classDate, endTime)
@@ -509,22 +721,131 @@ async function refreshClassAvailabilityOptions() {
     if (createButton) createButton.disabled = adminClassRooms.length === 0;
 
     roomSelect.innerHTML = adminClassRooms.length
-      ? adminClassRooms.map(room => `
-        <option value="${room.id}">${room.name} - cupo ${room.capacity}</option>
-      `).join('')
+      ? adminClassRooms.map(r => `<option value="${r.id}">${r.name} — cupo sala: ${r.capacity}</option>`).join('')
       : '<option value="">No hay salas disponibles</option>';
 
-    professorSelect.innerHTML = '<option value="">Sin profesor inicial</option>' + adminClassFormProfessors.map(professor => `
-      <option value="${professor.id}">${professor.name} ${professor.surname}${professor.specialty ? ` - ${professor.specialty}` : ''}</option>
-    `).join('');
+    professorSelect.innerHTML = '<option value="">Sin profesor inicial</option>'
+      + adminClassFormProfessors.map(p => `<option value="${p.id}">${p.name} ${p.surname}${p.specialty ? ` — ${p.specialty}` : ''}</option>`).join('');
+
   } catch (e) {
     adminClassRooms = [];
     adminClassFormProfessors = [];
     if (detailsFields) detailsFields.style.display = 'block';
     if (createButton) createButton.disabled = true;
-    roomSelect.innerHTML = '<option value="">No se pudieron cargar salas</option>';
-    professorSelect.innerHTML = '<option value="">No se pudieron cargar profesores</option>';
+    if (roomSelect) roomSelect.innerHTML = '<option value="">No se pudieron cargar salas</option>';
+    if (professorSelect) professorSelect.innerHTML = '<option value="">No se pudieron cargar profesores</option>';
     showAlert('clasesAlert', e.message || 'No se pudo cargar disponibilidad.');
+  }
+}
+
+// ── Fija: preview y disponibilidad ───────────────────────────────────────────
+
+async function checkFijaAvailability() {
+  const dayOfWeek = parseInt(document.getElementById('fijaDayOfWeek').value);
+  const startTime = document.getElementById('fijaStartTime').value;
+  const duration = parseInt(document.getElementById('fijaDuration').value);
+
+  if (!startTime || !duration || duration < 1) {
+    return showAlert('clasesAlert', 'Completá la hora de inicio y duración para verificar disponibilidad.');
+  }
+
+  const [startHour, startMinute] = startTime.split(':').map(Number);
+  const endMinutes = startHour * 60 + startMinute + duration;
+  if (endMinutes > 20 * 60) {
+    return showAlert('clasesAlert', `Con esa duración la clase termina a las ${Math.floor(endMinutes/60)}:${String(endMinutes%60).padStart(2,'0')}, fuera del horario del centro (hasta 20:00).`);
+  }
+
+  const dayNames = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes'];
+
+  // Calcular el mes objetivo (mismo que el backend)
+  const today = new Date();
+  let year = today.getFullYear();
+  let month = today.getMonth(); // 0-indexed
+  const daysInCurrentMonth = new Date(year, month + 1, 0).getDate();
+  let hasOccurrenceThisMonth = false;
+  for (let d = today.getDate(); d <= daysInCurrentMonth; d++) {
+    if (new Date(year, month, d).getDay() === (dayOfWeek === 6 ? 0 : dayOfWeek + 1) % 7 ||
+        // convertir 0=lun a JS donde 0=dom
+        new Date(year, month, d).getDay() === [1,2,3,4,5][dayOfWeek]) {
+      hasOccurrenceThisMonth = true;
+      break;
+    }
+  }
+  // Si no quedan ocurrencias este mes, pasar al siguiente
+  if (!hasOccurrenceThisMonth) {
+    month = (month + 1) % 12;
+    if (month === 0) year++;
+  }
+
+  // Calcular todas las fechas del mes que caen en el día elegido
+  const jsDayOfWeek = [1,2,3,4,5][dayOfWeek]; // 0=lun→1, 4=vie→5
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const monthNames = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  const occurrences = [];
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dt = new Date(year, month, d);
+    if (dt.getDay() === jsDayOfWeek) {
+      occurrences.push(`${d} de ${monthNames[month]} ${year}`);
+    }
+  }
+
+  const endH = String(Math.floor(endMinutes / 60)).padStart(2, '0');
+  const endM = String(endMinutes % 60).padStart(2, '0');
+  const endStr = `${endH}:${endM}`;
+
+  const preview = document.getElementById('fijaPreview');
+  preview.style.display = 'block';
+  preview.innerHTML = `
+    <strong>Se crearán ${occurrences.length} clase(s)</strong> para todos los <strong>${dayNames[dayOfWeek]}</strong> de <strong>${monthNames[month]} ${year}</strong>:<br>
+    ${occurrences.map(o => `• ${o} — ${startTime} a ${endStr}`).join('<br>')}
+    <br><br>Las salas y profesores disponibles se verifican para cada fecha individualmente.
+  `;
+
+  // Cargar salas y profesores disponibles para la primera ocurrencia como referencia
+  const fijaDetailsFields = document.getElementById('fijaDetailsFields');
+  const createFijaBtn = document.getElementById('createFijaBtn');
+  const fijaRoomSelect = document.getElementById('fijaRoom');
+  const fijaProfessorSelect = document.getElementById('fijaProfessor');
+
+  fijaDetailsFields.style.display = 'block';
+  fijaRoomSelect.innerHTML = '<option value="">Cargando salas...</option>';
+  fijaProfessorSelect.innerHTML = '<option value="">Cargando profesores...</option>';
+  createFijaBtn.style.display = 'none';
+
+  try {
+    // Usar la primera fecha del mes como referencia para listar salas y profesores
+    if (occurrences.length === 0) {
+      fijaRoomSelect.innerHTML = '<option value="">No hay fechas disponibles</option>';
+      return;
+    }
+    const firstDate = new Date(year, month, parseInt(occurrences[0]));
+    const startISO = `${firstDate.getFullYear()}-${String(firstDate.getMonth()+1).padStart(2,'0')}-${String(firstDate.getDate()).padStart(2,'0')}T${startTime}:00`;
+    const endISO = `${firstDate.getFullYear()}-${String(firstDate.getMonth()+1).padStart(2,'0')}-${String(firstDate.getDate()).padStart(2,'0')}T${endStr}:00`;
+
+    const params = new URLSearchParams({ start_time: startISO, end_time: endISO });
+    const [roomsRes, profsRes] = await Promise.all([
+      fetch(`${API}/classes/rooms?${params.toString()}`, { headers: authH() }),
+      fetch(`${API}/classes/professors?${params.toString()}`, { headers: authH() })
+    ]);
+    const rooms = await roomsRes.json();
+    const profs = await profsRes.json();
+
+    fijaRoomSelect.innerHTML = (rooms && rooms.length)
+      ? rooms.map(r => `<option value="${r.id}">${r.name} — cupo sala: ${r.capacity}</option>`).join('')
+      : '<option value="">No hay salas disponibles</option>';
+
+    fijaProfessorSelect.innerHTML = '<option value="">Sin profesor inicial</option>'
+      + (profs || []).map(p => `<option value="${p.id}">${p.name} ${p.surname}${p.specialty ? ` — ${p.specialty}` : ''}</option>`).join('');
+
+    if (!rooms || !rooms.length) {
+      showAlert('clasesAlert', 'No hay salas disponibles para ese horario. No se pueden crear las clases.');
+    }
+    createFijaBtn.style.display = rooms && rooms.length ? 'inline-flex' : 'none';
+
+  } catch (e) {
+    fijaRoomSelect.innerHTML = '<option value="">No se pudieron cargar salas</option>';
+    fijaProfessorSelect.innerHTML = '<option value="">No se pudieron cargar profesores</option>';
+    showAlert('clasesAlert', 'No se pudo verificar disponibilidad.');
   }
 }
 
@@ -722,15 +1043,21 @@ async function loadClases() {
             : hasProfessor ? 'Asignada' : 'Solicitar';
           const buttonDisabled = isProfessor && (!!request || hasProfessor);
           const isMyClass = isProfessor && request?.status === 'ACEPTADA';
+          const isFull = !isProfessor && !!c.is_full;
+          const clientBtn = isFull
+            ? `<button class="action-btn" style="background:var(--color-background-warning);color:var(--color-text-warning)" onclick="joinWaitlist('${c.id}')" title="La clase está llena — anotate en la lista de espera">Lista de espera</button>`
+            : `<button class="action-btn" onclick="reserveClass('${c.id}', ${c.is_scheduled})">Reservar</button>`;
           return `
           <tr>
             <td><strong>${(c.activity_type || '').replace(/_/g, ' ')}</strong></td>
             <td>${c.type || '—'}</td>
             <td>${formatDate(c.start_time)}</td>
-            <td>${c.current_capacity}/${c.max_capacity}</td>
+            <td>${c.current_capacity}/${c.max_capacity}${isFull ? ' <span style="color:var(--color-text-warning);font-size:11px">LLENA</span>' : ''}</td>
             <td>${c.professor_name || '<span style="color:var(--muted)">Sin asignar</span>'}</td>
             <td style="display:flex;gap:6px">
-              <button class="action-btn" ${buttonDisabled ? 'disabled' : ''} onclick="${isProfessor ? `requestProfessorClass('${c.id}')` : `reserveClass('${c.id}', ${c.is_scheduled})`}">${isProfessor ? buttonLabel : 'Reservar'}</button>
+              ${isProfessor
+                ? `<button class="action-btn" ${buttonDisabled ? 'disabled' : ''} onclick="requestProfessorClass('${c.id}')">${buttonLabel}</button>`
+                : clientBtn}
               ${isMyClass ? `<button class="action-btn" onclick="openStudentsModal('${c.id}', '${(c.activity_type || '').replace(/_/g, ' ')}')">Inscriptos</button>` : ''}
             </td>
           </tr>`;
@@ -812,51 +1139,59 @@ async function confirmRejectProfessorRequest() {
   if (ok) closeRejectProfessorRequestModal();
 }
 
-async function createClassFromAdmin() {
+// ── Crear clase INDIVIDUAL ────────────────────────────────────────────────────
+
+async function createIndividualClass() {
   const room_id = document.getElementById('classRoom').value;
-  const type = document.getElementById('classType').value;
   const activity_type = document.getElementById('classActivity').value;
   const max_capacity = Number(document.getElementById('classCapacity').value);
   const class_date = document.getElementById('classDate').value;
   const start_time = document.getElementById('classStartTime').value;
-  const end_time = document.getElementById('classEndTime').value;
+  const duration = parseInt(document.getElementById('classDuration').value);
   const professor_id = document.getElementById('classProfessor').value || null;
 
-  if (!room_id || !type || !activity_type || !max_capacity || !class_date || !start_time || !end_time) {
-    return showAlert('clasesAlert', 'Completa todos los campos obligatorios.');
+  if (!room_id || !activity_type || !max_capacity || !class_date || !start_time || !duration) {
+    return showAlert('clasesAlert', 'Completá todos los campos obligatorios.');
   }
+
+  // Calcular end_time a partir de duración
+  const [sh, sm] = start_time.split(':').map(Number);
+  const endMinutes = sh * 60 + sm + duration;
+  const end_time = `${String(Math.floor(endMinutes / 60)).padStart(2, '0')}:${String(endMinutes % 60).padStart(2, '0')}`;
 
   const apiStartTime = combineDateAndTime(class_date, start_time);
   const apiEndTime = combineDateAndTime(class_date, end_time);
   const selectedDate = new Date(`${class_date}T00:00`);
-  const startMinutes = Number(start_time.slice(0, 2)) * 60 + Number(start_time.slice(3, 5));
-  const endMinutes = Number(end_time.slice(0, 2)) * 60 + Number(end_time.slice(3, 5));
+  const startMinutes = sh * 60 + sm;
 
   if (selectedDate.getDay() === 0 || selectedDate.getDay() === 6) {
     return showAlert('clasesAlert', 'Las clases solo pueden programarse de lunes a viernes.');
   }
-
-  if (startMinutes < 8 * 60 || endMinutes > 20 * 60) {
-    return showAlert('clasesAlert', 'Las clases deben estar dentro del horario del centro: 08:00 a 20:00.');
+  if (startMinutes < 8 * 60) {
+    return showAlert('clasesAlert', 'Las clases deben estar dentro del horario del centro: 08:00 a 22:00.');
   }
-
-  if (new Date(apiEndTime) <= new Date(apiStartTime)) {
-    return showAlert('clasesAlert', 'La hora de fin debe ser mayor a la hora de inicio.');
+  if (endMinutes > 22 * 60) {
+    return showAlert('clasesAlert', `Con esa duración la clase termina a las ${end_time}, fuera del horario del centro (hasta 22:00).`);
+  }
+  if (duration < 15) {
+    return showAlert('clasesAlert', 'La duración mínima de una clase es 15 minutos.');
+  }
+  const nowAR = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Argentina/Buenos_Aires' }));
+  if (new Date(apiStartTime) <= nowAR) {
+    return showAlert('clasesAlert', 'La fecha y hora de inicio deben ser posteriores al momento actual.');
   }
 
   const btn = document.getElementById('createClassBtn');
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span>Creando...';
+  btn.textContent = 'Creando...';
 
   try {
-    const res = await fetch(`${API}/classes/`, {
+    const res = await fetch(`${API}/classes/individual`, {
       method: 'POST',
       headers: authH(),
       body: JSON.stringify({
         room_id,
-        type,
         activity_type,
-        is_scheduled: false,
         max_capacity,
         start_time: apiStartTime,
         end_time: apiEndTime,
@@ -867,19 +1202,87 @@ async function createClassFromAdmin() {
     const data = await res.json();
     if (!res.ok) return showAlert('clasesAlert', apiErrorMessage(data, 'Error al crear la clase.'));
 
-    showAlert('clasesAlert', data.message || 'La clase se creo exitosamente.', 'success');
+    showAlert('clasesAlert', data.message || 'Clase individual creada exitosamente.', 'success');
     document.getElementById('classCapacity').value = '';
     document.getElementById('classDate').value = '';
     document.getElementById('classStartTime').value = '';
     document.getElementById('classEndTime').value = '';
+    document.getElementById('classDuration').value = '60';
     document.getElementById('classProfessor').value = '';
+    ['classDateDay','classDateMonth','classDateYear','classStartHour','classStartMinute'].forEach(id => {
+      const el = document.getElementById(id); if (el) el.value = '';
+    });
     await refreshClassAvailabilityOptions();
     await loadAdminClasses();
   } catch {
     showAlert('clasesAlert', 'No se pudo conectar.');
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Crear clase';
+    btn.textContent = 'Crear clase individual';
+  }
+}
+
+// ── Crear clases FIJA ─────────────────────────────────────────────────────────
+
+async function createFijaClass() {
+  const room_id = document.getElementById('fijaRoom').value;
+  const activity_type = document.getElementById('fijaActivity').value;
+  const max_capacity = Number(document.getElementById('fijaCapacity').value);
+  const day_of_week = parseInt(document.getElementById('fijaDayOfWeek').value);
+  const startTime = document.getElementById('fijaStartTime').value;
+  const duration = parseInt(document.getElementById('fijaDuration').value);
+  const professor_id = document.getElementById('fijaProfessor').value || null;
+
+  if (!room_id || !activity_type || !max_capacity || !startTime || !duration) {
+    return showAlert('clasesAlert', 'Completá todos los campos obligatorios.');
+  }
+  const [_sh, _sm] = startTime.split(':').map(Number);
+  const endMinutesFija = _sh * 60 + _sm + duration;
+  if (_sh < 8 || endMinutesFija > 22 * 60) {
+    return showAlert('clasesAlert', 'Las clases deben estar dentro del horario del centro: 08:00 a 22:00.');
+  }
+
+  const [startHour, startMinute] = startTime.split(':').map(Number);
+
+  const btn = document.getElementById('createFijaBtn');
+  btn.disabled = true;
+  btn.textContent = 'Creando...';
+
+  try {
+    const res = await fetch(`${API}/classes/fija`, {
+      method: 'POST',
+      headers: authH(),
+      body: JSON.stringify({
+        room_id,
+        activity_type,
+        max_capacity,
+        day_of_week,
+        start_hour: startHour,
+        start_minute: startMinute,
+        duration_minutes: duration,
+        professor_id
+      })
+    });
+
+    const data = await res.json();
+    if (!res.ok) return showAlert('clasesAlert', apiErrorMessage(data, 'Error al crear las clases fijas.'));
+
+    showAlert('clasesAlert', data.message || 'Clases fijas creadas exitosamente.', 'success');
+
+    // Limpiar formulario fijo
+    document.getElementById('fijaCapacity').value = '';
+    document.getElementById('fijaRoom').innerHTML = '';
+    document.getElementById('fijaProfessor').innerHTML = '';
+    document.getElementById('fijaDetailsFields').style.display = 'none';
+    document.getElementById('fijaPreview').style.display = 'none';
+    document.getElementById('createFijaBtn').style.display = 'none';
+
+    await loadAdminClasses();
+  } catch {
+    showAlert('clasesAlert', 'No se pudo conectar.');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Crear clases del mes';
   }
 }
 
@@ -1016,9 +1419,8 @@ async function assignProfessorToClass(classId) {
 
 async function reserveClass(classId, isScheduled) {
   try {
-    // FIX: endpoint correcto según tipo de clase
-    // is_scheduled=true  → clase fija (ABONADO) → /reservations/regular
-    // is_scheduled=false → clase individual      → /reservations/individual
+    // Clases FIJA (is_scheduled=true) → /reservations/regular (ABONADO y NO_ABONADO)
+    // Clases INDIVIDUAL (is_scheduled=false) → /reservations/individual
     const url  = isScheduled ? `${API}/reservations/regular` : `${API}/reservations/individual`;
     const body = isScheduled
       ? { class_id: classId }
@@ -1028,6 +1430,20 @@ async function reserveClass(classId, isScheduled) {
     const data = await res.json();
     if (!res.ok) return showAlert('clasesAlert', typeof data.detail === 'string' ? data.detail : 'Error al reservar.');
     showAlert('clasesAlert', data.message || '¡Reserva realizada!', 'success');
+    loadClases();
+  } catch { showAlert('clasesAlert', 'No se pudo conectar.'); }
+}
+
+async function joinWaitlist(classId) {
+  try {
+    const res  = await fetch(`${API}/reservations/waitlist`, {
+      method: 'POST',
+      headers: authH(),
+      body: JSON.stringify({ class_id: classId })
+    });
+    const data = await res.json();
+    if (!res.ok) return showAlert('clasesAlert', typeof data.detail === 'string' ? data.detail : 'Error al unirse a la lista de espera.');
+    showAlert('clasesAlert', data.message || 'Te anotaste en la lista de espera.', 'success');
     loadClases();
   } catch { showAlert('clasesAlert', 'No se pudo conectar.'); }
 }

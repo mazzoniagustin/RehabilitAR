@@ -2,7 +2,13 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query
 from services import classes_service
 from services.cancellations import classes_cancellation_service
-from schemes.class_scheme import ClassCreate, AssignProfessor, UpdateCapacity, EvaluateRequest
+from schemes.class_scheme import (
+    IndividualClassCreate,
+    FijaClassCreate,
+    AssignProfessor,
+    UpdateCapacity,
+    EvaluateRequest
+)
 from utils.permissions import check_permission
 
 router = APIRouter(
@@ -11,13 +17,25 @@ router = APIRouter(
 )
 
 
-@router.post('/')
-def create_class(
-    data: ClassCreate,
+# ── Creación ──────────────────────────────────────────────────────────────────
+
+@router.post('/individual')
+def create_individual_class(
+    data: IndividualClassCreate,
     user=Depends(check_permission(['ADMINISTRATIVO']))
 ):
-    return classes_service.create_class(data)
+    return classes_service.create_individual_class(data)
 
+
+@router.post('/fija')
+def create_fija_class(
+    data: FijaClassCreate,
+    user=Depends(check_permission(['ADMINISTRATIVO']))
+):
+    return classes_service.create_fija_class(data)
+
+
+# ── Listados ──────────────────────────────────────────────────────────────────
 
 @router.get('/')
 def list_classes(
@@ -43,14 +61,6 @@ def list_professors(
     user=Depends(check_permission(['ADMINISTRATIVO']))
 ):
     return classes_service.list_professors(start_time, end_time, exclude_class_id)
-
-
-@router.get('/{class_id}/available-professors')
-def list_available_professors_for_class(
-    class_id: str,
-    user=Depends(check_permission(['ADMINISTRATIVO']))
-):
-    return classes_service.list_available_professors_for_class(class_id)
 
 
 @router.get('/available')
@@ -81,6 +91,24 @@ def list_my_professor_requests(
     return classes_service.list_professor_requests(user['id'])
 
 
+@router.get('/{class_id}/available-professors')
+def list_available_professors_for_class(
+    class_id: str,
+    user=Depends(check_permission(['ADMINISTRATIVO']))
+):
+    return classes_service.list_available_professors_for_class(class_id)
+
+
+@router.get('/{class_id}/students')
+def list_class_students(
+    class_id: str,
+    user=Depends(check_permission(['ADMINISTRATIVO', 'PROFESOR']))
+):
+    return classes_service.list_class_students(class_id)
+
+
+# ── Acciones ──────────────────────────────────────────────────────────────────
+
 @router.patch('/{class_id}/assign-professor')
 def assign_professor(
     class_id: str,
@@ -108,8 +136,6 @@ def update_capacity(
     data: UpdateCapacity,
     user=Depends(check_permission(['ADMINISTRATIVO']))
 ):
-    # Bug 2 fix: pasar el id del admin para que quede registrado como responsable
-    # de la cancelación en caso de que el nuevo cupo fuerce una cancelación automática.
     return classes_service.update_capacity(class_id, data.new_capacity, admin_user_id=str(user['id']))
 
 
@@ -129,11 +155,3 @@ def evaluate_professor_request(
     user=Depends(check_permission(['ADMINISTRATIVO']))
 ):
     return classes_service.evaluate_professor_request(class_id, request_id, data)
-
-
-@router.get('/{class_id}/students')
-def list_class_students(
-    class_id: str,
-    user=Depends(check_permission(['ADMINISTRATIVO', 'PROFESOR']))
-):
-    return classes_service.list_class_students(class_id)
