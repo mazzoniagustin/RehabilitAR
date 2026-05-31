@@ -73,7 +73,6 @@ def unirse_a_waitlist(user_id: str, class_id: str):
 
 
 def _agregar_waitlist_individual(user_id: str, class_id: str):
-    print(f"DEBUG ENTRANDO _agregar_waitlist_individual class_id={class_id}")
     waitlist_response = (
         supabase.table('waitlist')
         .select('position, priority_order')
@@ -82,11 +81,9 @@ def _agregar_waitlist_individual(user_id: str, class_id: str):
         .limit(1)
         .execute()
     )
-    print(f"DEBUG waitlist_response.data={waitlist_response.data}")
     entradas = waitlist_response.data or []
     nueva_posicion = (entradas[0]['position'] + 1) if entradas else 1
     nuevo_priority_order = (entradas[0]['priority_order'] + 1) if entradas else 1
-    print(f"DEBUG nueva_posicion={nueva_posicion}")
 
     supabase.table('waitlist').insert({
         'user_id': user_id,
