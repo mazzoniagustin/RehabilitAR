@@ -15,7 +15,15 @@ def cancelar_clase(
     data: CancelClass,
     user=Depends(check_permission(['ADMINISTRATIVO']))
 ):
-    return class_cancellation.cancelar_clase(data.class_id, data.cancel_reason)
+    return class_cancellation.cancelar_clase(data.class_id, data.cancel_reason, user_id=str(user['id']))
+
+
+@router.post('/classes/automatic/no-professor')
+def cancelar_clases_sin_profesor(
+    user=Depends(check_permission(['ADMINISTRATIVO']))
+):
+    return class_cancellation.cancelar_clases_sin_profesor()
+
 
 @router.post('/reservation')
 def cancelar_reserva(
