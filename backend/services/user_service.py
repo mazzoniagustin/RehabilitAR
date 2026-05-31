@@ -30,7 +30,7 @@ def show_user_info(user_id: str):
         res = (
             supabase
             .table('users')
-            .select('id, name, surname, email, dni, phone, rol, age, gender, address, account_status, credits, specialty, physical_certificate')
+            .select('id, name, surname, email, dni, phone, rol, gender, address, account_status, specialty, physical_certificate, birth_date')
             .eq('id', user_id).single() 
             .execute()
         )
@@ -38,7 +38,13 @@ def show_user_info(user_id: str):
         if not res.data:
             raise HTTPException(status_code=404, detail='Usuario no encontrado')
 
-        user = res.data 
+        user = res.data
+        
+        age = None
+        if user.get('birth_date'):
+            born = datetime.fromisoformat(user['birth_date'])
+            today = datetime.now()
+            age = today.year - born.year - ((today.month, today.day) < (born.month, born.day))
 
         base = {
             'id': user.get('id'),
@@ -48,21 +54,42 @@ def show_user_info(user_id: str):
             'dni': user.get('dni'),
             'phone': user.get('phone'),
             'rol': user.get('rol'),
-            'age': user.get('age'),
+            'age': age,
             'gender': user.get('gender'),
             'address': user.get('address'),
             'account_status': user.get('account_status'),
-            'physical_certificate': user.get('physical_certificate')
+            'physical_certificate': user.get('physical_certificate'),
+            'birth_date': user.get('birth_date')
         }
 
         if user['rol'] == 'ABONADO':
-            base['credits'] = user.get('credits')
+            credits_res = supabase.table('credits').select('available_credits').eq('user_id', user_id).single().execute()
+            
+            base['credits'] = credits_res.data.get('available_credits') if credits_res.data else 0
+            
+            subscription_res = supabase.table('subscriptions').select('end_date').eq('user_id', user_id).single().execute()
+            base['subscription_expiry'] = subscription_res.data.get('end_date') if subscription_res.data else None
 
         if user['rol'] in ('ADMINISTRATIVO', 'RECEPCIONISTA', 'PROFESOR'):
             base['specialty'] = user.get('specialty')
-
+        
+        if user['rol'] == 'PROFESOR':
+            classes_res = supabase.table('classes').select('id', count='exact').eq('professor_id', user['id']).execute()
+            base['total_classes'] = classes_res.count if classes_res.count is not None else 0
+        
+        if user['rol'] in ['RECEPCIONISTA','ADMINISTRATIVO']:
+            count_users_res = supabase.table('users').select('id', count='exact').execute()
+            base['total_users'] = count_users_res.count if count_users_res.count is not None else 0
+        
+        if user['rol'] in ['ABONADO', 'NO_ABONADO']:
+           reservations_res = supabase.table('reservations').select('id', count='exact').eq('user_id', user['id']).execute()
+           base['total_reservations'] = reservations_res.count if reservations_res.count is not None else 0
+           
+           attendance_res = supabase.table('attendance').select('id, status').eq('user_id', user['id']).execute()
+           base['total_absences'] = sum(1 for a in attendance_res.data if a['status'] == 'AUSENTE')
+        
         return base
-
+           
     except HTTPException:
         raise
     except Exception as e:
@@ -137,7 +164,7 @@ def upload_certificate(user_id: str, file: UploadFile):
     return {'message': 'Apto físico enviado.', 'status': 'PENDIENTE'}
 
     
-PUBLIC_FIELDS = 'id, name, surname, rol, age, gender'
+PUBLIC_FIELDS = 'id, name, surname, rol, gender'
 
 def search_users_public(name: str = None, role: str = None):
     try:
@@ -164,31 +191,58 @@ def show_user_public_info(user_id: str):
     try:
         res = (
             supabase.table('users')
-            .select(PUBLIC_FIELDS)
+            .select(PUBLIC_FIELDS, 'birth_date')
             .eq('id', user_id)
             .single()
             .execute()
         )
+
         if not res.data:
             raise HTTPException(status_code=404, detail='Usuario no encontrado.')
-        return res.data
+        
+        base = res.data
+        
+        age = None
+        if base.get('birth_date'):
+            born = datetime.fromisoformat(res['birth_date'])
+            today = datetime.now()
+            age = today.year - born.year - ((today.month, today.day) < (born.month, born.day))
+
+        base = {
+            'id': res.data.get('id'),
+            'name': res.data.get('name'),
+            'surname': res.data.get('surname'),
+            'rol': res.data.get('rol'),
+            'gender': res.data.get('gender'),
+            'age': age
+        }
+        
+        return base
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail='Error interno.')
+        raise HTTPException(status_code=500, detail=f'Error interno. {e}')
     
 def show_user_admin_info(user_id: str):
     try:
         res = (
             supabase.table('users')
-            .select('id, name, surname, email, dni, phone, rol, age, gender, address, account_status, credits(available_credits), specialty, physical_certificate')
+            .select('id, name, surname, email, dni, phone, rol, gender, address, account_status, birth_date, credits(available_credits), specialty, physical_certificate, physical_certificate_url')
             .eq('id', user_id)
             .single()
             .execute()
         )
         if not res.data:
             raise HTTPException(status_code=404, detail='Usuario no encontrado.')
+        
         data = res.data
+        
+        age = None
+        if data.get('birth_date'):
+            born = datetime.fromisoformat(data['birth_date'])
+            today = datetime.now()
+            age = today.year - born.year - ((today.month, today.day) < (born.month, born.day))
+        
 
         credits_list = data.pop('credits', []) or []
         date_now = datetime.now()
@@ -200,12 +254,14 @@ def show_user_admin_info(user_id: str):
             None
         )
         data['available_credits'] = current.get('available_credits') if current else 0
+        data['age'] = age
+    
         return data
 
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail='Error interno.')
+        raise HTTPException(status_code=500, detail=f'Error interno. {e}')
 
 def request_unblock(user_id: str, reason):
     try:
@@ -217,7 +273,7 @@ def request_unblock(user_id: str, reason):
             'new_status': 'SUSPENDIDA', 
             'reason': f'SOLICITUD DE DESBLOQUEO: {reason_text}',
             'acted_by': user_id,
-            #'created_at': datetime.now().isoformat(sep=' ', timespec='seconds')
+            #'created_at': datetime.now().isoformat(sep=' ', timespec='seconds') lo hace supabase automaticamente
         }).execute()
         return {'Mensaje': 'Solicitud enviada. Un administrador revisará tu caso.'}
     except Exception as e:

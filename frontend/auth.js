@@ -7,6 +7,49 @@ const getToken  = () => localStorage.getItem('token');
 const setToken  = t  => localStorage.setItem('token', t);
 const clearAuth = () => { localStorage.removeItem('token'); localStorage.removeItem('currentUser'); };
 
+function initBirthDatePicker(prefix) {
+  prefix = prefix || 'reg';
+  var dayEl   = document.getElementById(prefix + 'BirthdateDay');
+  var monthEl = document.getElementById(prefix + 'BirthdateMonth');
+  var yearEl  = document.getElementById(prefix + 'BirthdateYear');
+  if (!dayEl || !monthEl || !yearEl) return;
+
+  var meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
+               'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  monthEl.innerHTML = '<option value="">Mes</option>';
+  meses.forEach(function(m, i) {
+    var o = document.createElement('option');
+    o.value = i + 1; o.textContent = m;
+    monthEl.appendChild(o);
+  });
+
+  var maxYear = new Date().getFullYear() - 18;
+  yearEl.innerHTML = '<option value="">Año</option>';
+  for (var y = maxYear; y >= maxYear - 82; y--) {
+    var o = document.createElement('option');
+    o.value = y; o.textContent = y;
+    yearEl.appendChild(o);
+  }
+
+  function populateDays() {
+    var m = parseInt(monthEl.value);
+    var y = parseInt(yearEl.value);
+    var prev = dayEl.value;
+    dayEl.innerHTML = '<option value="">Día</option>';
+    var count = (m && y) ? new Date(y, m, 0).getDate() : 31;
+    for (var d = 1; d <= count; d++) {
+      var od = document.createElement('option');
+      od.value = d; od.textContent = d;
+      dayEl.appendChild(od);
+    }
+    if (prev) dayEl.value = prev;
+  }
+
+  monthEl.addEventListener('change', populateDays);
+  yearEl.addEventListener('change', populateDays);
+  populateDays();
+}
+
 function showAlert(id, msg, type = 'error') {
   const el = document.getElementById(id);
   if (!el) return;
@@ -38,6 +81,7 @@ function switchTab(tab) {
   } else {
     document.getElementById('registerView').classList.add('active');
     document.querySelectorAll('.tab')[1].classList.add('active');
+    initBirthDatePicker('reg');
   }
 }
 
@@ -88,15 +132,19 @@ async function handleLogin() {
 // REGISTRO
 
 async function handleRegister() {
+  const d = document.getElementById('regBirthdateDay').value;
+  const m = document.getElementById('regBirthdateMonth').value;
+  const y = document.getElementById('regBirthdateYear').value;
   const body = {
     name:     document.getElementById('regName').value.trim(),
     surname:  document.getElementById('regSurname').value.trim(),
     email:    document.getElementById('regEmail').value.trim(),
     dni:      document.getElementById('regDni').value.trim(),
     password: document.getElementById('regPassword').value,
+    birth_date: (y && m && d) ? `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}` : null
   };
 
-  if (!body.name || !body.surname || !body.email || !body.dni || !body.password)
+  if (!body.name || !body.surname || !body.email || !body.dni || !body.password || !body.birth_date)
     return showAlert('alertBox', 'Completá todos los campos obligatorios.');
   if (body.password.length < 6)
     return showAlert('alertBox', 'La contraseña debe tener al menos 6 caracteres.');

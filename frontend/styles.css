@@ -139,6 +139,137 @@ input::placeholder { color:var(--muted) }
   margin-bottom: 20px;
 }
 
+/* Benefits */
+.benefit-icon{
+  width:48px;
+  height:48px;
+  min-width:48px;
+
+  display:flex;
+  align-items:center;
+  justify-content:center;
+
+  border-radius:14px;
+  background:#e6f5f3;
+
+  margin-right:14px;
+}
+
+.benefit-icon svg{
+  width:24px;
+  height:24px;
+
+  stroke:#0f766e;
+  stroke-width:2;
+  fill:none;
+}
+
+.field-row{
+  display:flex;
+  align-items:flex-start;
+  gap:12px;
+
+  margin-bottom:18px;
+}
+
+.field-label{
+  display:block;
+  font-weight:600;
+  margin-bottom:4px;
+}
+
+.field-value{
+  display:block;
+  color:#6b7280;
+  font-size:.95rem;
+}
+/* Debts */
+.debt-item{
+  display:flex;
+  align-items:center;
+  gap:14px;
+  padding:16px;
+  border-radius:12px;
+  background:#fff1f2;
+  margin-bottom:18px;
+}
+
+.debt-icon{
+  width:42px;
+  height:42px;
+  border-radius:12px;
+  background:#ffe4e6;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  color:#e11d48;
+}
+
+.debt-icon svg{
+  width:24px;
+  height:24px;
+  fill:none;
+  stroke:currentColor;
+  stroke-width:2;
+}
+
+.debt-info{
+  flex:1;
+  display:flex;
+  flex-direction:column;
+}
+
+.debt-info strong{
+  color:#0f3f3b;
+  font-size:.9rem;
+}
+
+.debt-info span{
+  color:#e11d48;
+  font-size:.8rem;
+}
+
+.debt-amount{
+  color:#e11d48;
+  font-weight:700;
+}
+
+.no-debts-card{
+  min-height:260px;
+}
+
+.no-debts-content{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  padding:40px 20px;
+  text-align:center;
+}
+
+.no-debts-icon{
+  width:64px;
+  height:64px;
+  border-radius:50%;
+  background:#e7f8f3;
+  color:#13a37f;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size:2rem;
+  font-weight:bold;
+  margin-bottom:20px;
+}
+
+.no-debts-content h4{
+  color:#0f3f3b;
+  margin-bottom:8px;
+}
+
+.no-debts-content p{
+  color:#7a9a96;
+  font-size:.9rem;
+}
 /* Stats */
 .stats-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:14px; margin-bottom:24px }
 .stat-card { background:var(--surface); border:1.5px solid var(--border); border-radius:14px; padding:18px 20px; display:flex; align-items:center; gap:14px }
@@ -189,6 +320,7 @@ input::placeholder { color:var(--muted) }
 /* Action buttons en tabla */
 .action-btn { padding:5px 10px; border-radius:7px; border:1.5px solid var(--border); background:none; font-size:.78rem; font-weight:500; color:var(--teal-dark); cursor:pointer; transition:all .15s }
 .action-btn:hover { background:var(--teal-glow); border-color:var(--teal) }
+.action-btn:disabled { opacity:.55; cursor:not-allowed; background:var(--bg); border-color:var(--border) }
 .action-btn.danger { color:var(--danger); border-color:#FECACA }
 .action-btn.danger:hover { background:#FEF2F2 }
 .action-btn.success { color:var(--success); border-color:#A7F3D0 }

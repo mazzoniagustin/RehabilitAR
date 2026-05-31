@@ -1,6 +1,11 @@
 from fastapi import APIRouter, Depends
-from services import individual_class_reservation_service, regular_class_reservation_service
-from schemes.reservations_scheme import IndividualReservation, RegularReservation
+from services.reservations import (
+    individual_class_reservation_service,
+    regular_class_reservation_service,
+    my_reservations_service,
+    waitlist_service,
+)
+from schemes.reservations_scheme import IndividualReservation, RegularReservation, WaitlistJoin
 from utils.permissions import check_permission
 
 router = APIRouter(
@@ -8,10 +13,16 @@ router = APIRouter(
     tags=["Reservations"]
 )
 
+@router.get('/me')
+def get_my_reservations(
+    current_user=Depends(check_permission(['ABONADO', 'NO_ABONADO']))
+):
+    return my_reservations_service.get_my_reservations(current_user['id'])
+
 @router.post('/regular')
 def reservar_clase_fija(
     data: RegularReservation,
-    current_user=Depends(check_permission(['ABONADO']))
+    current_user=Depends(check_permission(['ABONADO', 'NO_ABONADO']))
 ):
     return regular_class_reservation_service.reservar_clase_fija(current_user['id'], data.class_id)
 
@@ -21,3 +32,10 @@ def reservar_clase_individual(
     current_user=Depends(check_permission(['NO_ABONADO', 'ABONADO']))
 ):
     return individual_class_reservation_service.reservar_clase_individual(current_user['id'], data.class_id, data.payment_percentage)
+
+@router.post('/waitlist')
+def unirse_a_waitlist(
+    data: WaitlistJoin,
+    current_user=Depends(check_permission(['ABONADO', 'NO_ABONADO']))
+):
+    return waitlist_service.unirse_a_waitlist(current_user['id'], data.class_id)
