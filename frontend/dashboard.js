@@ -1147,22 +1147,16 @@ async function createIndividualClass() {
   const max_capacity = Number(document.getElementById('classCapacity').value);
   const class_date = document.getElementById('classDate').value;
   const start_time = document.getElementById('classStartTime').value;
-  const duration = parseInt(document.getElementById('classDuration').value);
   const professor_id = document.getElementById('classProfessor').value || null;
 
-  if (!room_id || !activity_type || !max_capacity || !class_date || !start_time || !duration) {
+  if (!room_id || !activity_type || !max_capacity || !class_date || !start_time) {
     return showAlert('clasesAlert', 'Completá todos los campos obligatorios.');
   }
 
-  // Calcular end_time a partir de duración
-  const [sh, sm] = start_time.split(':').map(Number);
-  const endMinutes = sh * 60 + sm + duration;
-  const end_time = `${String(Math.floor(endMinutes / 60)).padStart(2, '0')}:${String(endMinutes % 60).padStart(2, '0')}`;
-
   const apiStartTime = combineDateAndTime(class_date, start_time);
-  const apiEndTime = combineDateAndTime(class_date, end_time);
-  const selectedDate = new Date(`${class_date}T00:00`);
+  const [sh, sm] = start_time.split(':').map(Number);
   const startMinutes = sh * 60 + sm;
+  const selectedDate = new Date(`${class_date}T00:00`);
 
   if (selectedDate.getDay() === 0 || selectedDate.getDay() === 6) {
     return showAlert('clasesAlert', 'Las clases solo pueden programarse de lunes a viernes.');
@@ -1170,8 +1164,8 @@ async function createIndividualClass() {
   if (startMinutes < 8 * 60) {
     return showAlert('clasesAlert', 'Las clases deben estar dentro del horario del centro: 08:00 a 22:00.');
   }
-  if (endMinutes > 22 * 60) {
-    return showAlert('clasesAlert', `Con esa duración la clase termina a las ${end_time}, fuera del horario del centro (hasta 22:00).`);
+  if (startMinutes + 60 > 22 * 60) {
+    return showAlert('clasesAlert', 'El horario de inicio máximo es las 21:00 (la clase dura 1 hora).');
   }
   const nowAR = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Argentina/Buenos_Aires' }));
   if (new Date(apiStartTime) <= nowAR) {
@@ -1191,7 +1185,6 @@ async function createIndividualClass() {
         activity_type,
         max_capacity,
         start_time: apiStartTime,
-        end_time: apiEndTime,
         professor_id
       })
     });
@@ -1226,16 +1219,14 @@ async function createFijaClass() {
   const max_capacity = Number(document.getElementById('fijaCapacity').value);
   const day_of_week = parseInt(document.getElementById('fijaDayOfWeek').value);
   const startTime = document.getElementById('fijaStartTime').value;
-  const duration = parseInt(document.getElementById('fijaDuration').value);
   const professor_id = document.getElementById('fijaProfessor').value || null;
 
-  if (!room_id || !activity_type || !max_capacity || !startTime || !duration) {
+  if (!room_id || !activity_type || !max_capacity || !startTime) {
     return showAlert('clasesAlert', 'Completá todos los campos obligatorios.');
   }
   const [_sh, _sm] = startTime.split(':').map(Number);
-  const endMinutesFija = _sh * 60 + _sm + duration;
-  if (_sh < 8 || endMinutesFija > 22 * 60) {
-    return showAlert('clasesAlert', 'Las clases deben estar dentro del horario del centro: 08:00 a 22:00.');
+  if (_sh < 8 || _sh * 60 + _sm + 60 > 22 * 60) {
+    return showAlert('clasesAlert', 'El horario de inicio máximo es las 21:00 (la clase dura 1 hora).');
   }
 
   const [startHour, startMinute] = startTime.split(':').map(Number);
@@ -1255,7 +1246,6 @@ async function createFijaClass() {
         day_of_week,
         start_hour: startHour,
         start_minute: startMinute,
-        duration_minutes: duration,
         professor_id
       })
     });
