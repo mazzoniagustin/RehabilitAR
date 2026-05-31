@@ -555,8 +555,9 @@ function _populateHourSelect(selectId, maxHour) {
   const sel = document.getElementById(selectId);
   if (!sel) return;
   const prev = sel.value;
-  sel.innerHTML = '<option value="">hh</option>';
-  for (let h = 8; h <= maxHour; h++) {
+  sel.innerHTML = '<option value="" disabled selected>--</option>';
+  const effectiveMax = Math.min(maxHour, 21);
+  for (let h = 8; h <= effectiveMax; h++) {
     const opt = document.createElement('option');
     opt.value = _pad(h);
     opt.textContent = _pad(h);
@@ -773,8 +774,9 @@ async function checkFijaAvailability() {
   const dayOfWeek = parseInt(document.getElementById('fijaDayOfWeek').value);
   const startTime = document.getElementById('fijaStartTime').value;
 
-  if (!startTime) {
-    return showAlert('clasesAlert', 'Completá la hora de inicio para verificar disponibilidad.');
+  const fijaHour = document.getElementById('fijaStartHour').value;
+  if (!fijaHour || !startTime || startTime.startsWith(':')) {
+    return showAlert('clasesAlert', 'Seleccioná fecha y hora de inicio para verificar disponibilidad.');
   }
 
   const [startHour, startMinute] = startTime.split(':').map(Number);
@@ -1175,7 +1177,7 @@ async function createIndividualClass() {
     return showAlert('clasesAlert', 'Completá todos los campos obligatorios.');
   }
   if (!max_capacity || !Number.isInteger(max_capacity) || max_capacity < 1) {
-    return showAlert('clasesAlert', 'El cupo máximo debe ser un número entero positivo (sin comas ni letras).');
+    return showAlert('clasesAlert', 'El cupo debe ser mayor a 0.');
   }
 
   const apiStartTime = combineDateAndTime(class_date, start_time);
@@ -1250,7 +1252,7 @@ async function createFijaClass() {
     return showAlert('clasesAlert', 'Completá todos los campos obligatorios.');
   }
   if (!max_capacity || !Number.isInteger(max_capacity) || max_capacity < 1) {
-    return showAlert('clasesAlert', 'El cupo máximo debe ser un número entero positivo (sin comas ni letras).');
+    return showAlert('clasesAlert', 'El cupo debe ser mayor a 0.');
   }
   const [_sh, _sm] = startTime.split(':').map(Number);
   if (_sh < 8 || _sh * 60 + _sm + 60 > 22 * 60) {
