@@ -1173,8 +1173,9 @@ async function createIndividualClass() {
   const start_time = document.getElementById('classStartTime').value;
   const professor_id = document.getElementById('classProfessor').value || null;
 
-  if (!room_id || !activity_type || !class_date || !start_time) {
-    return showAlert('clasesAlert', 'Completá todos los campos obligatorios.');
+  const classCapacityRaw = document.getElementById('classCapacity').value.trim();
+  if (!room_id || !activity_type || !class_date || !start_time || classCapacityRaw === '') {
+    return showAlert('clasesAlert', 'Debe completar todos los campos.');
   }
   if (!max_capacity || !Number.isInteger(max_capacity) || max_capacity < 1) {
     return showAlert('clasesAlert', 'El cupo debe ser mayor a 0.');
@@ -1248,8 +1249,9 @@ async function createFijaClass() {
   const startTime = document.getElementById('fijaStartTime').value;
   const professor_id = document.getElementById('fijaProfessor').value || null;
 
-  if (!room_id || !activity_type || !startTime) {
-    return showAlert('clasesAlert', 'Completá todos los campos obligatorios.');
+  const fijaCapacityRaw = document.getElementById('fijaCapacity').value.trim();
+  if (!room_id || !activity_type || !startTime || fijaCapacityRaw === '') {
+    return showAlert('clasesAlert', 'Debe completar todos los campos.');
   }
   if (!max_capacity || !Number.isInteger(max_capacity) || max_capacity < 1) {
     return showAlert('clasesAlert', 'El cupo debe ser mayor a 0.');
