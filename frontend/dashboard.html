@@ -182,7 +182,7 @@
           </p>
           <input type="hidden" id="classDate"/>
           <input type="hidden" id="classStartTime"/>
-          <input type="hidden" id="classEndTime"/>
+          <input type="hidden" id="classDuration" value="60"/>
           <div class="edit-row">
             <div class="form-group">
               <label>Fecha</label>
@@ -201,15 +201,18 @@
             <div class="form-group">
               <label>Hora inicio</label>
               <div style="display:flex;gap:6px">
-                <select id="classStartHour" style="flex:1" onchange="syncClassTime('Start')">
-                </select>
+                <select id="classStartHour" style="flex:1" onchange="syncClassTime('Start')"></select>
                 <select id="classStartMinute" style="flex:1" onchange="syncClassTime('Start')"></select>
               </div>
             </div>
           </div>
-          <input type="hidden" id="classDuration" value="60"/>
 
-          <div id="classDetailsFields" style="display:none">
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:4px">
+            <button class="btn btn-sm btn-outline" id="checkIndividualBtn" onclick="checkIndividualAvailability()">Ver disponibilidad</button>
+          </div>
+
+          <div id="classDetailsFields" style="display:none;margin-top:16px">
+            <div id="individualPreview" style="display:none;margin-bottom:12px;padding:10px 14px;background:var(--surface-alt,#f5f5f5);border-radius:8px;font-size:.82rem;color:var(--muted)"></div>
             <div class="edit-row">
               <div class="form-group"><label>Sala</label><select id="classRoom"></select></div>
               <div class="form-group">
@@ -221,10 +224,10 @@
                 </select>
               </div>
             </div>
-            <div class="form-group"><label>Cupo máximo</label><input type="number" id="classCapacity" min="1" placeholder="Ej: 10"/></div>
+            <div class="form-group"><label>Cupo máximo</label><input type="number" id="classCapacity" min="1" step="1" placeholder="Ej: 10" oninput="this.value=this.value.replace(/[^0-9]/g,'')"/></div>
             <div class="form-group"><label>Profesor inicial (opcional)</label><select id="classProfessor"></select></div>
+            <button class="btn btn-sm" id="createClassBtn" onclick="createIndividualClass()">Crear clase individual</button>
           </div>
-          <button class="btn btn-sm" id="createClassBtn" onclick="createIndividualClass()" disabled>Crear clase individual</button>
         </div>
 
         <!-- ── FORM FIJA ── -->
@@ -252,30 +255,28 @@
               </div>
             </div>
           </div>
-          <div class="edit-row">
-            <div class="form-group">
-              <input type="hidden" id="fijaDuration" value="60"/>
-            </div>
-            <div class="form-group">
-              <label>Actividad</label>
-              <select id="fijaActivity">
-                <option value="TREN_SUPERIOR">Tren superior</option>
-                <option value="TREN_MEDIO">Tren medio</option>
-                <option value="TREN_INFERIOR">Tren inferior</option>
-              </select>
-            </div>
+          <input type="hidden" id="fijaDuration" value="60"/>
+
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:4px">
+            <button class="btn btn-sm btn-outline" id="checkFijaBtn" onclick="checkFijaAvailability()">Ver disponibilidad</button>
           </div>
-          <div id="fijaDetailsFields" style="display:none">
+
+          <div id="fijaDetailsFields" style="display:none;margin-top:16px">
+            <div id="fijaPreview" style="display:none;margin-bottom:12px;padding:10px 14px;background:var(--surface-alt,#f5f5f5);border-radius:8px;font-size:.82rem;color:var(--muted)"></div>
             <div class="edit-row">
               <div class="form-group"><label>Sala</label><select id="fijaRoom"></select></div>
-              <div class="form-group"><label>Cupo máximo</label><input type="number" id="fijaCapacity" min="1" placeholder="Ej: 15"/></div>
+              <div class="form-group">
+                <label>Actividad</label>
+                <select id="fijaActivity">
+                  <option value="TREN_SUPERIOR">Tren superior</option>
+                  <option value="TREN_MEDIO">Tren medio</option>
+                  <option value="TREN_INFERIOR">Tren inferior</option>
+                </select>
+              </div>
             </div>
+            <div class="form-group"><label>Cupo máximo</label><input type="number" id="fijaCapacity" min="1" step="1" placeholder="Ej: 15" oninput="this.value=this.value.replace(/[^0-9]/g,'')"/></div>
             <div class="form-group"><label>Profesor inicial (opcional)</label><select id="fijaProfessor"></select></div>
-          </div>
-          <div id="fijaPreview" style="display:none;margin-bottom:12px;padding:10px 14px;background:var(--surface-alt,#f5f5f5);border-radius:8px;font-size:.82rem;color:var(--muted)"></div>
-          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            <button class="btn btn-sm btn-outline" id="checkFijaBtn" onclick="checkFijaAvailability()">Ver disponibilidad</button>
-            <button class="btn btn-sm" id="createFijaBtn" onclick="createFijaClass()" style="display:none">Crear clases del mes</button>
+            <button class="btn btn-sm" id="createFijaBtn" onclick="createFijaClass()">Crear clases del mes</button>
           </div>
         </div>
       </div>
