@@ -73,7 +73,6 @@ class ClassResponse(BaseModel):
     professor_id: Optional[UUID]
     type: str
     activity_type: str
-    is_scheduled: bool
     status: str
     max_capacity: int
     current_capacity: int

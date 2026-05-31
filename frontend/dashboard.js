@@ -668,8 +668,13 @@ function bindClassAvailabilityInputs() {
 function getClassFormTimeRange() {
   const classDate = document.getElementById('classDate').value;
   const startTime = document.getElementById('classStartTime').value;
-  const endTime = document.getElementById('classEndTime').value;
-  if (!classDate || !startTime || !endTime) return null;
+  if (!classDate || !startTime) return null;
+
+  const [hour, minute] = startTime.split(':').map(Number);
+  const endDate = new Date(`${classDate}T00:00:00`);
+  endDate.setHours(hour, minute + 60, 0, 0);
+  const endTime = `${_pad(endDate.getHours())}:${_pad(endDate.getMinutes())}`;
+
   return {
     start_time: combineDateAndTime(classDate, startTime),
     end_time: combineDateAndTime(classDate, endTime)
