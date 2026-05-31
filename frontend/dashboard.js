@@ -1046,7 +1046,7 @@ async function loadClases() {
           const isFull = !isProfessor && !!c.is_full;
           const clientBtn = isFull
             ? `<button class="action-btn" style="background:var(--color-background-warning);color:var(--color-text-warning)" onclick="joinWaitlist('${c.id}')" title="La clase está llena — anotate en la lista de espera">Lista de espera</button>`
-            : `<button class="action-btn" onclick="reserveClass('${c.id}', ${c.is_scheduled})">Reservar</button>`;
+            : `<button class="action-btn" onclick="reserveClass('${c.id}', '${c.type}')">Reservar</button>`;
           return `
           <tr>
             <td><strong>${(c.activity_type || '').replace(/_/g, ' ')}</strong></td>
@@ -1417,12 +1417,11 @@ async function assignProfessorToClass(classId) {
   }
 }
 
-async function reserveClass(classId, isScheduled) {
+async function reserveClass(classId, classType) {
   try {
-    // Clases FIJA (is_scheduled=true) → /reservations/regular (ABONADO y NO_ABONADO)
-    // Clases INDIVIDUAL (is_scheduled=false) → /reservations/individual
-    const url  = isScheduled ? `${API}/reservations/regular` : `${API}/reservations/individual`;
-    const body = isScheduled
+    const isFija = classType === 'FIJA';
+    const url  = isFija ? `${API}/reservations/regular` : `${API}/reservations/individual`;
+    const body = isFija
       ? { class_id: classId }
       : { class_id: classId, payment_percentage: 100 }; // payment_percentage: pendiente módulo de pagos
 
@@ -1458,18 +1457,47 @@ async function loadReservas() {
     if (!data.length) { container.innerHTML = '<div class="empty-state"><p>No tenés reservas activas.</p></div>'; return; }
     container.innerHTML = `
       <table class="data-table">
-        <thead><tr><th>Actividad</th><th>Inicio</th><th>Estado</th><th>Pago</th><th></th></tr></thead>
-        <tbody>${data.map(r => `
+        <thead><tr><th>Actividad</th><th>Tipo</th><th>Inicio</th><th>Estado</th><th>Pago</th><th>Posición</th><th></th></tr></thead>
+        <tbody>${data.map(r => {
+          const isWaitlist = r.kind === 'WAITLIST';
+          const estado = isWaitlist
+            ? badge(r.status, { EN_ESPERA:'En espera' })
+            : badge(r.status, { CONFIRMADA:'Confirmada', CANCELADA:'Cancelada', AUSENTE:'Ausente' });
+          const pago = r.payment_status
+            ? badge(r.payment_status, { PENDIENTE:'Pendiente', SENADO_50:'50% señado', PAGADO:'Pagado', DEVUELTO:'Devuelto', CREDITO_APLICADO:'Crédito' })
+            : '—';
+          const posicion = isWaitlist ? `#${r.waitlist_position || '—'}` : '—';
+          const action = isWaitlist
+            ? `<button class="action-btn danger" onclick="leaveWaitlist('${r.class_id}')">Salir</button>`
+            : (r.status === 'CONFIRMADA' ? `<button class="action-btn danger" onclick="cancelReserva('${r.id}')">Cancelar</button>` : '');
+          return `
           <tr>
-            <td>${(r.activity_type || '').replace('_', ' ') || '—'}</td>
+            <td>${(r.activity_type || '').replace(/_/g, ' ') || '—'}</td>
+            <td>${r.type || '—'}</td>
             <td>${formatDate(r.start_time)}</td>
-            <td>${badge(r.status, { CONFIRMADA:'Confirmada', CANCELADA:'Cancelada', AUSENTE:'Ausente' })}</td>
-            <td>${badge(r.payment_status, { PENDIENTE:'Pendiente', SENADO_50:'50% señado', PAGADO:'Pagado', DEVUELTO:'Devuelto', CREDITO_APLICADO:'Crédito' })}</td>
-            <td>${r.status === 'CONFIRMADA' ? `<button class="action-btn danger" onclick="cancelReserva('${r.id}')">Cancelar</button>` : ''}</td>
-          </tr>`).join('')}
+            <td>${estado}</td>
+            <td>${pago}</td>
+            <td>${posicion}</td>
+            <td>${action}</td>
+          </tr>`;
+        }).join('')}
         </tbody>
       </table>`;
   } catch { container.innerHTML = '<div class="empty-state"><p>No se pudo cargar.</p></div>'; }
+}
+
+async function leaveWaitlist(classId) {
+  if (!confirm('¿Querés salir de la lista de espera?')) return;
+  try {
+    const res = await fetch(`${API}/reservations/waitlist/${classId}`, {
+      method: 'DELETE',
+      headers: authH()
+    });
+    const data = await res.json();
+    if (!res.ok) return showAlert('reservasAlert', typeof data.detail === 'string' ? data.detail : 'Error.');
+    showAlert('reservasAlert', data.message || 'Saliste de la lista de espera.', 'success');
+    loadReservas();
+  } catch { showAlert('reservasAlert', 'No se pudo conectar.'); }
 }
 
 async function cancelReserva(id) {
