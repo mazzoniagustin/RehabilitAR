@@ -745,14 +745,14 @@ async function checkFijaAvailability() {
   const startTime = document.getElementById('fijaStartTime').value;
   const duration = parseInt(document.getElementById('fijaDuration').value);
 
-  if (!startTime || !duration || duration < 1) {
-    return showAlert('clasesAlert', 'Completá la hora de inicio y duración para verificar disponibilidad.');
+  if (!startTime) {
+    return showAlert('clasesAlert', 'Completá la hora de inicio para verificar disponibilidad.');
   }
 
   const [startHour, startMinute] = startTime.split(':').map(Number);
   const endMinutes = startHour * 60 + startMinute + duration;
-  if (endMinutes > 20 * 60) {
-    return showAlert('clasesAlert', `Con esa duración la clase termina a las ${Math.floor(endMinutes/60)}:${String(endMinutes%60).padStart(2,'0')}, fuera del horario del centro (hasta 20:00).`);
+  if (endMinutes > 22 * 60) {
+    return showAlert('clasesAlert', `Con ese horario de inicio la clase termina a las ${Math.floor(endMinutes/60)}:${String(endMinutes%60).padStart(2,'0')}, fuera del horario del centro (hasta 22:00).`);
   }
 
   const dayNames = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes'];
@@ -1173,9 +1173,6 @@ async function createIndividualClass() {
   if (endMinutes > 22 * 60) {
     return showAlert('clasesAlert', `Con esa duración la clase termina a las ${end_time}, fuera del horario del centro (hasta 22:00).`);
   }
-  if (duration < 15) {
-    return showAlert('clasesAlert', 'La duración mínima de una clase es 15 minutos.');
-  }
   const nowAR = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Argentina/Buenos_Aires' }));
   if (new Date(apiStartTime) <= nowAR) {
     return showAlert('clasesAlert', 'La fecha y hora de inicio deben ser posteriores al momento actual.');
@@ -1207,7 +1204,6 @@ async function createIndividualClass() {
     document.getElementById('classDate').value = '';
     document.getElementById('classStartTime').value = '';
     document.getElementById('classEndTime').value = '';
-    document.getElementById('classDuration').value = '60';
     document.getElementById('classProfessor').value = '';
     ['classDateDay','classDateMonth','classDateYear','classStartHour','classStartMinute'].forEach(id => {
       const el = document.getElementById(id); if (el) el.value = '';
