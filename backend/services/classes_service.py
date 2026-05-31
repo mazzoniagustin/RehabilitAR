@@ -21,6 +21,8 @@ from utils.professor_validators import (
     validate_professor_schedule_availability
 )
 
+from schemes.class_scheme import CLASS_DURATION_MINUTES
+
 
 # ── Helpers de fecha ──────────────────────────────────────────────────────────
 
@@ -105,16 +107,18 @@ def _target_month(day_of_week: int) -> tuple[int, int]:
 
 def create_individual_class(data):
     try:
+        end_time = data.start_time + timedelta(minutes=CLASS_DURATION_MINUTES)
+
         room = validate_room_exists(data.room_id)
-        validate_center_business_hours(data.start_time, data.end_time)
+        validate_center_business_hours(data.start_time, end_time)
         validate_room_status(room)
         validate_room_capacity(room['capacity'], data.max_capacity)
-        validate_room_availability(data.room_id, data.start_time, data.end_time)
+        validate_room_availability(data.room_id, data.start_time, end_time)
 
         if data.professor_id:
             validate_professor_exists(data.professor_id)
-            validate_professor_weekly_hours(data.professor_id, data.start_time, data.end_time)
-            validate_professor_schedule_availability(data.professor_id, data.start_time, data.end_time)
+            validate_professor_weekly_hours(data.professor_id, data.start_time, end_time)
+            validate_professor_schedule_availability(data.professor_id, data.start_time, end_time)
 
         new_class = (
             supabase.table('classes')
@@ -123,12 +127,11 @@ def create_individual_class(data):
                 'professor_id': str(data.professor_id) if data.professor_id else None,
                 'type': 'INDIVIDUAL',
                 'activity_type': data.activity_type,
-                'is_scheduled': False,
                 'status': 'PROGRAMADA',
                 'max_capacity': data.max_capacity,
                 'current_capacity': 0,
                 'start_time': data.start_time.isoformat(),
-                'end_time': data.end_time.isoformat(),
+                'end_time': end_time.isoformat(),
             })
             .execute()
         )
@@ -179,7 +182,7 @@ def create_fija_class(data):
                 data.start_hour, data.start_minute,
                 tzinfo=TZ_AR
             )
-            end_dt = start_dt + timedelta(minutes=data.duration_minutes)
+            end_dt = start_dt + timedelta(minutes=CLASS_DURATION_MINUTES)
 
             # Validar horario del centro para esta ocurrencia
             try:
@@ -212,7 +215,6 @@ def create_fija_class(data):
                 'professor_id': str(data.professor_id) if data.professor_id else None,
                 'type': 'FIJA',
                 'activity_type': data.activity_type,
-                'is_scheduled': True,
                 'status': 'PROGRAMADA',
                 'max_capacity': data.max_capacity,
                 'current_capacity': 0,
