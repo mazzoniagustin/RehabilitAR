@@ -71,6 +71,17 @@ def _get_or_create_credit_row(user_id: str):
     return credit
 
 
+def _get_credit_row(user_id: str):
+    response = (
+        supabase.table("credits")
+        .select("id, available_credits, used_credits, month")
+        .eq("user_id", str(user_id))
+        .limit(1)
+        .execute()
+    )
+    return response.data[0] if response.data else None
+
+
 def otorgar_credito(
     user_id: str,
     reservation_id: str = None,
@@ -113,7 +124,10 @@ def retirar_credito(
 ):
     try:
         user_id = str(user_id)
-        credit = _get_or_create_credit_row(user_id)
+        credit = _get_credit_row(user_id)
+        if not credit:
+            raise HTTPException(status_code=400, detail="No hay créditos disponibles para retirar.")
+
         available = credit.get("available_credits") or 0
         used = credit.get("used_credits") or 0
 
@@ -151,7 +165,10 @@ def retirar_Todoscredito(
 ):
     try:
         user_id = str(user_id)
-        credit = _get_or_create_credit_row(user_id)
+        credit = _get_credit_row(user_id)
+        if not credit:
+            return {"message": "Sin créditos que retirar.", "removed": False}
+
         available = credit.get("available_credits") or 0
 
         if available <= 0:
