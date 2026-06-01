@@ -2,6 +2,7 @@ from database import supabase
 from fastapi import HTTPException
 
 #from services.mp_service import pagar_Reserva #pendiente_de_implementar
+from services.reservations import waitlist_service
 
 
 def reservar_clase_individual(user_id: str, class_id: str, payment_percentage: int):
@@ -12,7 +13,13 @@ def reservar_clase_individual(user_id: str, class_id: str, payment_percentage: i
         if payment_percentage not in (50, 100):
             raise HTTPException(status_code=400, detail='El porcentaje de pago debe ser 50 o 100.')
 
-        clase = supabase.table('classes').select('*').eq('id', class_id).single().execute()
+        clase = (
+            supabase.table('classes')
+            .select('*')
+            .eq('id', class_id)
+            .single()
+            .execute()
+        )
         if not clase.data:
             raise HTTPException(status_code=404, detail='Clase no encontrada.')
         clase = clase.data
@@ -23,13 +30,22 @@ def reservar_clase_individual(user_id: str, class_id: str, payment_percentage: i
                 detail='Esta clase no es individual. Para clases fijas utilizá la opción correspondiente.'
             )
 
-        user = supabase.table('users').select('*').eq('id', user_id).single().execute()
+        user = (
+            supabase.table('users')
+            .select('*')
+            .eq('id', user_id)
+            .single()
+            .execute()
+        )
         if not user.data:
             raise HTTPException(status_code=404, detail='Usuario no encontrado.')
         user = user.data
 
         if user['account_status'] != 'ACTIVA':
-            raise HTTPException(status_code=403, detail='Reserva fallida, no se encuentra habilitado para tomar la clase.')
+            raise HTTPException(
+                status_code=403,
+                detail='Reserva fallida, no se encuentra habilitado para tomar la clase.'
+            )
 
         existing_active = (
             supabase.table('reservations')
@@ -43,8 +59,7 @@ def reservar_clase_individual(user_id: str, class_id: str, payment_percentage: i
             raise HTTPException(status_code=400, detail='Ya tenés una reserva para esta clase.')
 
         if clase['current_capacity'] >= clase['max_capacity']:
-            # Clase llena: waitlist FIFO puro (sin prioridades para INDIVIDUAL)
-            return _agregar_a_waitlist_individual(user_id, class_id)
+            return waitlist_service.unirse_a_waitlist(user_id, class_id)
 
         payment_status = 'SENADO_50' if payment_percentage == 50 else 'PENDIENTE'
 
@@ -88,8 +103,7 @@ def reservar_clase_individual(user_id: str, class_id: str, payment_percentage: i
 
         if payment_percentage == 50:
             return {'message': 'Inscripción exitosa. Debe pagar el 50% restante antes de la clase.'}
-        else:
-            return {'message': 'Inscripción exitosa.'}
+        return {'message': 'Inscripción exitosa.'}
 
     except HTTPException:
         raise

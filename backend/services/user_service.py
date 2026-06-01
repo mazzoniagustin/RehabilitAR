@@ -63,12 +63,27 @@ def show_user_info(user_id: str):
         }
 
         if user['rol'] == 'ABONADO':
-            credits_res = supabase.table('credits').select('available_credits').eq('user_id', user_id).single().execute()
-            
-            base['credits'] = credits_res.data.get('available_credits') if credits_res.data else 0
-            
-            subscription_res = supabase.table('subscriptions').select('end_date').eq('user_id', user_id).single().execute()
-            base['subscription_expiry'] = subscription_res.data.get('end_date') if subscription_res.data else None
+            credits_res = (
+                supabase.table('credits')
+                .select('available_credits')
+                .eq('user_id', user_id)
+                .limit(1)
+                .execute()
+            )
+            available_credits = (credits_res.data or [{}])[0].get('available_credits') or 0
+            base['credits'] = available_credits
+            base['available_credits'] = available_credits
+
+            subscription_res = (
+                supabase.table('subscriptions')
+                .select('end_date')
+                .eq('user_id', user_id)
+                .eq('status', 'ACTIVA')
+                .order('end_date', desc=True)
+                .limit(1)
+                .execute()
+            )
+            base['subscription_expiry'] = (subscription_res.data or [{}])[0].get('end_date')
 
         if user['rol'] in ('ADMINISTRATIVO', 'RECEPCIONISTA', 'PROFESOR'):
             base['specialty'] = user.get('specialty')

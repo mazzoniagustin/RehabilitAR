@@ -13,7 +13,7 @@ def unirse_a_waitlist(user_id: str, class_id: str):
         user_id = str(user_id)
         class_id = str(class_id)
 
-        clase_response = supabase.table('classes').select('id, type, is_scheduled, status, current_capacity, max_capacity').eq('id', class_id).single().execute()
+        clase_response = supabase.table('classes').select('id, type, status, current_capacity, max_capacity').eq('id', class_id).single().execute()
         if not clase_response.data:
             raise HTTPException(status_code=404, detail='Clase no encontrada.')
         clase = clase_response.data
@@ -62,9 +62,11 @@ def unirse_a_waitlist(user_id: str, class_id: str):
 
         if class_type == 'INDIVIDUAL':
             return _agregar_waitlist_individual(user_id, class_id)
-        else:
+        if class_type == 'FIJA':
             prioridad = 'ABONADO' if user['rol'] == 'ABONADO' else 'NO_ABONADO'
             return _agregar_waitlist_fija(user_id, class_id, prioridad)
+
+        raise HTTPException(status_code=400, detail='Tipo de clase inválido para lista de espera.')
 
     except HTTPException:
         raise
@@ -72,8 +74,34 @@ def unirse_a_waitlist(user_id: str, class_id: str):
         raise HTTPException(status_code=500, detail=f'Error al unirse a la lista de espera: {str(e)}')
 
 
+def salir_de_waitlist(user_id: str, class_id: str):
+    try:
+        user_id = str(user_id)
+        class_id = str(class_id)
+
+        entrada_response = (
+            supabase.table('waitlist')
+            .select('id')
+            .eq('user_id', user_id)
+            .eq('class_id', class_id)
+            .limit(1)
+            .execute()
+        )
+        if not entrada_response.data:
+            raise HTTPException(status_code=404, detail='No estás en la lista de espera para esta clase.')
+
+        supabase.table('waitlist').delete().eq('id', entrada_response.data[0]['id']).execute()
+        _reordenar_waitlist(class_id)
+
+        return {'message': 'Saliste de la lista de espera correctamente.'}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f'Error al salir de la lista de espera: {str(e)}')
+
+
 def _agregar_waitlist_individual(user_id: str, class_id: str):
-    print(f"DEBUG ENTRANDO _agregar_waitlist_individual class_id={class_id}")
     waitlist_response = (
         supabase.table('waitlist')
         .select('position, priority_order')
@@ -82,11 +110,9 @@ def _agregar_waitlist_individual(user_id: str, class_id: str):
         .limit(1)
         .execute()
     )
-    print(f"DEBUG waitlist_response.data={waitlist_response.data}")
     entradas = waitlist_response.data or []
     nueva_posicion = (entradas[0]['position'] + 1) if entradas else 1
     nuevo_priority_order = (entradas[0]['priority_order'] + 1) if entradas else 1
-    print(f"DEBUG nueva_posicion={nueva_posicion}")
 
     supabase.table('waitlist').insert({
         'user_id': user_id,
@@ -130,6 +156,16 @@ def _agregar_waitlist_fija(user_id: str, class_id: str, prioridad: str):
     nivel_entradas = nivel_response.data or []
     nuevo_priority_order = (nivel_entradas[0]['priority_order'] + 1) if nivel_entradas else 1
 
+    abonados_response = (
+        supabase.table('waitlist')
+        .select('id', count='exact')
+        .eq('class_id', class_id)
+        .eq('priority', 'ABONADO')
+        .execute()
+    )
+    total_abonados = abonados_response.count if abonados_response.count is not None else 0
+    posicion_visible = nuevo_priority_order if prioridad == 'ABONADO' else total_abonados + nuevo_priority_order
+
     supabase.table('waitlist').insert({
         'user_id': user_id,
         'class_id': class_id,
@@ -139,6 +175,31 @@ def _agregar_waitlist_fija(user_id: str, class_id: str, prioridad: str):
     }).execute()
 
     return {
-        'message': f'Te uniste a la lista de espera. Posición: {nueva_posicion}.',
-        'position': nueva_posicion
+        'message': f'Te uniste a la lista de espera. Posición: {posicion_visible}.',
+        'posicion': posicion_visible
     }
+
+
+def _reordenar_waitlist(class_id: str):
+    restantes = (
+        supabase.table('waitlist')
+        .select('id, priority')
+        .eq('class_id', class_id)
+        .order('position', desc=False)
+        .execute()
+    ).data or []
+
+    for i, fila in enumerate(restantes, start=1):
+        supabase.table('waitlist').update({'position': i}).eq('id', fila['id']).execute()
+
+    for prioridad in ['ABONADO', 'NO_ABONADO']:
+        grupo = (
+            supabase.table('waitlist')
+            .select('id')
+            .eq('class_id', class_id)
+            .eq('priority', prioridad)
+            .order('position', desc=False)
+            .execute()
+        ).data or []
+        for i, fila in enumerate(grupo, start=1):
+            supabase.table('waitlist').update({'priority_order': i}).eq('id', fila['id']).execute()

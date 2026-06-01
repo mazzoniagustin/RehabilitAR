@@ -5,6 +5,55 @@ from utils import benefits
 #from services.mercadoPago_service import depositar_reserva  # pendiente de implementar
 
 
+def _to_aware_utc(value: str) -> datetime:
+    parsed = datetime.fromisoformat(value.replace('Z', '+00:00'))
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _registrar_cancelacion_reserva(
+    reservation_id: str,
+    class_id: str,
+    user_id: str,
+    reason: str,
+    hours_before: float,
+    generates_credit: bool = False,
+    generates_refund: bool = False,
+):
+    supabase.table('cancellations').insert({
+        'reservation_id': str(reservation_id),
+        'class_id': str(class_id),
+        'user_id': str(user_id),
+        'reason': reason,
+        'type': 'CLIENTE',
+        'hours_before': round(hours_before, 2),
+        'generates_credit': generates_credit,
+        'generates_refund': generates_refund,
+    }).execute()
+
+
+def _aplicar_descuento_por_cancelacion(user_id: str, monthly_cancellations: int):
+    if monthly_cancellations == 1:
+        benefits.otorgar_descuento20(user_id)
+        return 'Reserva cancelada. Se aplicó un descuento del 20% para la próxima cuota.'
+
+    if monthly_cancellations == 2:
+        benefits.otorgar_descuento30(user_id)
+        return 'Reserva cancelada. Se aplicó un descuento total del 30% para la próxima cuota.'
+
+    return _retirar_beneficios_por_limite(user_id)
+
+
+def _retirar_beneficios_por_limite(user_id: str):
+    benefits.cancelar_descuentos(user_id)
+    benefits.retirar_Todoscredito(
+        user_id,
+        reason='Beneficios retirados por alcanzar el límite de cancelaciones voluntarias.'
+    )
+    return 'Reserva cancelada. Alcanzaste el límite de cancelaciones y se retiraron tus beneficios.'
+
+
 def cancelar_reserva(reservation_id: str, current_user_id: str):
     try:
         reserva_response = (
@@ -45,14 +94,17 @@ def cancelar_reserva(reservation_id: str, current_user_id: str):
         if not user:
             raise HTTPException(status_code=404, detail='Usuario no encontrado.')
 
-        start_time = datetime.fromisoformat(clase['start_time'])
+        start_time = _to_aware_utc(clase['start_time'])
         ahora = datetime.now(timezone.utc)
         diferencia_horas = (start_time - ahora).total_seconds() / 3600
 
-        supabase.table('reservations').update({'status': 'CANCELADA'}).eq('id', reservation_id).execute()
+        reservation_update = {
+            'status': 'CANCELADA',
+            'cancelled_at': ahora.isoformat(),
+            'cancellation_reason': 'Cancelación solicitada por el cliente.',
+        }
 
         nueva_capacidad = max(clase['current_capacity'] - 1, 0)
-        supabase.table('classes').update({'current_capacity': nueva_capacidad}).eq('id', clase['id']).execute()
 
         new_monthly_cancellations = user['monthly_cancellations'] + 1
         supabase.table('users').update({
@@ -60,29 +112,52 @@ def cancelar_reserva(reservation_id: str, current_user_id: str):
             'cancellation_count': user['cancellation_count'] + 1,
         }).eq('id', user['id']).execute()
 
+        mensaje = 'Reserva cancelada exitosamente.'
+        generates_credit = False
+        generates_refund = False
+
+        if user['rol'] == 'NO_ABONADO':
+            if diferencia_horas >= 24:
+                reservation_update['payment_status'] = 'DEVUELTO'
+                generates_refund = True
+                mensaje = 'Reserva cancelada. Se reintegró el monto señado.'
+            else:
+                mensaje = 'Reserva cancelada. No se otorgan beneficios por cancelaciones con menos de 24hs de anticipación.'
+
+        elif user['rol'] == 'ABONADO':
+            if new_monthly_cancellations >= 3:
+                mensaje = _retirar_beneficios_por_limite(user['id'])
+            elif diferencia_horas >= 48:
+                credit_result = benefits.otorgar_credito(
+                    user['id'],
+                    reservation_id=reservation_id,
+                    class_id=clase['id'],
+                    reason='Crédito otorgado por cancelación de reserva con más de 48 horas de anticipación.'
+                )
+                generates_credit = bool(credit_result.get('granted'))
+                if generates_credit:
+                    reservation_update['payment_status'] = 'CREDITO_APLICADO'
+                mensaje = credit_result['message']
+            elif diferencia_horas >= 24:
+                mensaje = _aplicar_descuento_por_cancelacion(user['id'], new_monthly_cancellations)
+            else:
+                mensaje = 'Reserva cancelada. No se otorgan beneficios por cancelaciones con menos de 24hs de anticipación.'
+
+        supabase.table('reservations').update(reservation_update).eq('id', reservation_id).execute()
+        supabase.table('classes').update({'current_capacity': nueva_capacidad}).eq('id', clase['id']).execute()
+
+        _registrar_cancelacion_reserva(
+            reservation_id=reservation_id,
+            class_id=clase['id'],
+            user_id=user['id'],
+            reason=reservation_update['cancellation_reason'],
+            hours_before=diferencia_horas,
+            generates_credit=generates_credit,
+            generates_refund=generates_refund,
+        )
+
         # Promover waitlist respetando el tipo de clase
         _promover_waitlist(reserva['class_id'], clase['type'], nueva_capacidad)
-
-        mensaje = 'Reserva cancelada exitosamente.'
-
-        if diferencia_horas >= 48:
-            if user['rol'] == 'ABONADO':
-                if new_monthly_cancellations == 1:
-                    benefits.otorgar_descuento20(user['id'])
-                elif new_monthly_cancellations == 2:
-                    benefits.otorgar_descuento30(user['id'])
-                else:
-                    benefits.cancelar_descuentos(user['id'])
-                    mensaje = 'Has alcanzado el límite de cancelaciones. Se han retirado tus descuentos.'
-            else:
-                # NO_ABONADO: devolver seña (pendiente integración MercadoPago)
-                pass
-
-        elif diferencia_horas >= 24:
-            mensaje = 'Reserva cancelada. No se otorgan beneficios por cancelaciones con menos de 48hs de anticipación.'
-
-        else:
-            mensaje = 'Reserva cancelada. No se otorgan beneficios por cancelaciones con menos de 24hs de anticipación.'
 
         return {'message': mensaje}
 
@@ -124,7 +199,7 @@ def _promover_waitlist(class_id: str, class_type: str, capacidad_actual: int):
                 if siguiente.data:
                     _confirmar_desde_waitlist(siguiente.data[0], class_id, capacidad_actual)
                     return
-        else:
+        elif class_type == 'INDIVIDUAL':
             # INDIVIDUAL: FIFO puro por orden de llegada, sin distinción de prioridad
             siguiente = (
                 supabase.table('waitlist')
@@ -144,6 +219,27 @@ def _promover_waitlist(class_id: str, class_type: str, capacidad_actual: int):
 
 def _confirmar_desde_waitlist(entrada: dict, class_id: str, capacidad_actual: int):
     """Crea/reactiva la reserva del primer usuario en waitlist y lo elimina de la lista."""
+    user_response = (
+        supabase.table('users')
+        .select('rol')
+        .eq('id', entrada['user_id'])
+        .single()
+        .execute()
+    )
+    class_response = (
+        supabase.table('classes')
+        .select('type')
+        .eq('id', class_id)
+        .single()
+        .execute()
+    )
+    payment_status = (
+        'PAGADO'
+        if (user_response.data or {}).get('rol') == 'ABONADO'
+        and (class_response.data or {}).get('type') == 'FIJA'
+        else 'PENDIENTE'
+    )
+
     # Reutilizar reserva cancelada si existe (evita violación del unique constraint)
     existing_cancelled = (
         supabase.table('reservations')
@@ -157,7 +253,7 @@ def _confirmar_desde_waitlist(entrada: dict, class_id: str, capacidad_actual: in
     if existing_cancelled.data:
         supabase.table('reservations').update({
             'status': 'CONFIRMADA',
-            'payment_status': 'PENDIENTE',
+            'payment_status': payment_status,
             'cancellation_reason': None,
             'cancelled_at': None,
         }).eq('id', existing_cancelled.data[0]['id']).execute()
@@ -166,7 +262,7 @@ def _confirmar_desde_waitlist(entrada: dict, class_id: str, capacidad_actual: in
             'user_id': entrada['user_id'],
             'class_id': class_id,
             'status': 'CONFIRMADA',
-            'payment_status': 'PENDIENTE',
+            'payment_status': payment_status,
         }).execute()
 
     supabase.table('classes').update(

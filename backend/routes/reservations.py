@@ -39,3 +39,11 @@ def unirse_a_waitlist(
     current_user=Depends(check_permission(['ABONADO', 'NO_ABONADO']))
 ):
     return waitlist_service.unirse_a_waitlist(current_user['id'], data.class_id)
+
+
+@router.delete('/waitlist/{class_id}')
+def salir_de_waitlist(
+    class_id: str,
+    current_user=Depends(check_permission(['ABONADO', 'NO_ABONADO']))
+):
+    return waitlist_service.salir_de_waitlist(current_user['id'], class_id)

@@ -500,7 +500,7 @@ function nowTimeArgentina() {
 
 function _pad(n) { return String(n).padStart(2, '0'); }
 
-// Sincroniza los selects de fecha → hidden #classDate y dispara refreshClassAvailabilityOptions
+// Sincroniza los selects de fecha → hidden #classDate
 function syncClassDate() {
   const d = document.getElementById('classDateDay').value;
   const m = document.getElementById('classDateMonth').value;
@@ -512,33 +512,18 @@ function syncClassDate() {
     hidden.value = '';
   }
   applyIndividualDateConstraints();
-  refreshClassAvailabilityOptions();
+  // Ocultar detalles si el usuario cambia fecha después de haber verificado
+  _resetIndividualDetails();
 }
 
-// Sincroniza selects de hora → hidden #classStartTime / #classEndTime
+// Sincroniza selects de hora → hidden #classStartTime
 function syncClassTime(which) {
   const h = document.getElementById(`class${which}Hour`).value;
   const min = document.getElementById(`class${which}Minute`).value;
   const hidden = document.getElementById(`class${which}Time`);
   hidden.value = (h && min !== undefined) ? `${h}:${min}` : '';
-  if (which === 'Start') syncClassEndTime();
-  else refreshClassAvailabilityOptions();
-}
-
-// Calcula end_time a partir de start + duración y actualiza el hidden
-function syncClassEndTime() {
-  const startTime = document.getElementById('classStartTime').value;
-  const duration = parseInt(document.getElementById('classDuration').value);
-  if (!startTime || !duration || duration < 1) {
-    document.getElementById('classEndTime').value = '';
-    return;
-  }
-  const [sh, sm] = startTime.split(':').map(Number);
-  const endMinutes = sh * 60 + sm + duration;
-  const eh = String(Math.floor(endMinutes / 60)).padStart(2, '0');
-  const em = String(endMinutes % 60).padStart(2, '0');
-  document.getElementById('classEndTime').value = `${eh}:${em}`;
-  refreshClassAvailabilityOptions();
+  // Ocultar detalles si el usuario cambia hora después de haber verificado
+  _resetIndividualDetails();
 }
 
 // Sincroniza selects de hora fija → hidden #fijaStartTime
@@ -546,6 +531,8 @@ function syncFijaTime() {
   const h = document.getElementById('fijaStartHour').value;
   const min = document.getElementById('fijaStartMinute').value;
   document.getElementById('fijaStartTime').value = `${h}:${min}`;
+  // Ocultar detalles si el usuario cambia hora después de haber verificado
+  _resetFijaDetails();
 }
 
 // Popula el select de minutos 00-59
@@ -568,8 +555,9 @@ function _populateHourSelect(selectId, maxHour) {
   const sel = document.getElementById(selectId);
   if (!sel) return;
   const prev = sel.value;
-  sel.innerHTML = '<option value="">hh</option>';
-  for (let h = 8; h <= maxHour; h++) {
+  sel.innerHTML = '<option value="" disabled selected>--</option>';
+  const effectiveMax = Math.min(maxHour, 21);
+  for (let h = 8; h <= effectiveMax; h++) {
     const opt = document.createElement('option');
     opt.value = _pad(h);
     opt.textContent = _pad(h);
@@ -647,10 +635,14 @@ function initClassDateSelects() {
 
   // Sync inicial de fijaStartTime
   syncFijaTime();
+
+  // Ocultar detalles de fija al cambiar día de la semana
+  const fijaDayOfWeekSel = document.getElementById('fijaDayOfWeek');
+  if (fijaDayOfWeekSel) fijaDayOfWeekSel.addEventListener('change', _resetFijaDetails);
 }
 
 
-// Aplica min/max al campo de fecha y ajusta el minimo de hora segun si es hoy
+// Aplica restricción de hora mínima si la fecha elegida es hoy
 function applyIndividualDateConstraints() {
   const dateInput  = document.getElementById('classDate');
   const startInput = document.getElementById('classStartTime');
@@ -661,8 +653,7 @@ function applyIndividualDateConstraints() {
 
   const isToday = dateInput.value === today;
   const minTime = isToday ? nowTimeArgentina() : '08:00';
-  if (startInput) { startInput.min = minTime; startInput.max = '20:00'; }
-  syncClassEndTime();
+  if (startInput) { startInput.min = minTime; startInput.max = '21:00'; }
 }
 
 function bindClassAvailabilityInputs() {
@@ -677,150 +668,175 @@ function bindClassAvailabilityInputs() {
 function getClassFormTimeRange() {
   const classDate = document.getElementById('classDate').value;
   const startTime = document.getElementById('classStartTime').value;
-  const endTime = document.getElementById('classEndTime').value;
-  if (!classDate || !startTime || !endTime) return null;
+  if (!classDate || !startTime) return null;
+
+  const [hour, minute] = startTime.split(':').map(Number);
+  const endDate = new Date(`${classDate}T00:00:00`);
+  endDate.setHours(hour, minute + 60, 0, 0);
+  const endTime = `${_pad(endDate.getHours())}:${_pad(endDate.getMinutes())}`;
+
   return {
     start_time: combineDateAndTime(classDate, startTime),
     end_time: combineDateAndTime(classDate, endTime)
   };
 }
 
-async function refreshClassAvailabilityOptions() {
-  const roomSelect = document.getElementById('classRoom');
-  const professorSelect = document.getElementById('classProfessor');
-  const detailsFields = document.getElementById('classDetailsFields');
-  const createButton = document.getElementById('createClassBtn');
-  const range = getClassFormTimeRange();
+// ── Helpers de reset ─────────────────────────────────────────────────────────
 
-  if (!range) {
-    adminClassRooms = [];
-    adminClassFormProfessors = [];
-    if (roomSelect) roomSelect.innerHTML = '';
-    if (professorSelect) professorSelect.innerHTML = '';
-    if (detailsFields) detailsFields.style.display = 'none';
-    if (createButton) createButton.disabled = true;
-    return;
+function _resetIndividualDetails() {
+  const detailsFields = document.getElementById('classDetailsFields');
+  if (detailsFields) detailsFields.style.display = 'none';
+}
+
+function _resetFijaDetails() {
+  const detailsFields = document.getElementById('fijaDetailsFields');
+  if (detailsFields) detailsFields.style.display = 'none';
+}
+
+// ── Individual: Ver disponibilidad ───────────────────────────────────────────
+
+async function checkIndividualAvailability() {
+  const classDate  = document.getElementById('classDate').value;
+  const startTime  = document.getElementById('classStartTime').value;
+
+  if (!classDate || !startTime) {
+    return showAlert('clasesAlert', 'Seleccioná fecha y hora de inicio para verificar disponibilidad.');
   }
 
+  const [sh, sm] = startTime.split(':').map(Number);
+  const startMinutes = sh * 60 + sm;
+
+  if (startMinutes < 8 * 60) {
+    return showAlert('clasesAlert', 'Las clases deben estar dentro del horario del centro: 08:00 a 22:00.');
+  }
+  if (startMinutes + 60 > 22 * 60) {
+    return showAlert('clasesAlert', 'El horario de inicio máximo es las 21:00 (la clase dura 1 hora).');
+  }
+
+  const apiStartTime = combineDateAndTime(classDate, startTime);
+  const nowAR = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Argentina/Buenos_Aires' }));
+  if (new Date(apiStartTime) <= nowAR) {
+    return showAlert('clasesAlert', 'La fecha y hora de inicio deben ser posteriores al momento actual.');
+  }
+
+  // Calcular end_time para consultar disponibilidad
+  const endMinutes = startMinutes + 60;
+  const endStr = `${String(Math.floor(endMinutes / 60)).padStart(2, '0')}:${String(endMinutes % 60).padStart(2, '0')}`;
+  const apiEndTime = combineDateAndTime(classDate, endStr);
+
+  const btn = document.getElementById('checkIndividualBtn');
+  btn.disabled = true;
+  btn.textContent = 'Verificando...';
+
   try {
-    const params = new URLSearchParams(range);
+    const params = new URLSearchParams({ start_time: apiStartTime, end_time: apiEndTime });
     const [roomsRes, professorsRes] = await Promise.all([
       fetch(`${API}/classes/rooms?${params.toString()}`, { headers: authH() }),
       fetch(`${API}/classes/professors?${params.toString()}`, { headers: authH() })
     ]);
 
-    const rooms = await roomsRes.json();
+    const rooms      = await roomsRes.json();
     const professors = await professorsRes.json();
 
     if (!roomsRes.ok) throw new Error(apiErrorMessage(rooms, 'No se pudieron cargar las salas disponibles.'));
     if (!professorsRes.ok) throw new Error(apiErrorMessage(professors, 'No se pudieron cargar los profesores disponibles.'));
 
-    adminClassRooms = rooms || [];
-    adminClassFormProfessors = professors || [];
-    if (detailsFields) detailsFields.style.display = 'block';
-    if (createButton) createButton.disabled = adminClassRooms.length === 0;
+    if (!rooms || rooms.length === 0) {
+      return showAlert('clasesAlert', 'No hay salas disponibles para ese horario.');
+    }
 
-    roomSelect.innerHTML = adminClassRooms.length
-      ? adminClassRooms.map(r => `<option value="${r.id}">${r.name} — cupo sala: ${r.capacity}</option>`).join('')
-      : '<option value="">No hay salas disponibles</option>';
+    const detailsFields    = document.getElementById('classDetailsFields');
+    const roomSelect       = document.getElementById('classRoom');
+    const professorSelect  = document.getElementById('classProfessor');
+    const preview          = document.getElementById('individualPreview');
 
+    // Preview informativo
+    const [dy, dm, dd] = classDate.split('-');
+    const monthNames = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+    preview.style.display = 'block';
+    preview.innerHTML = `<strong>Horario disponible:</strong> ${parseInt(dd)} de ${monthNames[parseInt(dm)-1]} ${dy} — ${startTime} a ${endStr}`;
+
+    roomSelect.innerHTML = rooms.map(r => `<option value="${r.id}">${r.name} — cupo sala: ${r.capacity}</option>`).join('');
     professorSelect.innerHTML = '<option value="">Sin profesor inicial</option>'
-      + adminClassFormProfessors.map(p => `<option value="${p.id}">${p.name} ${p.surname}${p.specialty ? ` — ${p.specialty}` : ''}</option>`).join('');
+      + (professors || []).map(p => `<option value="${p.id}">${p.name} ${p.surname}${p.specialty ? ` — ${p.specialty}` : ''}</option>`).join('');
+
+    detailsFields.style.display = 'block';
 
   } catch (e) {
-    adminClassRooms = [];
-    adminClassFormProfessors = [];
-    if (detailsFields) detailsFields.style.display = 'block';
-    if (createButton) createButton.disabled = true;
-    if (roomSelect) roomSelect.innerHTML = '<option value="">No se pudieron cargar salas</option>';
-    if (professorSelect) professorSelect.innerHTML = '<option value="">No se pudieron cargar profesores</option>';
-    showAlert('clasesAlert', e.message || 'No se pudo cargar disponibilidad.');
+    showAlert('clasesAlert', e.message || 'No se pudo verificar disponibilidad.');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Ver disponibilidad';
   }
 }
+
+// Mantenida para compatibilidad con cualquier llamada residual; ya no refresca automáticamente
+async function refreshClassAvailabilityOptions() {}
 
 // ── Fija: preview y disponibilidad ───────────────────────────────────────────
 
 async function checkFijaAvailability() {
   const dayOfWeek = parseInt(document.getElementById('fijaDayOfWeek').value);
   const startTime = document.getElementById('fijaStartTime').value;
-  const duration = parseInt(document.getElementById('fijaDuration').value);
 
-  if (!startTime || !duration || duration < 1) {
-    return showAlert('clasesAlert', 'Completá la hora de inicio y duración para verificar disponibilidad.');
+  const fijaHour = document.getElementById('fijaStartHour').value;
+  if (!fijaHour || !startTime || startTime.startsWith(':')) {
+    return showAlert('clasesAlert', 'Seleccioná fecha y hora de inicio para verificar disponibilidad.');
   }
 
   const [startHour, startMinute] = startTime.split(':').map(Number);
-  const endMinutes = startHour * 60 + startMinute + duration;
-  if (endMinutes > 20 * 60) {
-    return showAlert('clasesAlert', `Con esa duración la clase termina a las ${Math.floor(endMinutes/60)}:${String(endMinutes%60).padStart(2,'0')}, fuera del horario del centro (hasta 20:00).`);
+  const endMinutes = startHour * 60 + startMinute + 60;
+
+  if (startHour < 8 || endMinutes > 22 * 60) {
+    return showAlert('clasesAlert', 'El horario de inicio máximo es las 21:00 (la clase dura 1 hora).');
   }
 
-  const dayNames = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes'];
+  const endH   = String(Math.floor(endMinutes / 60)).padStart(2, '0');
+  const endM   = String(endMinutes % 60).padStart(2, '0');
+  const endStr = `${endH}:${endM}`;
+
+  const dayNames   = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes'];
+  const monthNames = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
 
   // Calcular el mes objetivo (mismo que el backend)
   const today = new Date();
-  let year = today.getFullYear();
+  let year  = today.getFullYear();
   let month = today.getMonth(); // 0-indexed
+  const jsDayOfWeek = [1, 2, 3, 4, 5][dayOfWeek]; // 0=lun→1 … 4=vie→5
   const daysInCurrentMonth = new Date(year, month + 1, 0).getDate();
   let hasOccurrenceThisMonth = false;
   for (let d = today.getDate(); d <= daysInCurrentMonth; d++) {
-    if (new Date(year, month, d).getDay() === (dayOfWeek === 6 ? 0 : dayOfWeek + 1) % 7 ||
-        // convertir 0=lun a JS donde 0=dom
-        new Date(year, month, d).getDay() === [1,2,3,4,5][dayOfWeek]) {
+    if (new Date(year, month, d).getDay() === jsDayOfWeek) {
       hasOccurrenceThisMonth = true;
       break;
     }
   }
-  // Si no quedan ocurrencias este mes, pasar al siguiente
   if (!hasOccurrenceThisMonth) {
     month = (month + 1) % 12;
     if (month === 0) year++;
   }
 
-  // Calcular todas las fechas del mes que caen en el día elegido
-  const jsDayOfWeek = [1,2,3,4,5][dayOfWeek]; // 0=lun→1, 4=vie→5
+  // Calcular ocurrencias del mes
   const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const monthNames = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
-  const occurrences = [];
+  const occurrenceDates = [];
   for (let d = 1; d <= daysInMonth; d++) {
-    const dt = new Date(year, month, d);
-    if (dt.getDay() === jsDayOfWeek) {
-      occurrences.push(`${d} de ${monthNames[month]} ${year}`);
-    }
+    if (new Date(year, month, d).getDay() === jsDayOfWeek) occurrenceDates.push(d);
   }
 
-  const endH = String(Math.floor(endMinutes / 60)).padStart(2, '0');
-  const endM = String(endMinutes % 60).padStart(2, '0');
-  const endStr = `${endH}:${endM}`;
+  if (occurrenceDates.length === 0) {
+    return showAlert('clasesAlert', 'No hay ocurrencias disponibles para el día seleccionado.');
+  }
 
-  const preview = document.getElementById('fijaPreview');
-  preview.style.display = 'block';
-  preview.innerHTML = `
-    <strong>Se crearán ${occurrences.length} clase(s)</strong> para todos los <strong>${dayNames[dayOfWeek]}</strong> de <strong>${monthNames[month]} ${year}</strong>:<br>
-    ${occurrences.map(o => `• ${o} — ${startTime} a ${endStr}`).join('<br>')}
-    <br><br>Las salas y profesores disponibles se verifican para cada fecha individualmente.
-  `;
-
-  // Cargar salas y profesores disponibles para la primera ocurrencia como referencia
-  const fijaDetailsFields = document.getElementById('fijaDetailsFields');
-  const createFijaBtn = document.getElementById('createFijaBtn');
-  const fijaRoomSelect = document.getElementById('fijaRoom');
-  const fijaProfessorSelect = document.getElementById('fijaProfessor');
-
-  fijaDetailsFields.style.display = 'block';
-  fijaRoomSelect.innerHTML = '<option value="">Cargando salas...</option>';
-  fijaProfessorSelect.innerHTML = '<option value="">Cargando profesores...</option>';
-  createFijaBtn.style.display = 'none';
+  const btn = document.getElementById('checkFijaBtn');
+  btn.disabled = true;
+  btn.textContent = 'Verificando...';
 
   try {
-    // Usar la primera fecha del mes como referencia para listar salas y profesores
-    if (occurrences.length === 0) {
-      fijaRoomSelect.innerHTML = '<option value="">No hay fechas disponibles</option>';
-      return;
-    }
-    const firstDate = new Date(year, month, parseInt(occurrences[0]));
-    const startISO = `${firstDate.getFullYear()}-${String(firstDate.getMonth()+1).padStart(2,'0')}-${String(firstDate.getDate()).padStart(2,'0')}T${startTime}:00`;
-    const endISO = `${firstDate.getFullYear()}-${String(firstDate.getMonth()+1).padStart(2,'0')}-${String(firstDate.getDate()).padStart(2,'0')}T${endStr}:00`;
+    // Consultar disponibilidad usando la primera ocurrencia como referencia
+    const firstDate = new Date(year, month, occurrenceDates[0]);
+    const dateStr   = `${firstDate.getFullYear()}-${String(firstDate.getMonth()+1).padStart(2,'0')}-${String(firstDate.getDate()).padStart(2,'0')}`;
+    const startISO  = combineDateAndTime(dateStr, startTime);
+    const endISO    = combineDateAndTime(dateStr, endStr);
 
     const params = new URLSearchParams({ start_time: startISO, end_time: endISO });
     const [roomsRes, profsRes] = await Promise.all([
@@ -830,22 +846,35 @@ async function checkFijaAvailability() {
     const rooms = await roomsRes.json();
     const profs = await profsRes.json();
 
-    fijaRoomSelect.innerHTML = (rooms && rooms.length)
-      ? rooms.map(r => `<option value="${r.id}">${r.name} — cupo sala: ${r.capacity}</option>`).join('')
-      : '<option value="">No hay salas disponibles</option>';
+    if (!roomsRes.ok) throw new Error(apiErrorMessage(rooms, 'No se pudieron cargar las salas disponibles.'));
 
+    if (!rooms || rooms.length === 0) {
+      return showAlert('clasesAlert', 'No hay salas disponibles para ese horario en la primera ocurrencia del mes.');
+    }
+
+    const fijaDetailsFields = document.getElementById('fijaDetailsFields');
+    const fijaRoomSelect    = document.getElementById('fijaRoom');
+    const fijaProfessorSelect = document.getElementById('fijaProfessor');
+    const preview           = document.getElementById('fijaPreview');
+
+    preview.style.display = 'block';
+    preview.innerHTML = `
+      <strong>Se crearán ${occurrenceDates.length} clase(s)</strong> para todos los <strong>${dayNames[dayOfWeek]}</strong> de <strong>${monthNames[month]} ${year}</strong>:<br>
+      ${occurrenceDates.map(d => `• ${d} de ${monthNames[month]} ${year} — ${startTime} a ${endStr}`).join('<br>')}
+      <br><br>Las salas y profesores disponibles se verifican para cada fecha individualmente al crear.
+    `;
+
+    fijaRoomSelect.innerHTML = rooms.map(r => `<option value="${r.id}">${r.name} — cupo sala: ${r.capacity}</option>`).join('');
     fijaProfessorSelect.innerHTML = '<option value="">Sin profesor inicial</option>'
       + (profs || []).map(p => `<option value="${p.id}">${p.name} ${p.surname}${p.specialty ? ` — ${p.specialty}` : ''}</option>`).join('');
 
-    if (!rooms || !rooms.length) {
-      showAlert('clasesAlert', 'No hay salas disponibles para ese horario. No se pueden crear las clases.');
-    }
-    createFijaBtn.style.display = rooms && rooms.length ? 'inline-flex' : 'none';
+    fijaDetailsFields.style.display = 'block';
 
   } catch (e) {
-    fijaRoomSelect.innerHTML = '<option value="">No se pudieron cargar salas</option>';
-    fijaProfessorSelect.innerHTML = '<option value="">No se pudieron cargar profesores</option>';
-    showAlert('clasesAlert', 'No se pudo verificar disponibilidad.');
+    showAlert('clasesAlert', e.message || 'No se pudo verificar disponibilidad.');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Ver disponibilidad';
   }
 }
 
@@ -1046,7 +1075,11 @@ async function loadClases() {
           const isFull = !isProfessor && !!c.is_full;
           const clientBtn = isFull
             ? `<button class="action-btn" style="background:var(--color-background-warning);color:var(--color-text-warning)" onclick="joinWaitlist('${c.id}')" title="La clase está llena — anotate en la lista de espera">Lista de espera</button>`
+<<<<<<< HEAD
             : `<button class="action-btn" onclick="reserveClass('${c.id}')">Reservar</button>`;
+=======
+            : `<button class="action-btn" onclick="reserveClass('${c.id}', '${c.type}')">Reservar</button>`;
+>>>>>>> origin/codex/test-reservas-cancelaciones
           return `
           <tr>
             <td><strong>${(c.activity_type || '').replace(/_/g, ' ')}</strong></td>
@@ -1150,22 +1183,20 @@ async function createIndividualClass() {
   const max_capacity = Number(document.getElementById('classCapacity').value);
   const class_date = document.getElementById('classDate').value;
   const start_time = document.getElementById('classStartTime').value;
-  const duration = parseInt(document.getElementById('classDuration').value);
   const professor_id = document.getElementById('classProfessor').value || null;
 
-  if (!room_id || !activity_type || !max_capacity || !class_date || !start_time || !duration) {
-    return showAlert('clasesAlert', 'Completá todos los campos obligatorios.');
+  const classCapacityRaw = document.getElementById('classCapacity').value.trim();
+  if (!room_id || !activity_type || !class_date || !start_time || classCapacityRaw === '') {
+    return showAlert('clasesAlert', 'Debe completar todos los campos.');
+  }
+  if (!max_capacity || !Number.isInteger(max_capacity) || max_capacity < 1) {
+    return showAlert('clasesAlert', 'El cupo debe ser mayor a 0.');
   }
 
-  // Calcular end_time a partir de duración
-  const [sh, sm] = start_time.split(':').map(Number);
-  const endMinutes = sh * 60 + sm + duration;
-  const end_time = `${String(Math.floor(endMinutes / 60)).padStart(2, '0')}:${String(endMinutes % 60).padStart(2, '0')}`;
-
   const apiStartTime = combineDateAndTime(class_date, start_time);
-  const apiEndTime = combineDateAndTime(class_date, end_time);
-  const selectedDate = new Date(`${class_date}T00:00`);
+  const [sh, sm] = start_time.split(':').map(Number);
   const startMinutes = sh * 60 + sm;
+  const selectedDate = new Date(`${class_date}T00:00`);
 
   if (selectedDate.getDay() === 0 || selectedDate.getDay() === 6) {
     return showAlert('clasesAlert', 'Las clases solo pueden programarse de lunes a viernes.');
@@ -1173,11 +1204,8 @@ async function createIndividualClass() {
   if (startMinutes < 8 * 60) {
     return showAlert('clasesAlert', 'Las clases deben estar dentro del horario del centro: 08:00 a 22:00.');
   }
-  if (endMinutes > 22 * 60) {
-    return showAlert('clasesAlert', `Con esa duración la clase termina a las ${end_time}, fuera del horario del centro (hasta 22:00).`);
-  }
-  if (duration < 15) {
-    return showAlert('clasesAlert', 'La duración mínima de una clase es 15 minutos.');
+  if (startMinutes + 60 > 22 * 60) {
+    return showAlert('clasesAlert', 'El horario de inicio máximo es las 21:00 (la clase dura 1 hora).');
   }
   const nowAR = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Argentina/Buenos_Aires' }));
   if (new Date(apiStartTime) <= nowAR) {
@@ -1197,7 +1225,6 @@ async function createIndividualClass() {
         activity_type,
         max_capacity,
         start_time: apiStartTime,
-        end_time: apiEndTime,
         professor_id
       })
     });
@@ -1209,13 +1236,12 @@ async function createIndividualClass() {
     document.getElementById('classCapacity').value = '';
     document.getElementById('classDate').value = '';
     document.getElementById('classStartTime').value = '';
-    document.getElementById('classEndTime').value = '';
-    document.getElementById('classDuration').value = '60';
     document.getElementById('classProfessor').value = '';
     ['classDateDay','classDateMonth','classDateYear','classStartHour','classStartMinute'].forEach(id => {
       const el = document.getElementById(id); if (el) el.value = '';
     });
-    await refreshClassAvailabilityOptions();
+    _resetIndividualDetails();
+    document.getElementById('individualPreview').style.display = 'none';
     await loadAdminClasses();
   } catch {
     showAlert('clasesAlert', 'No se pudo conectar.');
@@ -1233,16 +1259,18 @@ async function createFijaClass() {
   const max_capacity = Number(document.getElementById('fijaCapacity').value);
   const day_of_week = parseInt(document.getElementById('fijaDayOfWeek').value);
   const startTime = document.getElementById('fijaStartTime').value;
-  const duration = parseInt(document.getElementById('fijaDuration').value);
   const professor_id = document.getElementById('fijaProfessor').value || null;
 
-  if (!room_id || !activity_type || !max_capacity || !startTime || !duration) {
-    return showAlert('clasesAlert', 'Completá todos los campos obligatorios.');
+  const fijaCapacityRaw = document.getElementById('fijaCapacity').value.trim();
+  if (!room_id || !activity_type || !startTime || fijaCapacityRaw === '') {
+    return showAlert('clasesAlert', 'Debe completar todos los campos.');
+  }
+  if (!max_capacity || !Number.isInteger(max_capacity) || max_capacity < 1) {
+    return showAlert('clasesAlert', 'El cupo debe ser mayor a 0.');
   }
   const [_sh, _sm] = startTime.split(':').map(Number);
-  const endMinutesFija = _sh * 60 + _sm + duration;
-  if (_sh < 8 || endMinutesFija > 22 * 60) {
-    return showAlert('clasesAlert', 'Las clases deben estar dentro del horario del centro: 08:00 a 22:00.');
+  if (_sh < 8 || _sh * 60 + _sm + 60 > 22 * 60) {
+    return showAlert('clasesAlert', 'El horario de inicio máximo es las 21:00 (la clase dura 1 hora).');
   }
 
   const [startHour, startMinute] = startTime.split(':').map(Number);
@@ -1262,7 +1290,6 @@ async function createFijaClass() {
         day_of_week,
         start_hour: startHour,
         start_minute: startMinute,
-        duration_minutes: duration,
         professor_id
       })
     });
@@ -1276,10 +1303,8 @@ async function createFijaClass() {
     document.getElementById('fijaCapacity').value = '';
     document.getElementById('fijaRoom').innerHTML = '';
     document.getElementById('fijaProfessor').innerHTML = '';
-    document.getElementById('fijaDetailsFields').style.display = 'none';
     document.getElementById('fijaPreview').style.display = 'none';
-    document.getElementById('createFijaBtn').style.display = 'none';
-
+    _resetFijaDetails();
     await loadAdminClasses();
   } catch {
     showAlert('clasesAlert', 'No se pudo conectar.');
@@ -1420,12 +1445,11 @@ async function assignProfessorToClass(classId) {
   }
 }
 
-async function reserveClass(classId, isScheduled) {
+async function reserveClass(classId, classType) {
   try {
-    // Clases FIJA (is_scheduled=true) → /reservations/regular (ABONADO y NO_ABONADO)
-    // Clases INDIVIDUAL (is_scheduled=false) → /reservations/individual
-    const url  = isScheduled ? `${API}/reservations/regular` : `${API}/reservations/individual`;
-    const body = isScheduled
+    const isFija = classType === 'FIJA';
+    const url  = isFija ? `${API}/reservations/regular` : `${API}/reservations/individual`;
+    const body = isFija
       ? { class_id: classId }
       : { class_id: classId, payment_percentage: 100 }; // payment_percentage: pendiente módulo de pagos
 
@@ -1577,18 +1601,47 @@ async function loadReservas() {
     if (!data.length) { container.innerHTML = '<div class="empty-state"><p>No tenés reservas activas.</p></div>'; return; }
     container.innerHTML = `
       <table class="data-table">
-        <thead><tr><th>Actividad</th><th>Inicio</th><th>Estado</th><th>Pago</th><th></th></tr></thead>
-        <tbody>${data.map(r => `
+        <thead><tr><th>Actividad</th><th>Tipo</th><th>Inicio</th><th>Estado</th><th>Pago</th><th>Posición</th><th></th></tr></thead>
+        <tbody>${data.map(r => {
+          const isWaitlist = r.kind === 'WAITLIST';
+          const estado = isWaitlist
+            ? badge(r.status, { EN_ESPERA:'En espera' })
+            : badge(r.status, { CONFIRMADA:'Confirmada', CANCELADA:'Cancelada', AUSENTE:'Ausente' });
+          const pago = r.payment_status
+            ? badge(r.payment_status, { PENDIENTE:'Pendiente', SENADO_50:'50% señado', PAGADO:'Pagado', DEVUELTO:'Devuelto', CREDITO_APLICADO:'Crédito' })
+            : '—';
+          const posicion = isWaitlist ? `#${r.waitlist_position || '—'}` : '—';
+          const action = isWaitlist
+            ? `<button class="action-btn danger" onclick="leaveWaitlist('${r.class_id}')">Salir</button>`
+            : (r.status === 'CONFIRMADA' ? `<button class="action-btn danger" onclick="cancelReserva('${r.id}')">Cancelar</button>` : '');
+          return `
           <tr>
-            <td>${(r.activity_type || '').replace('_', ' ') || '—'}</td>
+            <td>${(r.activity_type || '').replace(/_/g, ' ') || '—'}</td>
+            <td>${r.type || '—'}</td>
             <td>${formatDate(r.start_time)}</td>
-            <td>${badge(r.status, { CONFIRMADA:'Confirmada', CANCELADA:'Cancelada', AUSENTE:'Ausente' })}</td>
-            <td>${badge(r.payment_status, { PENDIENTE:'Pendiente', SENADO_50:'50% señado', PAGADO:'Pagado', DEVUELTO:'Devuelto', CREDITO_APLICADO:'Crédito' })}</td>
-            <td>${r.status === 'CONFIRMADA' ? `<button class="action-btn danger" onclick="cancelReserva('${r.id}')">Cancelar</button>` : ''}</td>
-          </tr>`).join('')}
+            <td>${estado}</td>
+            <td>${pago}</td>
+            <td>${posicion}</td>
+            <td>${action}</td>
+          </tr>`;
+        }).join('')}
         </tbody>
       </table>`;
   } catch { container.innerHTML = '<div class="empty-state"><p>No se pudo cargar.</p></div>'; }
+}
+
+async function leaveWaitlist(classId) {
+  if (!confirm('¿Querés salir de la lista de espera?')) return;
+  try {
+    const res = await fetch(`${API}/reservations/waitlist/${classId}`, {
+      method: 'DELETE',
+      headers: authH()
+    });
+    const data = await res.json();
+    if (!res.ok) return showAlert('reservasAlert', typeof data.detail === 'string' ? data.detail : 'Error.');
+    showAlert('reservasAlert', data.message || 'Saliste de la lista de espera.', 'success');
+    loadReservas();
+  } catch { showAlert('reservasAlert', 'No se pudo conectar.'); }
 }
 
 async function cancelReserva(id) {

@@ -64,4 +64,3 @@ app.include_router(routerAttendance)
 def health_check():
     return {"status": "ok", "message": "RehabilitAR API corriendo"}
 
-
