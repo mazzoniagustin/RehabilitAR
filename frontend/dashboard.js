@@ -247,7 +247,7 @@ async function loadDashboard() {
   const isEmployee = EMPLOYEE_ROLES.includes(u.rol);
 
   // Solo empleados: mostrar especialidad
-  if (isEmployee) {
+  if (ROLES_WITH_SPECIALTY.includes(u.rol)) {
     document.getElementById('pfSpecialtyRow').style.display = 'flex';
     document.getElementById('pfSpecialty').textContent = u.specialty || '—';
   }
@@ -1744,6 +1744,9 @@ async function openUserProfile(userId) {
 
     document.getElementById('modalUserName').textContent = `${u.name} ${u.surname}`;
 
+    // Guardamos los datos del usuario en el modal para usarlos al editar
+    document.getElementById('userProfileModal').dataset.userId = u.id;
+
     let fields = [];
 
     if (isAdmin) {
@@ -1758,16 +1761,20 @@ async function openUserProfile(userId) {
         ['Edad',         u.age ? `${u.age} años` : '—'],
         ['Dirección',    u.address      || '—'],
         ...(!isEmp ? [['Apto físico', badge(u.physical_certificate, CERT_LABELS)]] : []),
-        ...(u.specialty ? [['Especialidad', u.specialty]] : []),
+        ...(ROLES_WITH_SPECIALTY.includes(u.rol) ? [['Especialidad', u.specialty || '—']] : []),
         ...(u.rol === 'ABONADO' ? [['Créditos', `${u.credits ?? 0}/3`]] : []),
       ];
 
       const actions = document.getElementById('modalActions');
-      if (u.account_status === 'ACTIVA') {
-        actions.innerHTML = `<button class="btn btn-sm btn-danger" onclick="closeUserModal();openBlockModal('${u.id}','${u.name} ${u.surname}')">Reactivar cuenta</button>`;
-      } else {
-        actions.innerHTML = `<button class="btn btn-sm" onclick="unblockFromModal('${u.id}')">Reactivar cuenta</button>`;
-      }
+
+      const suspendBtn = u.account_status === 'ACTIVA'
+        ? `<button class="btn btn-sm btn-danger" onclick="closeUserModal();openBlockModal('${u.id}','${u.name} ${u.surname}')">Suspender cuenta</button>`
+        : `<button class="btn btn-sm" onclick="unblockFromModal('${u.id}')">Reactivar cuenta</button>`;
+
+      actions.innerHTML = `
+        ${suspendBtn}
+        <button class="btn btn-sm btn-secondary" onclick="toggleEditUser(${JSON.stringify(u).replace(/"/g, '&quot;')})">Editar datos</button>
+      `;
 
     } else {
       fields = [
@@ -1779,11 +1786,157 @@ async function openUserProfile(userId) {
       ];
     }
 
-    document.getElementById('modalUserBody').innerHTML = fields.map(([label, value]) =>
-      `<div class="profile-field"><span class="profile-field-label">${label}</span><span class="profile-field-value">${value}</span></div>`
-    ).join('');
+    document.getElementById('modalUserBody').innerHTML = `
+      <div id="userViewMode">
+        ${fields.map(([label, value]) =>
+          `<div class="profile-field">
+            <span class="profile-field-label">${label}</span>
+            <span class="profile-field-value">${value}</span>
+          </div>`
+        ).join('')}
+      </div>
+      <div id="userEditMode" style="display:none"></div>
+    `;
 
   } catch { document.getElementById('modalUserName').textContent = 'Error al cargar.'; }
+}
+
+const ROLES_WITH_SPECIALTY = ['RECEPCIONISTA', 'PROFESOR'];
+
+function getEditableRoles(currentRole) {
+  const all = ['RECEPCIONISTA', 'ADMINISTRATIVO', 'PROFESOR', 'NO_ABONADO'];
+  const others = all.filter(r => r !== currentRole);
+  return [currentRole, ...others];
+}
+
+function toggleEditUser(u) {
+  const viewMode = document.getElementById('userViewMode');
+  const editMode = document.getElementById('userEditMode');
+
+  if (editMode.style.display === 'none' || !editMode.style.display) {
+
+    const availableRoles = getEditableRoles(u.rol);
+    const showRoleSelector = availableRoles !== null;
+    const showSpecialty = ROLES_WITH_SPECIALTY.includes(u.rol);
+
+    editMode.innerHTML = `
+      <div style="display:flex; flex-direction:column; margin-top:16px;">
+        <div id="editUserAlert" style="display:none" class="alert"></div>
+
+        <div class="profile-field" style="flex-direction:column; gap:6px; align-items:flex-start;">
+          <span class="profile-field-label">Nombre</span>
+          <input id="editUserName" class="form-input" type="text" value="${u.name || ''}" style="width:100%;" />
+        </div>
+
+        <div class="profile-field" style="flex-direction:column; gap:6px; align-items:flex-start;">
+          <span class="profile-field-label">Apellido</span>
+          <input id="editUserSurname" class="form-input" type="text" value="${u.surname || ''}" style="width:100%;" />
+        </div>
+
+        <div class="profile-field" style="flex-direction:column; gap:6px; align-items:flex-start;">
+          <span class="profile-field-label">Teléfono</span>
+          <input id="editUserPhone" class="form-input" type="text" value="${u.phone || ''}" style="width:100%;" />
+        </div>
+
+        <div class="profile-field" style="flex-direction:column; gap:6px; align-items:flex-start;">
+          <span class="profile-field-label">Dirección</span>
+          <input id="editUserAddress" class="form-input" type="text" value="${u.address || ''}" style="width:100%;" />
+        </div>
+
+        <div class="profile-field" style="flex-direction:column; gap:6px; align-items:flex-start;">
+          <span class="profile-field-label">Género</span>
+          <select id="editUserGender" class="form-input" style="width:100%;">
+            <option value="">— Sin especificar —</option>
+            <option value="MASCULINO" ${u.gender === 'MASCULINO' ? 'selected' : ''}>Masculino</option>
+            <option value="FEMENINO"  ${u.gender === 'FEMENINO'  ? 'selected' : ''}>Femenino</option>
+            <option value="OTRO"      ${u.gender === 'OTRO'      ? 'selected' : ''}>Otro</option>
+          </select>
+        </div>
+
+        ${showRoleSelector ? `
+        <div class="profile-field" style="flex-direction:column; gap:6px; align-items:flex-start;">
+          <span class="profile-field-label">Rol</span>
+          <select id="editUserRole" class="form-input" style="width:100%;"
+            data-original="${u.rol}"
+            onchange="handleRoleChange(this.value)">
+            ${availableRoles.map(r =>
+              `<option value="${r}">${ROL_LABELS[r] || r}</option>`
+            ).join('')}
+          </select>
+        </div>
+
+        <div class="profile-field" id="editSpecialtyField" style="flex-direction:column; gap:6px; align-items:flex-start; display:${showSpecialty ? 'flex' : 'none'};">
+          <span class="profile-field-label">Especialidad</span>
+          <input id="editUserSpecialty" class="form-input" type="text" value="${u.specialty || ''}" style="width:100%;"
+            data-original="${u.specialty || ''}" />
+        </div>` : ''}
+
+        <div style="display:flex; gap:8px; margin-top:16px; flex-wrap:wrap;">
+          <button class="btn btn-sm" onclick="saveUserProfile('${u.id}')">Guardar</button>
+          <button class="btn btn-sm btn-secondary" onclick="cancelEditUser()">Cancelar</button>
+        </div>
+      </div>
+    `;
+
+    viewMode.style.display = 'none';
+    editMode.style.display = 'block';
+  } else {
+    cancelEditUser();
+  }
+}
+
+function handleRoleChange(role) {
+  const specialtyField = document.getElementById('editSpecialtyField');
+  if (!specialtyField) return;
+  specialtyField.style.display = ROLES_WITH_SPECIALTY.includes(role) ? 'flex' : 'none';
+}
+
+function cancelEditUser() {
+  document.getElementById('userEditMode').style.display = 'none';
+  document.getElementById('userViewMode').style.display = 'block';
+}
+
+async function saveUserProfile(userId) {
+  const roleEl = document.getElementById('editUserRole');
+  const specialtyEl = document.getElementById('editUserSpecialty');
+
+  const newRole = roleEl?.value;
+  const originalRole = roleEl?.dataset.original;
+
+  const roleChanged = newRole && newRole !== originalRole;
+  const requiresSpecialty = roleRequiresSpecialty(newRole);
+
+  if (roleChanged && requiresSpecialty) {
+    if (!specialtyEl || !specialtyEl.value.trim()) {
+      return showEditUserAlert('La especialidad es obligatoria para este rol.');
+    }
+  }
+
+  const body = {
+    name,
+    surname,
+    phone,
+    address,
+    gender,
+    ...(roleChanged ? { rol: newRole } : {}),
+    ...(roleChanged && requiresSpecialty
+      ? { specialty: specialtyEl.value.trim() }
+      : {}),
+  };
+
+  const res = await fetch(`${API}/users/${userId}`, {
+    method: 'PUT',
+    headers: authH(),
+    body: JSON.stringify(body),
+  });
+}
+
+function showEditUserAlert(msg, type = 'error') {
+  const el = document.getElementById('editUserAlert');
+  if (!el) return;
+  el.textContent = msg;
+  el.className = `alert ${type}`;
+  el.style.display = 'block';
 }
 
 function closeUserModal() { document.getElementById('userProfileModal').classList.remove('open'); }
@@ -1909,7 +2062,7 @@ function closeRejectModal() { document.getElementById('rejectModal').classList.r
 
 async function confirmReject() {
   const reason = document.getElementById('rejectReason').value.trim();
-  if (!reason) return alert('El motivo es obligatorio.');
+  if (!reason) return showAlert('rejectAlert', 'El motivo es obligatorio.');
   try {
     const res = await fetch(`${API}/staff/reject_certificate`, { 
       method: 'POST', 
@@ -1919,10 +2072,12 @@ async function confirmReject() {
       }, 
       body: JSON.stringify({ id: rejectTargetId, reason }) 
     });
-    if (!res.ok) return alert(typeof data.detail === 'string' ? data.detail : 'Error.');
+    const data = await res.json();
+    if (!res.ok) return showAlert('rejectAlert', typeof data.detail === 'string' ? data.detail : 'Error.');
+    else showAlert('rejectAlert', 'Apto físico rechazado.', 'success');
     closeRejectModal();
     loadCertificados();
-  } catch { alert('No se pudo conectar.'); }
+  } catch { showAlert('rejectAlert', 'No se pudo conectar.'); }
 }
 
 
@@ -2066,14 +2221,15 @@ function closeRejectUnlockModal() {
 
 async function confirmRejectUnlock() {
   const reason = document.getElementById('rejectUnlockReason').value.trim();
-  if (!reason) return alert('El motivo es obligatorio.');
+  if (!reason) return showAlert('rejectAlert', 'El motivo es obligatorio.');
   try {
     const res  = await fetch(`${API}/staff/reject_unblock_request/${rejectUnlockTargetId}`, { method:'POST', headers:authH(), body:JSON.stringify({ reason }) });
     const data = await res.json();
-    if (!res.ok) return alert(typeof data.detail === 'string' ? data.detail : 'Error.');
+    if (!res.ok) return showAlert('rejectAlert', typeof data.detail === 'string' ? data.detail : 'Error.');
+    else showAlert('rejectAlert', 'Solicitud rechazada.', 'success');
     closeRejectUnlockModal();
     loadSolicitudes();
-  } catch { alert('No se pudo conectar.'); }
+  } catch { showAlert('rejectAlert', 'No se pudo conectar.'); }
 }
 
 function clearValue(id) {
@@ -2182,16 +2338,18 @@ async function submitRegisterUser() {
 // SEGURIDAD
 
 async function handleChangePassword() {
+  const current = document.getElementById('currentPw').value;
   const np = document.getElementById('newPw').value;
   const cp = document.getElementById('confirmPw').value;
-  if (!np || !cp)      return showAlert('pwAlert', 'Completá ambos campos.');
+  if (!np || !cp || !current)      return showAlert('pwAlert', 'Completá todos los campos.');
   if (np.length < 6)   return showAlert('pwAlert', 'Mínimo 6 caracteres.');
   if (np !== cp)       return showAlert('pwAlert', 'Las contraseñas no coinciden.');
   try {
-    const res  = await fetch(`${API}/users/me/change-password`, { method:'POST', headers:authH(), body:JSON.stringify({ new_password:np, confirm_new_password:cp }) });
+    const res  = await fetch(`${API}/users/me/change-password`, { method:'POST', headers:authH(), body:JSON.stringify({ current_password:current, new_password:np, confirm_new_password:cp }) });
     const data = await res.json();
     if (!res.ok) return showAlert('pwAlert', typeof data.detail === 'string' ? data.detail : 'Error.');
     showAlert('pwAlert', 'Contraseña actualizada correctamente.', 'success');
+    document.getElementById('currentPw').value = '';
     document.getElementById('newPw').value = '';
     document.getElementById('confirmPw').value = '';
   } catch { showAlert('pwAlert', 'No se pudo conectar.'); }
