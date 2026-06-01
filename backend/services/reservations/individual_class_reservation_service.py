@@ -1,5 +1,6 @@
 from database import supabase
 from fastapi import HTTPException
+from services.reservations.overlap_validator import validate_user_has_no_overlapping_class
 from services.reservations import waitlist_service
 
 
@@ -55,6 +56,8 @@ def reservar_clase_individual(user_id: str, class_id: str, payment_percentage: i
         )
         if existing_active.data:
             raise HTTPException(status_code=400, detail='Ya tenés una reserva para esta clase.')
+
+        validate_user_has_no_overlapping_class(user_id, class_id, clase)
 
         if clase['current_capacity'] >= clase['max_capacity']:
             return waitlist_service.unirse_a_waitlist(user_id, class_id)
