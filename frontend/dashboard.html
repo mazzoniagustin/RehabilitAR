@@ -712,16 +712,19 @@
     >
   </div>
 </div>
-<script src="dashboard.js"></script>
 
-    <p id="paymentQrSubtitle">
-      Escaneá el QR con Mercado Pago para abonar.
-    </p>
+<div class="modal-overlay" id="attendanceModal">
+  <div class="modal" style="max-width:720px">
+    <div class="modal-header">
+      <h3>Pasar asistencia</h3>
+      <button class="modal-close" onclick="closeAttendanceModal()">✕</button>
+    </div>
 
-    <img
-      id="paymentQrImage"
-      style="width:260px;margin:20px auto;display:block"
-    >
+    <div id="attendanceAlert" class="alert"></div>
+
+    <div id="attendanceContainer">
+      <div class="empty-state"><p>Cargando participantes...</p></div>
+    </div>
   </div>
 </div>
 <script src="dashboard.js?v=20260528-two-class-types"></script>

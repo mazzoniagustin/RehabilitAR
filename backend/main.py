@@ -11,6 +11,7 @@ from routes.classes import router as classes_router
 from routes.cancellations import router as cancellations_router
 from routes.mp_webhook import routerMPWebhook
 from routes.reservations import router as reservations_router
+from routes.attendance import routerAttendance
 
 app = FastAPI(
     title="RehabilitAR API",
@@ -57,6 +58,7 @@ app.include_router(routerPayments)
 app.include_router(cancellations_router)
 app.include_router(routerMPWebhook)
 app.include_router(reservations_router)
+app.include_router(routerAttendance)
 
 @app.get("/")
 def health_check():

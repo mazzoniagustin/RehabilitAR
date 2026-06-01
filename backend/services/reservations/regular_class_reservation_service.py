@@ -12,8 +12,6 @@ def reservar_clase_fija(user_id: str, class_id: str):
             raise HTTPException(status_code=404, detail='Clase no encontrada.')
         clase = clase_response.data
 
-        if not clase['is_scheduled']:
-            raise HTTPException(status_code=400, detail='Esta clase no es fija.')
 
         user_response = supabase.table('users').select('*').eq('id', user_id).single().execute()
         if not user_response.data:

@@ -1046,7 +1046,7 @@ async function loadClases() {
           const isFull = !isProfessor && !!c.is_full;
           const clientBtn = isFull
             ? `<button class="action-btn" style="background:var(--color-background-warning);color:var(--color-text-warning)" onclick="joinWaitlist('${c.id}')" title="La clase está llena — anotate en la lista de espera">Lista de espera</button>`
-            : `<button class="action-btn" onclick="reserveClass('${c.id}', ${c.is_scheduled})">Reservar</button>`;
+            : `<button class="action-btn" onclick="reserveClass('${c.id}')">Reservar</button>`;
           return `
           <tr>
             <td><strong>${(c.activity_type || '').replace(/_/g, ' ')}</strong></td>
@@ -1055,8 +1055,11 @@ async function loadClases() {
             <td>${c.current_capacity}/${c.max_capacity}${isFull ? ' <span style="color:var(--color-text-warning);font-size:11px">LLENA</span>' : ''}</td>
             <td>${c.professor_name || '<span style="color:var(--muted)">Sin asignar</span>'}</td>
             <td style="display:flex;gap:6px">
-              ${isProfessor
-                ? `<button class="action-btn" ${buttonDisabled ? 'disabled' : ''} onclick="requestProfessorClass('${c.id}')">${buttonLabel}</button>`
+              ${isProfessor ? `<button class="action-btn" ${buttonDisabled ? 'disabled' : ''} onclick="requestProfessorClass('${c.id}')">${buttonLabel}</button>
+
+                <button class="action-btn success" onclick="openAttendancePanel('${c.id}')">
+                  Pasar asistencia
+                </button>`
                 : clientBtn}
               ${isMyClass ? `<button class="action-btn" onclick="openStudentsModal('${c.id}', '${(c.activity_type || '').replace(/_/g, ' ')}')">Inscriptos</button>` : ''}
             </td>
@@ -1448,6 +1451,122 @@ async function joinWaitlist(classId) {
   } catch { showAlert('clasesAlert', 'No se pudo conectar.'); }
 }
 
+// asistencia
+let currentAttendanceClassId = null;
+let currentAttendanceUserId = null;
+let currentAttendanceReservationId = null;
+
+async function openAttendancePanel(classId) {
+  currentAttendanceClassId = classId;
+
+  document.getElementById('attendanceModal').classList.add('open');
+  document.getElementById('attendanceContainer').innerHTML =
+    '<div class="empty-state"><p>Cargando participantes...</p></div>';
+
+  try {
+    const res = await fetch(`${API}/attendance/class/${classId}/participants`, {
+      headers: authH()
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      return showAlert('attendanceAlert', data.detail || 'No se pudieron cargar los participantes.');
+    }
+
+    if (!data.length) {
+      document.getElementById('attendanceContainer').innerHTML =
+        '<div class="empty-state"><p>No hay participantes inscriptos.</p></div>';
+      return;
+    }
+
+    document.getElementById('attendanceContainer').innerHTML = `
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Cliente</th>
+            <th>Email</th>
+            <th>Estado actual</th>
+            <th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${data.map(r => `
+            <tr>
+              <td><strong>${r.users?.name || ''} ${r.users?.surname || ''}</strong></td>
+              <td>${r.users?.email || '—'}</td>
+              <td>${r.attendance?.[0]?.status || 'Sin registrar'}</td>
+              <td style="display:flex;gap:6px;flex-wrap:wrap">
+                <button class="action-btn success" onclick="markAttendance('${r.user_id}', '${r.id}', 'PRESENTE')">
+                  Presente
+                </button>
+
+                <button class="action-btn" onclick="openNoticeAttendance('${r.user_id}', '${r.id}')">
+                  Presente con aviso
+                </button>
+
+                <button class="action-btn danger" onclick="markAttendance('${r.user_id}', '${r.id}', 'AUSENTE')">
+                  Ausente
+                </button>
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    `;
+
+  } catch (error) {
+    console.error(error);
+    showAlert('attendanceAlert', 'No se pudo conectar con el servidor.');
+  }
+}
+
+
+function closeAttendanceModal() {
+  document.getElementById('attendanceModal').classList.remove('open');
+  currentAttendanceClassId = null;
+}
+
+
+async function markAttendance(userId, reservationId, status, noticeReason = null) {
+  try {
+    const res = await fetch(`${API}/attendance/mark`, {
+      method: 'POST',
+      headers: authH(),
+      body: JSON.stringify({
+        class_id: currentAttendanceClassId,
+        user_id: userId,
+        reservation_id: reservationId,
+        status: status,
+        notice_reason: noticeReason
+      })
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      return showAlert('attendanceAlert', data.detail || 'No se pudo registrar la asistencia.');
+    }
+
+    showAlert('attendanceAlert', 'Asistencia registrada correctamente.', 'success');
+    openAttendancePanel(currentAttendanceClassId);
+
+  } catch (error) {
+    console.error(error);
+    showAlert('attendanceAlert', 'No se pudo conectar con el servidor.');
+  }
+}
+
+
+function openNoticeAttendance(userId, reservationId) {
+  const reason = prompt('Ingresá el aviso del cliente:');
+
+  if (!reason || !reason.trim()) {
+    return showAlert('attendanceAlert', 'Debe ingresar un aviso.');
+  }
+
+  markAttendance(userId, reservationId, 'PRESENTE_CON_AVISO', reason.trim());
+}
 async function loadReservas() {
   const container = document.getElementById('reservasContainer');
   container.innerHTML = '<div class="empty-state"><p>Cargando...</p></div>';
