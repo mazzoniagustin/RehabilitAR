@@ -53,6 +53,8 @@ def reservar_clase_fija(user_id: str, class_id: str):
         if clase['current_capacity'] >= clase['max_capacity']:
             return waitlist_service.unirse_a_waitlist(user_id, class_id)
 
+        payment_status = 'PAGADO' if user['rol'] == 'ABONADO' else 'PENDIENTE'
+
         existing_cancelled = (
             supabase.table('reservations')
             .select('id')
@@ -66,7 +68,7 @@ def reservar_clase_fija(user_id: str, class_id: str):
         if existing_cancelled.data:
             supabase.table('reservations').update({
                 'status': 'CONFIRMADA',
-                'payment_status': 'PENDIENTE',
+                'payment_status': payment_status,
                 'cancellation_reason': None,
                 'cancelled_at': None,
             }).eq('id', existing_cancelled.data[0]['id']).execute()
@@ -76,7 +78,7 @@ def reservar_clase_fija(user_id: str, class_id: str):
                     'user_id': user_id,
                     'class_id': class_id,
                     'status': 'CONFIRMADA',
-                    'payment_status': 'PENDIENTE',
+                    'payment_status': payment_status,
                 }).execute()
             except Exception as insert_err:
                 if '23505' in str(insert_err) or 'unique_user_class' in str(insert_err):

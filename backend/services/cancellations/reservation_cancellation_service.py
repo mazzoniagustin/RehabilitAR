@@ -219,6 +219,27 @@ def _promover_waitlist(class_id: str, class_type: str, capacidad_actual: int):
 
 def _confirmar_desde_waitlist(entrada: dict, class_id: str, capacidad_actual: int):
     """Crea/reactiva la reserva del primer usuario en waitlist y lo elimina de la lista."""
+    user_response = (
+        supabase.table('users')
+        .select('rol')
+        .eq('id', entrada['user_id'])
+        .single()
+        .execute()
+    )
+    class_response = (
+        supabase.table('classes')
+        .select('type')
+        .eq('id', class_id)
+        .single()
+        .execute()
+    )
+    payment_status = (
+        'PAGADO'
+        if (user_response.data or {}).get('rol') == 'ABONADO'
+        and (class_response.data or {}).get('type') == 'FIJA'
+        else 'PENDIENTE'
+    )
+
     # Reutilizar reserva cancelada si existe (evita violación del unique constraint)
     existing_cancelled = (
         supabase.table('reservations')
@@ -232,7 +253,7 @@ def _confirmar_desde_waitlist(entrada: dict, class_id: str, capacidad_actual: in
     if existing_cancelled.data:
         supabase.table('reservations').update({
             'status': 'CONFIRMADA',
-            'payment_status': 'PENDIENTE',
+            'payment_status': payment_status,
             'cancellation_reason': None,
             'cancelled_at': None,
         }).eq('id', existing_cancelled.data[0]['id']).execute()
@@ -241,7 +262,7 @@ def _confirmar_desde_waitlist(entrada: dict, class_id: str, capacidad_actual: in
             'user_id': entrada['user_id'],
             'class_id': class_id,
             'status': 'CONFIRMADA',
-            'payment_status': 'PENDIENTE',
+            'payment_status': payment_status,
         }).execute()
 
     supabase.table('classes').update(
