@@ -57,10 +57,12 @@ def _get_or_create_credit_row(user_id: str):
             })
             .execute()
         )
+        _sync_user_credits(user_id, 0)
         return created.data[0]
 
     credit = response.data[0]
     if credit.get("month") != current_month:
+        _sync_user_credits(user_id, 0)
         updated = (
             client.table("credits")
             .update({
@@ -79,6 +81,10 @@ def _get_or_create_credit_row(user_id: str):
         }
 
     return credit
+
+
+def _sync_user_credits(user_id: str, available_credits: int):
+    _client().table("users").update({"credits": available_credits}).eq("id", str(user_id)).execute()
 
 
 def _get_credit_row(user_id: str):
@@ -113,6 +119,7 @@ def otorgar_credito(
             .eq("user_id", user_id)
             .execute()
         )
+        _sync_user_credits(user_id, new_available)
 
         _client().table("credits_history").insert(
             _history_payload(user_id, "CREDITO_OTORGADO", reason, reservation_id, class_id)
@@ -154,6 +161,7 @@ def retirar_credito(
             .eq("user_id", user_id)
             .execute()
         )
+        _sync_user_credits(user_id, available - 1)
 
         _client().table("credits_history").insert(
             _history_payload(user_id, "CREDITO_RETIRADO", reason, reservation_id, class_id)
@@ -190,6 +198,7 @@ def retirar_Todoscredito(
             .eq("user_id", user_id)
             .execute()
         )
+        _sync_user_credits(user_id, 0)
 
         _client().table("credits_history").insert(
             _history_payload(user_id, "CREDITOS_RETIRADOS_TODOS", reason, reservation_id, class_id)
