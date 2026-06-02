@@ -3,26 +3,8 @@ import base64
 from datetime import datetime
 from database import supabase
 from io import BytesIO
-from services.mp_service import sdk
+from services.mp_service import create_qr_order
 
-
-def create_payment(items, user_id, payment_type = None, debt_id=None):
-    data = {
-        "items": items,
-        "external_reference": str(user_id),
-        "metadata": {
-            "payment_type": payment_type,
-            "debt_id": debt_id
-        }
-    }
-
-    response = sdk.preference().create(data)
-
-    if "init_point" not in response["response"]:
-        print(response)
-        raise Exception("Mercado Pago no devolvió init_point")
-
-    return response["response"]["init_point"]
 
 def create_qr(link):
     img = qrcode.make(link)
@@ -32,6 +14,20 @@ def create_qr(link):
 
     return f"data:image/png;base64,{qr_base64}"
 
+def generate_mp_qr(items, user_id, payment_type, debt_id=None):
+
+    order = create_qr_order(items, user_id, payment_type, debt_id)
+
+    qr_data = order["type_response"]["qr_data"]
+    qr = create_qr(qr_data)
+
+    return {
+        "order_id": order["id"],
+        "qr_url": qr
+    }
+
+
+
 def pay_deposit():
     item = [
         {
@@ -40,7 +36,16 @@ def pay_deposit():
             "unit_price" : 8
         }
     ]
-    link = create_payment (item)
+    order = create_qr_order(item, user_id, "SUBSCRIPTION")
+
+    qr_data = order["type_response"]["qr_data"]
+    qr = create_qr(qr_data)
+
+    return {
+        "order_id": order["id"],
+        "qr_data": qr_data,
+        "qr_url": qr
+    }
     return link
 
 
@@ -70,12 +75,11 @@ def pay_subscription(user_id):
             "unit_price" : 16
         }
     ]
-    link = create_payment (item, user_id, "SUBSCRIPTION")
-    qr = create_qr (link)
-    return {
-        "payment_url": link,
-        "qr_url": qr
-    }
+    return generate_mp_qr(
+        items=item,
+        user_id=user_id,
+        payment_type="Mensualidad RehabilitAR"
+    )
 
 def get_user_debts(user_id):
     response = supabase.table("payments") \
@@ -101,13 +105,15 @@ def pay_debt(user_id, debt_id, amount):
             "unit_price" : float(amount)
         }
     ]
-    link = create_payment (item, user_id, "DEBT", debt_id)
-    qr = create_qr (link)
-    return {
-        "payment_url": link,
-        "qr_url": qr
-    }
+    return generate_mp_qr(
+        items=item,
+        user_id=user_id,
+        payment_type="DEBT",
+        debt_id=debt_id
+    )
 
+def pay_reservation():
+    print()
 
 
 def generate_receipt():

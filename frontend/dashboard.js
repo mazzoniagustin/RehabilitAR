@@ -1075,11 +1075,7 @@ async function loadClases() {
           const isFull = !isProfessor && !!c.is_full;
           const clientBtn = isFull
             ? `<button class="action-btn" style="background:var(--color-background-warning);color:var(--color-text-warning)" onclick="joinWaitlist('${c.id}')" title="La clase está llena — anotate en la lista de espera">Lista de espera</button>`
-<<<<<<< HEAD
-            : `<button class="action-btn" onclick="reserveClass('${c.id}')">Reservar</button>`;
-=======
             : `<button class="action-btn" onclick="reserveClass('${c.id}', '${c.type}')">Reservar</button>`;
->>>>>>> origin/codex/test-reservas-cancelaciones
           return `
           <tr>
             <td><strong>${(c.activity_type || '').replace(/_/g, ' ')}</strong></td>
@@ -1601,7 +1597,7 @@ async function loadReservas() {
     if (!data.length) { container.innerHTML = '<div class="empty-state"><p>No tenés reservas activas.</p></div>'; return; }
     container.innerHTML = `
       <table class="data-table">
-        <thead><tr><th>Actividad</th><th>Tipo</th><th>Inicio</th><th>Estado</th><th>Pago</th><th>Posición</th><th></th></tr></thead>
+        <thead><tr><th>Actividad</th><th>Tipo</th><th>Inicio</th><th>Estado</th><th>Pago</th><th>Asistencia</th><th>Posición</th><th></th></tr></thead>
         <tbody>${data.map(r => {
           const isWaitlist = r.kind === 'WAITLIST';
           const estado = isWaitlist
@@ -1611,6 +1607,10 @@ async function loadReservas() {
             ? badge(r.payment_status, { PENDIENTE:'Pendiente', SENADO_50:'50% señado', PAGADO:'Pagado', DEVUELTO:'Devuelto', CREDITO_APLICADO:'Crédito' })
             : '—';
           const posicion = isWaitlist ? `#${r.waitlist_position || '—'}` : '—';
+          const asistencia = r.attendance_status
+            ? `${r.attendance_status.replace(/_/g, ' ')}${r.attendance_comment
+            ? `<br><small style="color:var(--muted)">Aviso: ${r.attendance_comment}</small>`: ''}`
+            : 'Sin registrar';
           const action = isWaitlist
             ? `<button class="action-btn danger" onclick="leaveWaitlist('${r.class_id}')">Salir</button>`
             : (r.status === 'CONFIRMADA' ? `<button class="action-btn danger" onclick="cancelReserva('${r.id}')">Cancelar</button>` : '');
@@ -1621,6 +1621,7 @@ async function loadReservas() {
             <td>${formatDate(r.start_time)}</td>
             <td>${estado}</td>
             <td>${pago}</td>
+            <td>${asistencia}</td>
             <td>${posicion}</td>
             <td>${action}</td>
           </tr>`;

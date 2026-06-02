@@ -42,6 +42,7 @@ def register_attendance (class_id, user_id, reservation_id, professor_id, status
         .eq("id", reservation_id) \
         .eq("class_id", class_id) \
         .eq("user_id", user_id) \
+        .eq("status", "CONFIRMADA") \
         .execute()
 
     if not reservation_res.data:
@@ -53,7 +54,7 @@ def register_attendance (class_id, user_id, reservation_id, professor_id, status
         "reservation_id": reservation_id,
         "status": status,
         "comment": comment,
-        "marked_by": professor_id
+        "checked_by": professor_id
     }
 
     response = supabase.table("attendance") \
