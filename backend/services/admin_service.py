@@ -1,13 +1,17 @@
 from fastapi import HTTPException
 from utils.notifications import send_account_created_email
 from utils.password_utils import random_password
-from utils.permissions import check_user_existance
+from utils.permissions import check_user_existance, user_data_validators, validate_person_name
 from database import supabase
 #Aplicacion de las reglas de negocio.
  
 def register_user_by_staff(data):
     try:
+        
+        
         check_user_existance(data.email) 
+        
+        user_data_validators(data)
         
         password = random_password()   
         auth_response = supabase.auth.admin.create_user({
@@ -47,6 +51,8 @@ def register_employee_by_admin(data):
     try:
         
         check_user_existance(data.email)
+        
+        user_data_validators(data)
  
         if data.rol in ['RECEPCIONISTA', 'PROFESOR'] and not data.specialty:
             raise HTTPException(status_code=400, detail='La especialidad es obligatoria para recepcionistas y profesores.')
@@ -83,6 +89,34 @@ def register_employee_by_admin(data):
         raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=f'Error en el registro del empleado. {str(e)}')
+
+ROLES_WITH_SPECIALTY = ['RECEPCIONISTA', 'PROFESOR']
+
+def update_user_by_admin(user_id: str, update_data: dict):
+    try:
+        if 'name' in update_data:
+            update_data['name'] = validate_person_name(update_data['name'], 'Nombre')
+
+        if 'surname' in update_data:
+            update_data['surname'] = validate_person_name(update_data['surname'], 'Apellido')
+
+        if 'rol' in update_data:
+            if update_data['rol'] in ROLES_WITH_SPECIALTY:
+                if not update_data.get('specialty'):
+                    raise HTTPException(
+                        status_code=400,
+                        detail='La especialidad es obligatoria para este rol.'
+                    )
+            else:
+                update_data['specialty'] = None
+
+        supabase.table("users").update(update_data).eq('id', user_id).execute()
+        return {'message': 'Usuario actualizado correctamente.'}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f'Error al actualizar el usuario: {str(e)}')
  
  
 def approve_certificate(data):
@@ -102,9 +136,9 @@ def approve_certificate(data):
     except Exception as e:
         raise HTTPException(status_code=400, detail=f'Error al aprobar el certificado físico.')
     
-def reject_certificate(data, reason):
+def reject_certificate(data):
     try:
-        reason_text = reason.reason if hasattr(reason, 'reason') else reason
+        reason_text = data.reason if hasattr(data, 'reason') else data
         response = supabase.table('users').select('physical_certificate').eq('id', data.id).execute()
             
         if not response.data:

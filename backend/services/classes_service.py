@@ -91,7 +91,7 @@ def _target_month(day_of_week: int) -> tuple[int, int]:
     - Si quedan ocurrencias futuras del día elegido en el mes actual → mes actual.
     - Si ya pasaron todas → mes siguiente.
     """
-    today = date.today()
+    today = datetime.now(TZ_AR).date()
     _, last_day = calendar.monthrange(today.year, today.month)
     for d in range(today.day, last_day + 1):
         dt = date(today.year, today.month, d)
@@ -101,6 +101,37 @@ def _target_month(day_of_week: int) -> tuple[int, int]:
     if today.month == 12:
         return today.year + 1, 1
     return today.year, today.month + 1
+
+
+def _next_month(year: int, month: int) -> tuple[int, int]:
+    if month == 12:
+        return year + 1, 1
+    return year, month + 1
+
+
+def _future_occurrences_for_schedule(
+    day_of_week: int,
+    start_hour: int,
+    start_minute: int
+) -> tuple[int, int, List[date]]:
+    year, month = _target_month(day_of_week)
+    now = datetime.now(TZ_AR)
+
+    occurrences = []
+    for occ_date in _occurrences_in_month(day_of_week, year, month):
+        start_dt = datetime(
+            occ_date.year, occ_date.month, occ_date.day,
+            start_hour, start_minute,
+            tzinfo=TZ_AR
+        )
+        if start_dt > now:
+            occurrences.append(occ_date)
+
+    if occurrences:
+        return year, month, occurrences
+
+    year, month = _next_month(year, month)
+    return year, month, _occurrences_in_month(day_of_week, year, month)
 
 
 # ── Crear clase INDIVIDUAL ────────────────────────────────────────────────────
@@ -162,8 +193,11 @@ def create_fija_class(data):
         if data.professor_id:
             validate_professor_exists(data.professor_id)
 
-        year, month = _target_month(data.day_of_week)
-        occurrences = _occurrences_in_month(data.day_of_week, year, month)
+        year, month, occurrences = _future_occurrences_for_schedule(
+            data.day_of_week,
+            data.start_hour,
+            data.start_minute
+        )
 
         if not occurrences:
             raise HTTPException(
@@ -173,8 +207,9 @@ def create_fija_class(data):
 
         day_names = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes']
 
-        created = []
-        skipped = []
+        conflicts = []
+        rows_to_insert = []
+        professor_assigned_count = 0
 
         for occ_date in occurrences:
             start_dt = datetime(
@@ -188,31 +223,32 @@ def create_fija_class(data):
             try:
                 validate_center_business_hours(start_dt, end_dt)
             except HTTPException as e:
-                skipped.append({'date': occ_date.isoformat(), 'reason': e.detail})
+                conflicts.append({'date': occ_date.isoformat(), 'reason': e.detail})
                 continue
 
             # Validar disponibilidad de sala
             try:
                 validate_room_availability(data.room_id, start_dt, end_dt)
-            except HTTPException:
-                skipped.append({
+            except HTTPException as e:
+                conflicts.append({
                     'date': occ_date.isoformat(),
-                    'reason': 'Sala ocupada en ese horario.'
+                    'reason': e.detail or 'Sala ocupada en ese horario.'
                 })
                 continue
 
-            # Validar disponibilidad del profesor si fue elegido
+            professor_id = None
             if data.professor_id:
                 try:
                     validate_professor_weekly_hours(data.professor_id, start_dt, end_dt)
                     validate_professor_schedule_availability(data.professor_id, start_dt, end_dt)
-                except HTTPException as e:
-                    skipped.append({'date': occ_date.isoformat(), 'reason': e.detail})
-                    continue
+                    professor_id = str(data.professor_id)
+                    professor_assigned_count += 1
+                except HTTPException:
+                    professor_id = None
 
-            row = supabase.table('classes').insert({
+            rows_to_insert.append({
                 'room_id': str(data.room_id),
-                'professor_id': str(data.professor_id) if data.professor_id else None,
+                'professor_id': professor_id,
                 'type': 'FIJA',
                 'activity_type': data.activity_type,
                 'status': 'PROGRAMADA',
@@ -220,15 +256,29 @@ def create_fija_class(data):
                 'current_capacity': 0,
                 'start_time': start_dt.isoformat(),
                 'end_time': end_dt.isoformat(),
-            }).execute()
+            })
 
-            created.append(row.data[0])
-
-        if not created:
+        if conflicts:
+            conflict_details = '; '.join(
+                f"{item['date']}: {item['reason']}" for item in conflicts
+            )
             raise HTTPException(
                 status_code=409,
-                detail='No se pudo crear ninguna instancia: todas las fechas tienen conflictos de sala o profesor.'
+                detail=(
+                    'No se puede crear la clase fija porque todas las fechas deben tener '
+                    f'disponibilidad para la sala elegida. '
+                    f'Conflictos: {conflict_details}'
+                )
             )
+
+        if data.professor_id and professor_assigned_count == 0:
+            raise HTTPException(
+                status_code=409,
+                detail='El profesor seleccionado no está disponible para ninguna de las fechas a crear.'
+            )
+
+        row = supabase.table('classes').insert(rows_to_insert).execute()
+        created = row.data or []
 
         month_name = [
             'enero','febrero','marzo','abril','mayo','junio',
@@ -239,10 +289,12 @@ def create_fija_class(data):
             'message': (
                 f'Se crearon {len(created)} clase(s) fija(s) para todos los {day_names[data.day_of_week]} '
                 f'de {month_name} {year}.'
-                + (f' ({len(skipped)} fecha(s) omitida(s) por conflicto.)' if skipped else '')
+                + (
+                    f' El profesor inicial fue asignado a {professor_assigned_count} de {len(created)} clase(s).'
+                    if data.professor_id else ''
+                )
             ),
             'created': created,
-            'skipped': skipped,
         }
 
     except HTTPException:

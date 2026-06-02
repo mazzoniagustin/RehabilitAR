@@ -247,7 +247,7 @@ async function loadDashboard() {
   const isEmployee = EMPLOYEE_ROLES.includes(u.rol);
 
   // Solo empleados: mostrar especialidad
-  if (isEmployee) {
+  if (ROLES_WITH_SPECIALTY.includes(u.rol)) {
     document.getElementById('pfSpecialtyRow').style.display = 'flex';
     document.getElementById('pfSpecialty').textContent = u.specialty || '—';
   }
@@ -517,9 +517,23 @@ function syncClassDate() {
 }
 
 // Sincroniza selects de hora → hidden #classStartTime
+function lockMinuteSelectAtClosingHour(hour, minuteSelect) {
+  if (!minuteSelect) return '';
+
+  if (hour === '19') {
+    minuteSelect.value = '00';
+    minuteSelect.disabled = true;
+    return '00';
+  }
+
+  minuteSelect.disabled = false;
+  return minuteSelect.value;
+}
+
 function syncClassTime(which) {
   const h = document.getElementById(`class${which}Hour`).value;
-  const min = document.getElementById(`class${which}Minute`).value;
+  const minuteSelect = document.getElementById(`class${which}Minute`);
+  const min = lockMinuteSelectAtClosingHour(h, minuteSelect);
   const hidden = document.getElementById(`class${which}Time`);
   hidden.value = (h && min !== undefined) ? `${h}:${min}` : '';
   // Ocultar detalles si el usuario cambia hora después de haber verificado
@@ -529,7 +543,8 @@ function syncClassTime(which) {
 // Sincroniza selects de hora fija → hidden #fijaStartTime
 function syncFijaTime() {
   const h = document.getElementById('fijaStartHour').value;
-  const min = document.getElementById('fijaStartMinute').value;
+  const minuteSelect = document.getElementById('fijaStartMinute');
+  const min = lockMinuteSelectAtClosingHour(h, minuteSelect);
   document.getElementById('fijaStartTime').value = `${h}:${min}`;
   // Ocultar detalles si el usuario cambia hora después de haber verificado
   _resetFijaDetails();
@@ -556,7 +571,7 @@ function _populateHourSelect(selectId, maxHour) {
   if (!sel) return;
   const prev = sel.value;
   sel.innerHTML = '<option value="" disabled selected>--</option>';
-  const effectiveMax = Math.min(maxHour, 21);
+  const effectiveMax = Math.min(maxHour, 19);
   for (let h = 8; h <= effectiveMax; h++) {
     const opt = document.createElement('option');
     opt.value = _pad(h);
@@ -627,10 +642,10 @@ function initClassDateSelects() {
   monthSel.value = tm;
   repopulateDays();
 
-  // Selects de hora individual (08–20)
-  _populateHourSelect('classStartHour', 22);
+  // Selects de hora de inicio (08-19). Las clases duran 1 hora.
+  _populateHourSelect('classStartHour', 19);
   _populateMinuteSelect('classStartMinute');
-  _populateHourSelect('fijaStartHour', 22);
+  _populateHourSelect('fijaStartHour', 19);
   _populateMinuteSelect('fijaStartMinute');
 
   // Sync inicial de fijaStartTime
@@ -653,7 +668,7 @@ function applyIndividualDateConstraints() {
 
   const isToday = dateInput.value === today;
   const minTime = isToday ? nowTimeArgentina() : '08:00';
-  if (startInput) { startInput.min = minTime; startInput.max = '21:00'; }
+  if (startInput) { startInput.min = minTime; startInput.max = '19:00'; }
 }
 
 function bindClassAvailabilityInputs() {
@@ -707,10 +722,10 @@ async function checkIndividualAvailability() {
   const startMinutes = sh * 60 + sm;
 
   if (startMinutes < 8 * 60) {
-    return showAlert('clasesAlert', 'Las clases deben estar dentro del horario del centro: 08:00 a 22:00.');
+    return showAlert('clasesAlert', 'Las clases deben estar dentro del horario del centro: 08:00 a 20:00.');
   }
-  if (startMinutes + 60 > 22 * 60) {
-    return showAlert('clasesAlert', 'El horario de inicio máximo es las 21:00 (la clase dura 1 hora).');
+  if (startMinutes + 60 > 20 * 60) {
+    return showAlert('clasesAlert', 'El horario de inicio máximo es las 19:00 (la clase dura 1 hora).');
   }
 
   const apiStartTime = combineDateAndTime(classDate, startTime);
@@ -787,8 +802,8 @@ async function checkFijaAvailability() {
   const [startHour, startMinute] = startTime.split(':').map(Number);
   const endMinutes = startHour * 60 + startMinute + 60;
 
-  if (startHour < 8 || endMinutes > 22 * 60) {
-    return showAlert('clasesAlert', 'El horario de inicio máximo es las 21:00 (la clase dura 1 hora).');
+  if (startHour < 8 || endMinutes > 20 * 60) {
+    return showAlert('clasesAlert', 'El horario de inicio máximo es las 19:00 (la clase dura 1 hora).');
   }
 
   const endH   = String(Math.floor(endMinutes / 60)).padStart(2, '0');
@@ -817,10 +832,26 @@ async function checkFijaAvailability() {
   }
 
   // Calcular ocurrencias del mes
+  const todayAR = todayArgentina();
+  const nowARTime = nowTimeArgentina();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const occurrenceDates = [];
+  let occurrenceDates = [];
   for (let d = 1; d <= daysInMonth; d++) {
-    if (new Date(year, month, d).getDay() === jsDayOfWeek) occurrenceDates.push(d);
+    if (new Date(year, month, d).getDay() !== jsDayOfWeek) continue;
+    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    if (dateStr > todayAR || (dateStr === todayAR && startTime > nowARTime)) {
+      occurrenceDates.push(d);
+    }
+  }
+
+  if (occurrenceDates.length === 0) {
+    month = (month + 1) % 12;
+    if (month === 0) year++;
+    const nextMonthDays = new Date(year, month + 1, 0).getDate();
+    occurrenceDates = [];
+    for (let d = 1; d <= nextMonthDays; d++) {
+      if (new Date(year, month, d).getDay() === jsDayOfWeek) occurrenceDates.push(d);
+    }
   }
 
   if (occurrenceDates.length === 0) {
@@ -832,24 +863,52 @@ async function checkFijaAvailability() {
   btn.textContent = 'Verificando...';
 
   try {
-    // Consultar disponibilidad usando la primera ocurrencia como referencia
-    const firstDate = new Date(year, month, occurrenceDates[0]);
-    const dateStr   = `${firstDate.getFullYear()}-${String(firstDate.getMonth()+1).padStart(2,'0')}-${String(firstDate.getDate()).padStart(2,'0')}`;
-    const startISO  = combineDateAndTime(dateStr, startTime);
-    const endISO    = combineDateAndTime(dateStr, endStr);
+    const occurrenceDateStrings = occurrenceDates.map(d => {
+      const occurrence = new Date(year, month, d);
+      return `${occurrence.getFullYear()}-${String(occurrence.getMonth()+1).padStart(2,'0')}-${String(occurrence.getDate()).padStart(2,'0')}`;
+    });
 
-    const params = new URLSearchParams({ start_time: startISO, end_time: endISO });
-    const [roomsRes, profsRes] = await Promise.all([
-      fetch(`${API}/classes/rooms?${params.toString()}`, { headers: authH() }),
-      fetch(`${API}/classes/professors?${params.toString()}`, { headers: authH() })
-    ]);
-    const rooms = await roomsRes.json();
-    const profs = await profsRes.json();
+    const availabilityResponses = [];
+    for (const dateStr of occurrenceDateStrings) {
+      const startISO = combineDateAndTime(dateStr, startTime);
+      const endISO = combineDateAndTime(dateStr, endStr);
+      const params = new URLSearchParams({ start_time: startISO, end_time: endISO });
+      const roomsRes = await fetch(`${API}/classes/rooms?${params.toString()}`, { headers: authH() });
+      const rooms = await roomsRes.json();
+      if (!roomsRes.ok) throw new Error(apiErrorMessage(rooms, 'No se pudieron cargar las salas disponibles.'));
 
-    if (!roomsRes.ok) throw new Error(apiErrorMessage(rooms, 'No se pudieron cargar las salas disponibles.'));
+      const profsRes = await fetch(`${API}/classes/professors?${params.toString()}`, { headers: authH() });
+      const profs = await profsRes.json();
+      if (!profsRes.ok) throw new Error(apiErrorMessage(profs, 'No se pudieron cargar los profesores disponibles.'));
 
-    if (!rooms || rooms.length === 0) {
-      return showAlert('clasesAlert', 'No hay salas disponibles para ese horario en la primera ocurrencia del mes.');
+      availabilityResponses.push({ dateStr, rooms: rooms || [], profs: profs || [] });
+    }
+
+    const roomAvailabilityCount = new Map();
+    const roomsById = new Map();
+    availabilityResponses.forEach(({ rooms }) => {
+      rooms.forEach(room => {
+        roomsById.set(room.id, room);
+        roomAvailabilityCount.set(room.id, (roomAvailabilityCount.get(room.id) || 0) + 1);
+      });
+    });
+    const rooms = [...roomsById.values()].filter(room => roomAvailabilityCount.get(room.id) === occurrenceDateStrings.length);
+
+    const professorAvailabilityCount = new Map();
+    const professorsById = new Map();
+    availabilityResponses.forEach(({ profs }) => {
+      profs.forEach(prof => {
+        professorsById.set(prof.id, prof);
+        professorAvailabilityCount.set(prof.id, (professorAvailabilityCount.get(prof.id) || 0) + 1);
+      });
+    });
+    const profs = [...professorsById.values()].map(prof => ({
+      ...prof,
+      available_count: professorAvailabilityCount.get(prof.id) || 0
+    }));
+
+    if (!rooms.length) {
+      return showAlert('clasesAlert', 'No hay salas disponibles para todas las fechas de esa clase fija.');
     }
 
     const fijaDetailsFields = document.getElementById('fijaDetailsFields');
@@ -861,12 +920,12 @@ async function checkFijaAvailability() {
     preview.innerHTML = `
       <strong>Se crearán ${occurrenceDates.length} clase(s)</strong> para todos los <strong>${dayNames[dayOfWeek]}</strong> de <strong>${monthNames[month]} ${year}</strong>:<br>
       ${occurrenceDates.map(d => `• ${d} de ${monthNames[month]} ${year} — ${startTime} a ${endStr}`).join('<br>')}
-      <br><br>Las salas y profesores disponibles se verifican para cada fecha individualmente al crear.
+      <br><br>Solo se muestran salas disponibles en todas las fechas. Los profesores se asignan solo en las fechas donde están disponibles.
     `;
 
     fijaRoomSelect.innerHTML = rooms.map(r => `<option value="${r.id}">${r.name} — cupo sala: ${r.capacity}</option>`).join('');
     fijaProfessorSelect.innerHTML = '<option value="">Sin profesor inicial</option>'
-      + (profs || []).map(p => `<option value="${p.id}">${p.name} ${p.surname}${p.specialty ? ` — ${p.specialty}` : ''}</option>`).join('');
+      + (profs || []).map(p => `<option value="${p.id}">${p.name} ${p.surname}${p.specialty ? ` — ${p.specialty}` : ''} — disponible en ${p.available_count}/${occurrenceDateStrings.length}</option>`).join('');
 
     fijaDetailsFields.style.display = 'block';
 
@@ -1198,10 +1257,10 @@ async function createIndividualClass() {
     return showAlert('clasesAlert', 'Las clases solo pueden programarse de lunes a viernes.');
   }
   if (startMinutes < 8 * 60) {
-    return showAlert('clasesAlert', 'Las clases deben estar dentro del horario del centro: 08:00 a 22:00.');
+    return showAlert('clasesAlert', 'Las clases deben estar dentro del horario del centro: 08:00 a 20:00.');
   }
-  if (startMinutes + 60 > 22 * 60) {
-    return showAlert('clasesAlert', 'El horario de inicio máximo es las 21:00 (la clase dura 1 hora).');
+  if (startMinutes + 60 > 20 * 60) {
+    return showAlert('clasesAlert', 'El horario de inicio máximo es las 19:00 (la clase dura 1 hora).');
   }
   const nowAR = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Argentina/Buenos_Aires' }));
   if (new Date(apiStartTime) <= nowAR) {
@@ -1265,8 +1324,8 @@ async function createFijaClass() {
     return showAlert('clasesAlert', 'El cupo debe ser mayor a 0.');
   }
   const [_sh, _sm] = startTime.split(':').map(Number);
-  if (_sh < 8 || _sh * 60 + _sm + 60 > 22 * 60) {
-    return showAlert('clasesAlert', 'El horario de inicio máximo es las 21:00 (la clase dura 1 hora).');
+  if (_sh < 8 || _sh * 60 + _sm + 60 > 20 * 60) {
+    return showAlert('clasesAlert', 'El horario de inicio máximo es las 19:00 (la clase dura 1 hora).');
   }
 
   const [startHour, startMinute] = startTime.split(':').map(Number);
@@ -1868,6 +1927,9 @@ async function openUserProfile(userId) {
 
     document.getElementById('modalUserName').textContent = `${u.name} ${u.surname}`;
 
+    // Guardamos los datos del usuario en el modal para usarlos al editar
+    document.getElementById('userProfileModal').dataset.userId = u.id;
+
     let fields = [];
 
     if (isAdmin) {
@@ -1882,16 +1944,20 @@ async function openUserProfile(userId) {
         ['Edad',         u.age ? `${u.age} años` : '—'],
         ['Dirección',    u.address      || '—'],
         ...(!isEmp ? [['Apto físico', badge(u.physical_certificate, CERT_LABELS)]] : []),
-        ...(u.specialty ? [['Especialidad', u.specialty]] : []),
+        ...(ROLES_WITH_SPECIALTY.includes(u.rol) ? [['Especialidad', u.specialty || '—']] : []),
         ...(u.rol === 'ABONADO' ? [['Créditos', `${u.credits ?? 0}/3`]] : []),
       ];
 
       const actions = document.getElementById('modalActions');
-      if (u.account_status === 'ACTIVA') {
-        actions.innerHTML = `<button class="btn btn-sm btn-danger" onclick="closeUserModal();openBlockModal('${u.id}','${u.name} ${u.surname}')">Reactivar cuenta</button>`;
-      } else {
-        actions.innerHTML = `<button class="btn btn-sm" onclick="unblockFromModal('${u.id}')">Reactivar cuenta</button>`;
-      }
+
+      const suspendBtn = u.account_status === 'ACTIVA'
+        ? `<button class="btn btn-sm btn-danger" onclick="closeUserModal();openBlockModal('${u.id}','${u.name} ${u.surname}')">Suspender cuenta</button>`
+        : `<button class="btn btn-sm" onclick="unblockFromModal('${u.id}')">Reactivar cuenta</button>`;
+
+      actions.innerHTML = `
+        ${suspendBtn}
+        <button class="btn btn-sm btn-secondary" onclick="toggleEditUser(${JSON.stringify(u).replace(/"/g, '&quot;')})">Editar datos</button>
+      `;
 
     } else {
       fields = [
@@ -1903,11 +1969,157 @@ async function openUserProfile(userId) {
       ];
     }
 
-    document.getElementById('modalUserBody').innerHTML = fields.map(([label, value]) =>
-      `<div class="profile-field"><span class="profile-field-label">${label}</span><span class="profile-field-value">${value}</span></div>`
-    ).join('');
+    document.getElementById('modalUserBody').innerHTML = `
+      <div id="userViewMode">
+        ${fields.map(([label, value]) =>
+          `<div class="profile-field">
+            <span class="profile-field-label">${label}</span>
+            <span class="profile-field-value">${value}</span>
+          </div>`
+        ).join('')}
+      </div>
+      <div id="userEditMode" style="display:none"></div>
+    `;
 
   } catch { document.getElementById('modalUserName').textContent = 'Error al cargar.'; }
+}
+
+const ROLES_WITH_SPECIALTY = ['RECEPCIONISTA', 'PROFESOR'];
+
+function getEditableRoles(currentRole) {
+  const all = ['RECEPCIONISTA', 'ADMINISTRATIVO', 'PROFESOR', 'NO_ABONADO'];
+  const others = all.filter(r => r !== currentRole);
+  return [currentRole, ...others];
+}
+
+function toggleEditUser(u) {
+  const viewMode = document.getElementById('userViewMode');
+  const editMode = document.getElementById('userEditMode');
+
+  if (editMode.style.display === 'none' || !editMode.style.display) {
+
+    const availableRoles = getEditableRoles(u.rol);
+    const showRoleSelector = availableRoles !== null;
+    const showSpecialty = ROLES_WITH_SPECIALTY.includes(u.rol);
+
+    editMode.innerHTML = `
+      <div style="display:flex; flex-direction:column; margin-top:16px;">
+        <div id="editUserAlert" style="display:none" class="alert"></div>
+
+        <div class="profile-field" style="flex-direction:column; gap:6px; align-items:flex-start;">
+          <span class="profile-field-label">Nombre</span>
+          <input id="editUserName" class="form-input" type="text" value="${u.name || ''}" style="width:100%;" />
+        </div>
+
+        <div class="profile-field" style="flex-direction:column; gap:6px; align-items:flex-start;">
+          <span class="profile-field-label">Apellido</span>
+          <input id="editUserSurname" class="form-input" type="text" value="${u.surname || ''}" style="width:100%;" />
+        </div>
+
+        <div class="profile-field" style="flex-direction:column; gap:6px; align-items:flex-start;">
+          <span class="profile-field-label">Teléfono</span>
+          <input id="editUserPhone" class="form-input" type="text" value="${u.phone || ''}" style="width:100%;" />
+        </div>
+
+        <div class="profile-field" style="flex-direction:column; gap:6px; align-items:flex-start;">
+          <span class="profile-field-label">Dirección</span>
+          <input id="editUserAddress" class="form-input" type="text" value="${u.address || ''}" style="width:100%;" />
+        </div>
+
+        <div class="profile-field" style="flex-direction:column; gap:6px; align-items:flex-start;">
+          <span class="profile-field-label">Género</span>
+          <select id="editUserGender" class="form-input" style="width:100%;">
+            <option value="">— Sin especificar —</option>
+            <option value="MASCULINO" ${u.gender === 'MASCULINO' ? 'selected' : ''}>Masculino</option>
+            <option value="FEMENINO"  ${u.gender === 'FEMENINO'  ? 'selected' : ''}>Femenino</option>
+            <option value="OTRO"      ${u.gender === 'OTRO'      ? 'selected' : ''}>Otro</option>
+          </select>
+        </div>
+
+        ${showRoleSelector ? `
+        <div class="profile-field" style="flex-direction:column; gap:6px; align-items:flex-start;">
+          <span class="profile-field-label">Rol</span>
+          <select id="editUserRole" class="form-input" style="width:100%;"
+            data-original="${u.rol}"
+            onchange="handleRoleChange(this.value)">
+            ${availableRoles.map(r =>
+              `<option value="${r}">${ROL_LABELS[r] || r}</option>`
+            ).join('')}
+          </select>
+        </div>
+
+        <div class="profile-field" id="editSpecialtyField" style="flex-direction:column; gap:6px; align-items:flex-start; display:${showSpecialty ? 'flex' : 'none'};">
+          <span class="profile-field-label">Especialidad</span>
+          <input id="editUserSpecialty" class="form-input" type="text" value="${u.specialty || ''}" style="width:100%;"
+            data-original="${u.specialty || ''}" />
+        </div>` : ''}
+
+        <div style="display:flex; gap:8px; margin-top:16px; flex-wrap:wrap;">
+          <button class="btn btn-sm" onclick="saveUserProfile('${u.id}')">Guardar</button>
+          <button class="btn btn-sm btn-secondary" onclick="cancelEditUser()">Cancelar</button>
+        </div>
+      </div>
+    `;
+
+    viewMode.style.display = 'none';
+    editMode.style.display = 'block';
+  } else {
+    cancelEditUser();
+  }
+}
+
+function handleRoleChange(role) {
+  const specialtyField = document.getElementById('editSpecialtyField');
+  if (!specialtyField) return;
+  specialtyField.style.display = ROLES_WITH_SPECIALTY.includes(role) ? 'flex' : 'none';
+}
+
+function cancelEditUser() {
+  document.getElementById('userEditMode').style.display = 'none';
+  document.getElementById('userViewMode').style.display = 'block';
+}
+
+async function saveUserProfile(userId) {
+  const roleEl = document.getElementById('editUserRole');
+  const specialtyEl = document.getElementById('editUserSpecialty');
+
+  const newRole = roleEl?.value;
+  const originalRole = roleEl?.dataset.original;
+
+  const roleChanged = newRole && newRole !== originalRole;
+  const requiresSpecialty = roleRequiresSpecialty(newRole);
+
+  if (roleChanged && requiresSpecialty) {
+    if (!specialtyEl || !specialtyEl.value.trim()) {
+      return showEditUserAlert('La especialidad es obligatoria para este rol.');
+    }
+  }
+
+  const body = {
+    name,
+    surname,
+    phone,
+    address,
+    gender,
+    ...(roleChanged ? { rol: newRole } : {}),
+    ...(roleChanged && requiresSpecialty
+      ? { specialty: specialtyEl.value.trim() }
+      : {}),
+  };
+
+  const res = await fetch(`${API}/users/${userId}`, {
+    method: 'PUT',
+    headers: authH(),
+    body: JSON.stringify(body),
+  });
+}
+
+function showEditUserAlert(msg, type = 'error') {
+  const el = document.getElementById('editUserAlert');
+  if (!el) return;
+  el.textContent = msg;
+  el.className = `alert ${type}`;
+  el.style.display = 'block';
 }
 
 function closeUserModal() { document.getElementById('userProfileModal').classList.remove('open'); }
@@ -2033,7 +2245,7 @@ function closeRejectModal() { document.getElementById('rejectModal').classList.r
 
 async function confirmReject() {
   const reason = document.getElementById('rejectReason').value.trim();
-  if (!reason) return alert('El motivo es obligatorio.');
+  if (!reason) return showAlert('rejectAlert', 'El motivo es obligatorio.');
   try {
     const res = await fetch(`${API}/staff/reject_certificate`, { 
       method: 'POST', 
@@ -2043,10 +2255,12 @@ async function confirmReject() {
       }, 
       body: JSON.stringify({ id: rejectTargetId, reason }) 
     });
-    if (!res.ok) return alert(typeof data.detail === 'string' ? data.detail : 'Error.');
+    const data = await res.json();
+    if (!res.ok) return showAlert('rejectAlert', typeof data.detail === 'string' ? data.detail : 'Error.');
+    else showAlert('rejectAlert', 'Apto físico rechazado.', 'success');
     closeRejectModal();
     loadCertificados();
-  } catch { alert('No se pudo conectar.'); }
+  } catch { showAlert('rejectAlert', 'No se pudo conectar.'); }
 }
 
 
@@ -2190,14 +2404,15 @@ function closeRejectUnlockModal() {
 
 async function confirmRejectUnlock() {
   const reason = document.getElementById('rejectUnlockReason').value.trim();
-  if (!reason) return alert('El motivo es obligatorio.');
+  if (!reason) return showAlert('rejectAlert', 'El motivo es obligatorio.');
   try {
     const res  = await fetch(`${API}/staff/reject_unblock_request/${rejectUnlockTargetId}`, { method:'POST', headers:authH(), body:JSON.stringify({ reason }) });
     const data = await res.json();
-    if (!res.ok) return alert(typeof data.detail === 'string' ? data.detail : 'Error.');
+    if (!res.ok) return showAlert('rejectAlert', typeof data.detail === 'string' ? data.detail : 'Error.');
+    else showAlert('rejectAlert', 'Solicitud rechazada.', 'success');
     closeRejectUnlockModal();
     loadSolicitudes();
-  } catch { alert('No se pudo conectar.'); }
+  } catch { showAlert('rejectAlert', 'No se pudo conectar.'); }
 }
 
 function clearValue(id) {
@@ -2306,16 +2521,18 @@ async function submitRegisterUser() {
 // SEGURIDAD
 
 async function handleChangePassword() {
+  const current = document.getElementById('currentPw').value;
   const np = document.getElementById('newPw').value;
   const cp = document.getElementById('confirmPw').value;
-  if (!np || !cp)      return showAlert('pwAlert', 'Completá ambos campos.');
+  if (!np || !cp || !current)      return showAlert('pwAlert', 'Completá todos los campos.');
   if (np.length < 6)   return showAlert('pwAlert', 'Mínimo 6 caracteres.');
   if (np !== cp)       return showAlert('pwAlert', 'Las contraseñas no coinciden.');
   try {
-    const res  = await fetch(`${API}/users/me/change-password`, { method:'POST', headers:authH(), body:JSON.stringify({ new_password:np, confirm_new_password:cp }) });
+    const res  = await fetch(`${API}/users/me/change-password`, { method:'POST', headers:authH(), body:JSON.stringify({ current_password:current, new_password:np, confirm_new_password:cp }) });
     const data = await res.json();
     if (!res.ok) return showAlert('pwAlert', typeof data.detail === 'string' ? data.detail : 'Error.');
     showAlert('pwAlert', 'Contraseña actualizada correctamente.', 'success');
+    document.getElementById('currentPw').value = '';
     document.getElementById('newPw').value = '';
     document.getElementById('confirmPw').value = '';
   } catch { showAlert('pwAlert', 'No se pudo conectar.'); }

@@ -3,7 +3,12 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import jwt, JWTError
 from database import supabase
 import os
-from datetime import date, datetime
+from datetime import date
+import re
+
+NAME_REGEX = re.compile(
+    r"^[A-Za-zÁÉÍÓÚáéíóúÑñ]+(?: [A-Za-zÁÉÍÓÚáéíóúÑñ]+)*$"
+)
 
 security = HTTPBearer()
 SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET")
@@ -73,3 +78,28 @@ def is_adult(birth_date):
     age = today.year - birth_date.year - ((today.month, today.day) < (birth_date.month, birth_date.day))
     
     return age >= 18
+
+def validate_person_name(value: str, field: str):
+    value = value.strip()
+    if not NAME_REGEX.fullmatch(value):
+        raise HTTPException(
+            status_code=400,
+            detail=f'{field} inválido.'
+        )
+    return value
+
+def user_data_validators(data):
+    
+    data.name = validate_person_name(data.name, 'Nombre')
+    
+    data.surname = validate_person_name(data.surname, 'Apellido')
+    
+    
+    if not isinstance(data.dni, int) or data.dni <= 0:
+        raise HTTPException(status_code=400, detail='DNI inválido.')
+    
+    if len(str(data.dni)) < 6:
+        raise HTTPException(status_code=400, detail='El DNI debe tener al menos 6 dígitos.')
+    
+    if data.birth_date >= date.today():
+        raise HTTPException(status_code=400, detail='Fecha de nacimiento inválida.')

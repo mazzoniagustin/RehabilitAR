@@ -2,28 +2,44 @@ import uuid
 from fastapi import HTTPException, UploadFile
 from database import supabase
 from datetime import datetime
+from supabase_auth.errors import AuthApiError
 
-def change_password(data): 
+def change_password(data,current_user): 
     try:
         if data.new_password != data.confirm_new_password:
             raise HTTPException(status_code=400, detail='Las contraseñas no coinciden.')
         
-        response = supabase.auth.update_user({
-            'password': data.new_password
-        })
+        try:
+            auth_res = supabase.auth.sign_in_with_password({
+                'email': current_user['email'],
+                'password': data.current_password
+            })
+        
+        except AuthApiError as e:
+            raise HTTPException(status_code=401, detail='Contraseña actual incorrecta.')
+        
+        try: 
+            response = supabase.auth.update_user({
+                'password': data.new_password
+            })
+        except AuthApiError as e:
+            msg = str(e).lower()
+            if 'different from the old password' in msg:
+                raise HTTPException(
+                    status_code=400,
+                    detail='La nueva contraseña no puede ser igual a la anterior.'
+                )
+            raise
         
         if not response.user:
             raise HTTPException(status_code=404, detail='Usuario no encontrado.')
         
-        supabase.table('users').update({'failed_attempts': 0}).eq('id', response.user.id).execute()
-
         return {'Mensaje': 'Contraseña actualizada exitosamente.'}
 
     except HTTPException:
         raise
-        
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f'Error al cambiar la contraseña')
+        raise HTTPException(status_code=500, detail=f'Error al actualizar la contraseña: {str(e)}')
 
 def show_user_info(user_id: str):
     try:
@@ -63,27 +79,12 @@ def show_user_info(user_id: str):
         }
 
         if user['rol'] == 'ABONADO':
-            credits_res = (
-                supabase.table('credits')
-                .select('available_credits')
-                .eq('user_id', user_id)
-                .limit(1)
-                .execute()
-            )
-            available_credits = (credits_res.data or [{}])[0].get('available_credits') or 0
-            base['credits'] = available_credits
-            base['available_credits'] = available_credits
-
-            subscription_res = (
-                supabase.table('subscriptions')
-                .select('end_date')
-                .eq('user_id', user_id)
-                .eq('status', 'ACTIVA')
-                .order('end_date', desc=True)
-                .limit(1)
-                .execute()
-            )
-            base['subscription_expiry'] = (subscription_res.data or [{}])[0].get('end_date')
+            credits_res = supabase.table('credits').select('available_credits').eq('user_id', user_id).execute()
+            
+            base['credits'] = credits_res.data[0]['available_credits'] if credits_res.data else 0
+            
+            subscription_res = supabase.table('subscriptions').select('end_date').eq('user_id', user_id).execute()
+            base['subscription_expiry'] = subscription_res.data[0]['end_date'] if subscription_res.data else None
 
         if user['rol'] in ('ADMINISTRATIVO', 'RECEPCIONISTA', 'PROFESOR'):
             base['specialty'] = user.get('specialty')
@@ -219,16 +220,16 @@ def show_user_public_info(user_id: str):
         
         age = None
         if base.get('birth_date'):
-            born = datetime.fromisoformat(res['birth_date'])
+            born = datetime.fromisoformat(base['birth_date'])
             today = datetime.now()
             age = today.year - born.year - ((today.month, today.day) < (born.month, born.day))
 
         base = {
-            'id': res.data.get('id'),
-            'name': res.data.get('name'),
-            'surname': res.data.get('surname'),
-            'rol': res.data.get('rol'),
-            'gender': res.data.get('gender'),
+            'id': base.get('id'),
+            'name': base.get('name'),
+            'surname': base.get('surname'),
+            'rol': base.get('rol'),
+            'gender': base.get('gender'),
             'age': age
         }
         

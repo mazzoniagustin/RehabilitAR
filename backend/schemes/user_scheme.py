@@ -10,7 +10,7 @@ class UserRegister(BaseModel):
     name: str
     surname: str
     email: EmailStr
-    dni: str
+    dni: int
     birth_date: Date
     password: str = Field(min_length=6)
 
@@ -23,7 +23,7 @@ class UserRegisterByStaff(BaseModel):
     name: str
     surname: str
     email: EmailStr
-    dni: str
+    dni: int
     birth_date: Date
 
 
@@ -38,7 +38,7 @@ class EmployeeRegisterByAdmin(BaseModel):
     name: str
     surname: str
     email: EmailStr
-    dni: str
+    dni: int
     birth_date: Date
     rol: Literal['ADMINISTRATIVO', 'RECEPCIONISTA', 'PROFESOR']
     specialty: Optional[str] = None  # Solo obligatorio para RECEPCIONISTA y PROFESOR
@@ -47,6 +47,7 @@ class RecoverPassword(BaseModel):
     email: EmailStr
 
 class ChangePassword(BaseModel):
+    current_password: str = Field(min_length=6)
     new_password: str = Field(min_length=6)
     confirm_new_password: str = Field(min_length=6)
 
@@ -65,7 +66,7 @@ class UserBaseResponse(BaseModel):
     name: str
     surname: str
     email: str
-    dni: str
+    dni: int
     phone: Optional[str] = None
     rol: str
     birth_date: Date
@@ -87,15 +88,24 @@ class UserUpdate(BaseModel):
     address: Optional[str] = None
     #marital_status: Literal['SOLTERO/A', 'CASADO/A', 'DIVORCIADO/A', 'VIUDO/A'] = None
     age: Optional[int] = None
-    gender: Literal['MASCULINO', 'FEMENINO', 'OTRO'] = None
+    gender: Optional[Literal['MASCULINO', 'FEMENINO', 'OTRO']] = None
+
+class UserAdminUpdate(BaseModel):
+    name:      Optional[str] = None
+    surname:   Optional[str] = None
+    phone:     Optional[str] = None
+    address:   Optional[str] = None
+    gender:    Optional[Literal['MASCULINO', 'FEMENINO', 'OTRO']] = None
+    rol:       Optional[str] = None
+    specialty: Optional[str] = None
 
 class UserResponseByAdmin(BaseModel):
     name: str
     surname: str
     birth_date: Date
     email: EmailStr
-    dni: str
+    dni: int
     rol: str
     account_status: str
-    phone: str
-    credits: int
+    phone: Optional[str] = None
+    credits: Optional[int] = None

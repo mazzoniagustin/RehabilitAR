@@ -139,7 +139,7 @@
         <div class="file-name" id="dashCertName" style="display:none"></div>
         <input type="file" id="dashCertInput" accept=".pdf,.jpg,.jpeg,.png" style="display:none" onchange="handleDashCertSelect(event)"/>
         <div class="btn-row" style="margin-top:12px">
-          <button class="btn btn-sm" id="uploadCertBtn" onclick="submitCertificate()" disabled>Enviar certificado</button>
+          <button class="btn btn-sm" id="uploadCertBtn" onclick="submitCertificate()" disabled>Subir apto físico</button>
         </div>
       </div>
     </div>
@@ -150,6 +150,7 @@
       <div class="section-card" style="max-width:420px">
         <h3><svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg> Cambiar contraseña</h3>
         <div id="pwAlert" class="alert"></div>
+        <div class="form-group"><label>Contraseña actual</label><input type="password" id="currentPw" placeholder="Tu contraseña actual" /></div>
         <div class="form-group"><label>Nueva contraseña</label><input type="password" id="newPw" placeholder="Mínimo 6 caracteres"/></div>
         <div class="form-group"><label>Confirmar contraseña</label><input type="password" id="confirmPw" placeholder="Repetí la contraseña"/></div>
         <button class="btn btn-sm" onclick="handleChangePassword()">Actualizar contraseña</button>
@@ -548,6 +549,7 @@
     </div>
     <p>Indicá el motivo del rechazo. El cliente será notificado.</p>
     <div class="form-group"><label>Motivo</label><input type="text" id="rejectReason" placeholder="Ej: El documento está vencido"/></div>
+    <div id="rejectAlert"></div>
     <div class="modal-actions">
       <button class="btn btn-sm btn-danger" onclick="confirmReject()">Rechazar</button>
       <button class="btn btn-sm btn-outline" onclick="closeRejectModal()">Cancelar</button>
