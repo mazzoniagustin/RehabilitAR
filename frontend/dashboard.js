@@ -517,9 +517,23 @@ function syncClassDate() {
 }
 
 // Sincroniza selects de hora → hidden #classStartTime
+function lockMinuteSelectAtClosingHour(hour, minuteSelect) {
+  if (!minuteSelect) return '';
+
+  if (hour === '19') {
+    minuteSelect.value = '00';
+    minuteSelect.disabled = true;
+    return '00';
+  }
+
+  minuteSelect.disabled = false;
+  return minuteSelect.value;
+}
+
 function syncClassTime(which) {
   const h = document.getElementById(`class${which}Hour`).value;
-  const min = document.getElementById(`class${which}Minute`).value;
+  const minuteSelect = document.getElementById(`class${which}Minute`);
+  const min = lockMinuteSelectAtClosingHour(h, minuteSelect);
   const hidden = document.getElementById(`class${which}Time`);
   hidden.value = (h && min !== undefined) ? `${h}:${min}` : '';
   // Ocultar detalles si el usuario cambia hora después de haber verificado
@@ -529,7 +543,8 @@ function syncClassTime(which) {
 // Sincroniza selects de hora fija → hidden #fijaStartTime
 function syncFijaTime() {
   const h = document.getElementById('fijaStartHour').value;
-  const min = document.getElementById('fijaStartMinute').value;
+  const minuteSelect = document.getElementById('fijaStartMinute');
+  const min = lockMinuteSelectAtClosingHour(h, minuteSelect);
   document.getElementById('fijaStartTime').value = `${h}:${min}`;
   // Ocultar detalles si el usuario cambia hora después de haber verificado
   _resetFijaDetails();
@@ -556,7 +571,7 @@ function _populateHourSelect(selectId, maxHour) {
   if (!sel) return;
   const prev = sel.value;
   sel.innerHTML = '<option value="" disabled selected>--</option>';
-  const effectiveMax = Math.min(maxHour, 21);
+  const effectiveMax = Math.min(maxHour, 19);
   for (let h = 8; h <= effectiveMax; h++) {
     const opt = document.createElement('option');
     opt.value = _pad(h);
@@ -627,10 +642,10 @@ function initClassDateSelects() {
   monthSel.value = tm;
   repopulateDays();
 
-  // Selects de hora individual (08–20)
-  _populateHourSelect('classStartHour', 22);
+  // Selects de hora de inicio (08-19). Las clases duran 1 hora.
+  _populateHourSelect('classStartHour', 19);
   _populateMinuteSelect('classStartMinute');
-  _populateHourSelect('fijaStartHour', 22);
+  _populateHourSelect('fijaStartHour', 19);
   _populateMinuteSelect('fijaStartMinute');
 
   // Sync inicial de fijaStartTime
@@ -653,7 +668,7 @@ function applyIndividualDateConstraints() {
 
   const isToday = dateInput.value === today;
   const minTime = isToday ? nowTimeArgentina() : '08:00';
-  if (startInput) { startInput.min = minTime; startInput.max = '21:00'; }
+  if (startInput) { startInput.min = minTime; startInput.max = '19:00'; }
 }
 
 function bindClassAvailabilityInputs() {
@@ -707,10 +722,10 @@ async function checkIndividualAvailability() {
   const startMinutes = sh * 60 + sm;
 
   if (startMinutes < 8 * 60) {
-    return showAlert('clasesAlert', 'Las clases deben estar dentro del horario del centro: 08:00 a 22:00.');
+    return showAlert('clasesAlert', 'Las clases deben estar dentro del horario del centro: 08:00 a 20:00.');
   }
-  if (startMinutes + 60 > 22 * 60) {
-    return showAlert('clasesAlert', 'El horario de inicio máximo es las 21:00 (la clase dura 1 hora).');
+  if (startMinutes + 60 > 20 * 60) {
+    return showAlert('clasesAlert', 'El horario de inicio máximo es las 19:00 (la clase dura 1 hora).');
   }
 
   const apiStartTime = combineDateAndTime(classDate, startTime);
@@ -787,8 +802,8 @@ async function checkFijaAvailability() {
   const [startHour, startMinute] = startTime.split(':').map(Number);
   const endMinutes = startHour * 60 + startMinute + 60;
 
-  if (startHour < 8 || endMinutes > 22 * 60) {
-    return showAlert('clasesAlert', 'El horario de inicio máximo es las 21:00 (la clase dura 1 hora).');
+  if (startHour < 8 || endMinutes > 20 * 60) {
+    return showAlert('clasesAlert', 'El horario de inicio máximo es las 19:00 (la clase dura 1 hora).');
   }
 
   const endH   = String(Math.floor(endMinutes / 60)).padStart(2, '0');
@@ -1195,10 +1210,10 @@ async function createIndividualClass() {
     return showAlert('clasesAlert', 'Las clases solo pueden programarse de lunes a viernes.');
   }
   if (startMinutes < 8 * 60) {
-    return showAlert('clasesAlert', 'Las clases deben estar dentro del horario del centro: 08:00 a 22:00.');
+    return showAlert('clasesAlert', 'Las clases deben estar dentro del horario del centro: 08:00 a 20:00.');
   }
-  if (startMinutes + 60 > 22 * 60) {
-    return showAlert('clasesAlert', 'El horario de inicio máximo es las 21:00 (la clase dura 1 hora).');
+  if (startMinutes + 60 > 20 * 60) {
+    return showAlert('clasesAlert', 'El horario de inicio máximo es las 19:00 (la clase dura 1 hora).');
   }
   const nowAR = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Argentina/Buenos_Aires' }));
   if (new Date(apiStartTime) <= nowAR) {
@@ -1262,8 +1277,8 @@ async function createFijaClass() {
     return showAlert('clasesAlert', 'El cupo debe ser mayor a 0.');
   }
   const [_sh, _sm] = startTime.split(':').map(Number);
-  if (_sh < 8 || _sh * 60 + _sm + 60 > 22 * 60) {
-    return showAlert('clasesAlert', 'El horario de inicio máximo es las 21:00 (la clase dura 1 hora).');
+  if (_sh < 8 || _sh * 60 + _sm + 60 > 20 * 60) {
+    return showAlert('clasesAlert', 'El horario de inicio máximo es las 19:00 (la clase dura 1 hora).');
   }
 
   const [startHour, startMinute] = startTime.split(':').map(Number);

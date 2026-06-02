@@ -16,14 +16,14 @@ def validate_center_business_hours(start_time, end_time):
         )
 
     opening_minutes = 8 * 60
-    closing_minutes = 22 * 60
+    closing_minutes = 20 * 60
     start_minutes = start_time.hour * 60 + start_time.minute
     end_minutes = end_time.hour * 60 + end_time.minute
 
     if start_minutes < opening_minutes or end_minutes > closing_minutes:
         raise HTTPException(
             status_code=400,
-            detail='Las clases deben programarse dentro del horario del centro: 08:00 a 22:00.'
+            detail='Las clases deben programarse dentro del horario del centro: 08:00 a 20:00.'
         )
 
 
