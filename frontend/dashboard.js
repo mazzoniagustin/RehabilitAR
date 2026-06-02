@@ -832,10 +832,26 @@ async function checkFijaAvailability() {
   }
 
   // Calcular ocurrencias del mes
+  const todayAR = todayArgentina();
+  const nowARTime = nowTimeArgentina();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const occurrenceDates = [];
+  let occurrenceDates = [];
   for (let d = 1; d <= daysInMonth; d++) {
-    if (new Date(year, month, d).getDay() === jsDayOfWeek) occurrenceDates.push(d);
+    if (new Date(year, month, d).getDay() !== jsDayOfWeek) continue;
+    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    if (dateStr > todayAR || (dateStr === todayAR && startTime > nowARTime)) {
+      occurrenceDates.push(d);
+    }
+  }
+
+  if (occurrenceDates.length === 0) {
+    month = (month + 1) % 12;
+    if (month === 0) year++;
+    const nextMonthDays = new Date(year, month + 1, 0).getDate();
+    occurrenceDates = [];
+    for (let d = 1; d <= nextMonthDays; d++) {
+      if (new Date(year, month, d).getDay() === jsDayOfWeek) occurrenceDates.push(d);
+    }
   }
 
   if (occurrenceDates.length === 0) {
@@ -847,24 +863,52 @@ async function checkFijaAvailability() {
   btn.textContent = 'Verificando...';
 
   try {
-    // Consultar disponibilidad usando la primera ocurrencia como referencia
-    const firstDate = new Date(year, month, occurrenceDates[0]);
-    const dateStr   = `${firstDate.getFullYear()}-${String(firstDate.getMonth()+1).padStart(2,'0')}-${String(firstDate.getDate()).padStart(2,'0')}`;
-    const startISO  = combineDateAndTime(dateStr, startTime);
-    const endISO    = combineDateAndTime(dateStr, endStr);
+    const occurrenceDateStrings = occurrenceDates.map(d => {
+      const occurrence = new Date(year, month, d);
+      return `${occurrence.getFullYear()}-${String(occurrence.getMonth()+1).padStart(2,'0')}-${String(occurrence.getDate()).padStart(2,'0')}`;
+    });
 
-    const params = new URLSearchParams({ start_time: startISO, end_time: endISO });
-    const [roomsRes, profsRes] = await Promise.all([
-      fetch(`${API}/classes/rooms?${params.toString()}`, { headers: authH() }),
-      fetch(`${API}/classes/professors?${params.toString()}`, { headers: authH() })
-    ]);
-    const rooms = await roomsRes.json();
-    const profs = await profsRes.json();
+    const availabilityResponses = [];
+    for (const dateStr of occurrenceDateStrings) {
+      const startISO = combineDateAndTime(dateStr, startTime);
+      const endISO = combineDateAndTime(dateStr, endStr);
+      const params = new URLSearchParams({ start_time: startISO, end_time: endISO });
+      const roomsRes = await fetch(`${API}/classes/rooms?${params.toString()}`, { headers: authH() });
+      const rooms = await roomsRes.json();
+      if (!roomsRes.ok) throw new Error(apiErrorMessage(rooms, 'No se pudieron cargar las salas disponibles.'));
 
-    if (!roomsRes.ok) throw new Error(apiErrorMessage(rooms, 'No se pudieron cargar las salas disponibles.'));
+      const profsRes = await fetch(`${API}/classes/professors?${params.toString()}`, { headers: authH() });
+      const profs = await profsRes.json();
+      if (!profsRes.ok) throw new Error(apiErrorMessage(profs, 'No se pudieron cargar los profesores disponibles.'));
 
-    if (!rooms || rooms.length === 0) {
-      return showAlert('clasesAlert', 'No hay salas disponibles para ese horario en la primera ocurrencia del mes.');
+      availabilityResponses.push({ dateStr, rooms: rooms || [], profs: profs || [] });
+    }
+
+    const roomAvailabilityCount = new Map();
+    const roomsById = new Map();
+    availabilityResponses.forEach(({ rooms }) => {
+      rooms.forEach(room => {
+        roomsById.set(room.id, room);
+        roomAvailabilityCount.set(room.id, (roomAvailabilityCount.get(room.id) || 0) + 1);
+      });
+    });
+    const rooms = [...roomsById.values()].filter(room => roomAvailabilityCount.get(room.id) === occurrenceDateStrings.length);
+
+    const professorAvailabilityCount = new Map();
+    const professorsById = new Map();
+    availabilityResponses.forEach(({ profs }) => {
+      profs.forEach(prof => {
+        professorsById.set(prof.id, prof);
+        professorAvailabilityCount.set(prof.id, (professorAvailabilityCount.get(prof.id) || 0) + 1);
+      });
+    });
+    const profs = [...professorsById.values()].map(prof => ({
+      ...prof,
+      available_count: professorAvailabilityCount.get(prof.id) || 0
+    }));
+
+    if (!rooms.length) {
+      return showAlert('clasesAlert', 'No hay salas disponibles para todas las fechas de esa clase fija.');
     }
 
     const fijaDetailsFields = document.getElementById('fijaDetailsFields');
@@ -876,12 +920,12 @@ async function checkFijaAvailability() {
     preview.innerHTML = `
       <strong>Se crearán ${occurrenceDates.length} clase(s)</strong> para todos los <strong>${dayNames[dayOfWeek]}</strong> de <strong>${monthNames[month]} ${year}</strong>:<br>
       ${occurrenceDates.map(d => `• ${d} de ${monthNames[month]} ${year} — ${startTime} a ${endStr}`).join('<br>')}
-      <br><br>Las salas y profesores disponibles se verifican para cada fecha individualmente al crear.
+      <br><br>Solo se muestran salas disponibles en todas las fechas. Los profesores se asignan solo en las fechas donde están disponibles.
     `;
 
     fijaRoomSelect.innerHTML = rooms.map(r => `<option value="${r.id}">${r.name} — cupo sala: ${r.capacity}</option>`).join('');
     fijaProfessorSelect.innerHTML = '<option value="">Sin profesor inicial</option>'
-      + (profs || []).map(p => `<option value="${p.id}">${p.name} ${p.surname}${p.specialty ? ` — ${p.specialty}` : ''}</option>`).join('');
+      + (profs || []).map(p => `<option value="${p.id}">${p.name} ${p.surname}${p.specialty ? ` — ${p.specialty}` : ''} — disponible en ${p.available_count}/${occurrenceDateStrings.length}</option>`).join('');
 
     fijaDetailsFields.style.display = 'block';
 
