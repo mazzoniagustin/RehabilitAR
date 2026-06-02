@@ -1,6 +1,6 @@
 from datetime import date
 
-from database import supabase
+from database import supabase_admin
 from fastapi import HTTPException
 
 MAX_MONTHLY_CREDITS = 3
@@ -24,12 +24,22 @@ def _history_payload(user_id: str, type_: str, reason: str, reservation_id=None,
     return payload
 
 
+def _client():
+    if not supabase_admin:
+        raise HTTPException(
+            status_code=500,
+            detail="Falta configurar SUPABASE_SERVICE_ROLE_KEY para gestionar beneficios."
+        )
+    return supabase_admin
+
+
 def _get_or_create_credit_row(user_id: str):
     user_id = str(user_id)
     current_month = _current_month()
+    client = _client()
 
     response = (
-        supabase.table("credits")
+        client.table("credits")
         .select("id, available_credits, used_credits, month")
         .eq("user_id", user_id)
         .limit(1)
@@ -38,7 +48,7 @@ def _get_or_create_credit_row(user_id: str):
 
     if not response.data:
         created = (
-            supabase.table("credits")
+            client.table("credits")
             .insert({
                 "user_id": user_id,
                 "available_credits": 0,
@@ -52,7 +62,7 @@ def _get_or_create_credit_row(user_id: str):
     credit = response.data[0]
     if credit.get("month") != current_month:
         updated = (
-            supabase.table("credits")
+            client.table("credits")
             .update({
                 "available_credits": 0,
                 "used_credits": 0,
@@ -73,7 +83,7 @@ def _get_or_create_credit_row(user_id: str):
 
 def _get_credit_row(user_id: str):
     response = (
-        supabase.table("credits")
+        _client().table("credits")
         .select("id, available_credits, used_credits, month")
         .eq("user_id", str(user_id))
         .limit(1)
@@ -98,13 +108,13 @@ def otorgar_credito(
 
         new_available = available + 1
         (
-            supabase.table("credits")
+            _client().table("credits")
             .update({"available_credits": new_available, "month": _current_month()})
             .eq("user_id", user_id)
             .execute()
         )
 
-        supabase.table("credits_history").insert(
+        _client().table("credits_history").insert(
             _history_payload(user_id, "CREDITO_OTORGADO", reason, reservation_id, class_id)
         ).execute()
 
@@ -135,7 +145,7 @@ def retirar_credito(
             raise HTTPException(status_code=400, detail="No hay créditos disponibles para retirar.")
 
         (
-            supabase.table("credits")
+            _client().table("credits")
             .update({
                 "available_credits": available - 1,
                 "used_credits": used + 1,
@@ -145,7 +155,7 @@ def retirar_credito(
             .execute()
         )
 
-        supabase.table("credits_history").insert(
+        _client().table("credits_history").insert(
             _history_payload(user_id, "CREDITO_RETIRADO", reason, reservation_id, class_id)
         ).execute()
 
@@ -175,13 +185,13 @@ def retirar_Todoscredito(
             return {"message": "Sin créditos que retirar.", "removed": False}
 
         (
-            supabase.table("credits")
+            _client().table("credits")
             .update({"available_credits": 0, "month": _current_month()})
             .eq("user_id", user_id)
             .execute()
         )
 
-        supabase.table("credits_history").insert(
+        _client().table("credits_history").insert(
             _history_payload(user_id, "CREDITOS_RETIRADOS_TODOS", reason, reservation_id, class_id)
         ).execute()
 
@@ -196,7 +206,7 @@ def retirar_Todoscredito(
 def _update_active_subscription_discount(user_id: str, discount_percentage: int):
     user_id = str(user_id)
     response = (
-        supabase.table("subscriptions")
+        _client().table("subscriptions")
         .select("id")
         .eq("user_id", user_id)
         .eq("status", "ACTIVA")
@@ -208,7 +218,7 @@ def _update_active_subscription_discount(user_id: str, discount_percentage: int)
 
     subscription_id = response.data[0]["id"]
     (
-        supabase.table("subscriptions")
+        _client().table("subscriptions")
         .update({"discount_percentage": discount_percentage})
         .eq("id", subscription_id)
         .execute()

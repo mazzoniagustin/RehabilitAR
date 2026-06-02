@@ -1,6 +1,6 @@
 from fastapi import HTTPException
 from utils.permissions import check_user_existance
-from database import supabase
+from database import supabase, supabase_admin
 
 #Aplicacion de las reglas de negocio.
 
@@ -89,10 +89,17 @@ def recover_password(email):
 
 def reset_password(token, password):
     try:
+        if not supabase_admin:
+            raise HTTPException(
+                status_code=500,
+                detail='Falta configurar SUPABASE_SERVICE_ROLE_KEY para actualizar contraseñas.'
+            )
         user_response = supabase.auth.get_user(token)
         user_id = user_response.user.id
-        supabase.auth.admin.update_user_by_id(user_id, {'password': password})
+        supabase_admin.auth.admin.update_user_by_id(user_id, {'password': password})
         return {'Mensaje': 'Contraseña actualizada exitosamente.'}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=f'Error al actualizar la contraseña: {str(e)}')
 

@@ -2,15 +2,24 @@ from fastapi import HTTPException
 from utils.notifications import send_account_created_email
 from utils.password_utils import random_password
 from utils.permissions import check_user_existance
-from database import supabase
+from database import supabase, supabase_admin
 #Aplicacion de las reglas de negocio.
+
+
+def _auth_admin_client():
+    if not supabase_admin:
+        raise HTTPException(
+            status_code=500,
+            detail='Falta configurar SUPABASE_SERVICE_ROLE_KEY para crear usuarios desde administración.'
+        )
+    return supabase_admin
  
 def register_user_by_staff(data):
     try:
         check_user_existance(data.email) 
         
         password = random_password()   
-        auth_response = supabase.auth.admin.create_user({
+        auth_response = _auth_admin_client().auth.admin.create_user({
             'email': data.email, 
             'password': password
         })
@@ -20,7 +29,7 @@ def register_user_by_staff(data):
             raise HTTPException(status_code=400, detail='Error en el registro del usuario.')
  
         user_id = auth_response.user.id
-        supabase.auth.admin.update_user_by_id(user_id, {'email_confirm': True})
+        _auth_admin_client().auth.admin.update_user_by_id(user_id, {'email_confirm': True})
         
         supabase.table('users').insert({
             'id': user_id,
@@ -52,7 +61,7 @@ def register_employee_by_admin(data):
             raise HTTPException(status_code=400, detail='La especialidad es obligatoria para recepcionistas y profesores.')
  
         password = random_password()
-        response = supabase.auth.admin.create_user({
+        response = _auth_admin_client().auth.admin.create_user({
             'email': data.email,
             'password': password
         })
@@ -61,7 +70,7 @@ def register_employee_by_admin(data):
             raise HTTPException(status_code=400, detail='Error en el registro del empleado.')
  
         user_id = response.user.id
-        supabase.auth.admin.update_user_by_id(user_id, {'email_confirm': True})
+        _auth_admin_client().auth.admin.update_user_by_id(user_id, {'email_confirm': True})
         
         supabase.table('users').insert({
             'id': user_id,
