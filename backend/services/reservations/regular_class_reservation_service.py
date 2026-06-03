@@ -1,5 +1,7 @@
 from database import supabase
 from fastapi import HTTPException
+from services.cancellations.classes_cancellation_service import asegurar_clase_reservable_con_profesor
+from services.reservations.overlap_validator import validate_user_has_no_overlapping_class
 from services.reservations import waitlist_service
 
 
@@ -22,6 +24,8 @@ def reservar_clase_fija(user_id: str, class_id: str, payment_percentage: int = 1
 
         if clase['type'] != 'FIJA':
             raise HTTPException(status_code=400, detail='Esta clase no es fija.')
+
+        asegurar_clase_reservable_con_profesor(class_id, clase)
 
         user_response = (
             supabase.table('users')
@@ -51,6 +55,8 @@ def reservar_clase_fija(user_id: str, class_id: str, payment_percentage: int = 1
         )
         if existing_active.data:
             raise HTTPException(status_code=400, detail='Ya tenés una reserva para esta clase.')
+
+        validate_user_has_no_overlapping_class(user_id, class_id, clase)
 
         if clase['current_capacity'] >= clase['max_capacity']:
             return waitlist_service.unirse_a_waitlist(user_id, class_id)

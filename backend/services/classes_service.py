@@ -307,6 +307,9 @@ def create_fija_class(data):
 
 def list_active_classes(user_id: str = None):
     try:
+        from services.cancellations.classes_cancellation_service import cancelar_clases_sin_profesor
+        cancelar_clases_sin_profesor()
+
         response = (
             supabase.table('classes')
             .select('*, rooms(id, name, capacity)')

@@ -7,10 +7,9 @@ from fastapi import APIRouter, Request
 from services.reservations.individual_class_reservation_service import reservar_clase_individual
 from services.reservations.regular_class_reservation_service import reservar_clase_fija
 
+from services.subscriptions_service import ensure_active_subscription
 
 load_dotenv()
-
-
 routerMPWebhook = APIRouter(
     prefix="/mp",
     tags=["Mercado Pago Webhook"]

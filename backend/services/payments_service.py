@@ -10,6 +10,7 @@ from services.reservations.regular_class_reservation_service import reservar_cla
 import requests
 import os
 from dotenv import load_dotenv
+from services.subscriptions_service import get_active_subscription
 
 load_dotenv()
 
@@ -124,14 +125,16 @@ def pay_reservation(user_id, class_id, class_type, payment_percentage):
 
 def pay_subscription(user_id):
     user_response = supabase.table("users") \
-        .select("rol") \
+        .select("id") \
         .eq("id", user_id) \
         .single() \
         .execute()
+    if not user_response.data:
+        return {
+            "Error": "Usuario no encontrado."
+        }
 
-    rol = user_response.data["rol"]
-
-    if rol == "ABONADO":
+    if get_active_subscription(user_id):
         return {
             "Error": "Ya sos cliente abonado. No podés volver a pagar la mensualidad."
         }
@@ -207,4 +210,3 @@ def pay_with_MP():
 
 def pay_with_cash():
     print()
-
