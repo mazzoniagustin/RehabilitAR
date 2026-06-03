@@ -52,12 +52,14 @@ async def mp_webhook(request: Request):
         print("PAYMENT ROW ID:", payment_row_id)
         print("PAYMENT DB:", payment)
         print("PAYMENT REASON:", payment["payment_reason"])
-        supabase.table("payments").update({
+        update_payment = supabase.table("payments").update({
             "status": "PAGADO",
-            "paid_at": datetime.now().isoformat(),
-            "payment_method": "MERCADO_PAGO",
-            "external_id": payment_id
-        }).eq("id", payment_row_id).execute()
+                "paid_at": datetime.now().isoformat(),
+                "payment_method": "MERCADO_PAGO",
+                "external_id": payment_id
+            }).eq("id", payment_row_id).execute()
+
+        print("UPDATE PAYMENT:", update_payment.data)
 
 
         if payment["payment_reason"] == "SUBSCRIPTION":
