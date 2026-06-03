@@ -1,5 +1,6 @@
 from database import supabase
 from fastapi import HTTPException
+from services.cancellations.classes_cancellation_service import asegurar_clase_reservable_con_profesor
 from services.reservations.overlap_validator import validate_user_has_no_overlapping_class
 
 
@@ -14,13 +15,15 @@ def unirse_a_waitlist(user_id: str, class_id: str):
         user_id = str(user_id)
         class_id = str(class_id)
 
-        clase_response = supabase.table('classes').select('id, type, status, current_capacity, max_capacity, start_time, end_time').eq('id', class_id).single().execute()
+        clase_response = supabase.table('classes').select('id, type, status, professor_id, current_capacity, max_capacity, start_time, end_time').eq('id', class_id).single().execute()
         if not clase_response.data:
             raise HTTPException(status_code=404, detail='Clase no encontrada.')
         clase = clase_response.data
 
         if clase['status'] != 'PROGRAMADA':
             raise HTTPException(status_code=400, detail='No se puede unirse a la lista de espera de una clase que no está programada.')
+
+        asegurar_clase_reservable_con_profesor(class_id, clase)
 
         if clase['current_capacity'] < clase['max_capacity']:
             raise HTTPException(
