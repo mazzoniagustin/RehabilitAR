@@ -1,8 +1,8 @@
 from database import supabase
 from datetime import datetime
-from dateutil.relativedelta import relativedelta
 from fastapi import APIRouter, Request
 from services.mp_service import sdk
+from services.subscriptions_service import ensure_active_subscription
 
 routerMPWebhook = APIRouter(
     prefix="/mp",
@@ -32,19 +32,11 @@ async def mp_webhook(request: Request):
         debt_id = metadata.get("debt_id")
         if status == "approved":
             if payment_type == "SUBSCRIPTION":
-                supabase.table("subscriptions").insert({
-                    "used_id": user_id,
-                    "status": "ACTIVA",
-                    "start_date": datetime.now().date().isoformat(),
-                    "end_date": (datetime.now() + relativedelta(months=1)).date().isoformat(),
-                    "monthly_price": payment_data.get("transaction_amount"),
-                    "discount_percentage": 0,
-                    "payment_deadline": datetime.now().date().isoformat()
-                }).execute()
-
-                supabase.table("users").update({
-                    "rol": "ABONADO"
-                }).eq("id", user_id).execute()
+                ensure_active_subscription(
+                    user_id,
+                    monthly_price=payment_data.get("transaction_amount"),
+                    activate_user=True,
+                )
 
                 print("Suscripción activada correctamente")
             elif payment_type == "DEBT":

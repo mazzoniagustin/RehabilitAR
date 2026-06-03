@@ -4,6 +4,7 @@ from datetime import datetime
 from database import supabase
 from io import BytesIO
 from services.mp_service import sdk
+from services.subscriptions_service import get_active_subscription
 
 
 def create_payment(items, user_id, payment_type = None, debt_id=None):
@@ -46,14 +47,16 @@ def pay_deposit():
 
 def pay_subscription(user_id):
     user_response = supabase.table("users") \
-        .select("rol") \
+        .select("id") \
         .eq("id", user_id) \
         .single() \
         .execute()
+    if not user_response.data:
+        return {
+            "Error": "Usuario no encontrado."
+        }
 
-    rol = user_response.data["rol"]
-
-    if rol == "ABONADO":
+    if get_active_subscription(user_id):
         return {
             "Error": "Ya sos cliente abonado. No podés volver a pagar la mensualidad."
         }
@@ -118,4 +121,3 @@ def pay_with_MP():
 
 def pay_with_cash():
     print()
-

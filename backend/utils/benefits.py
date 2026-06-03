@@ -2,6 +2,7 @@ from datetime import date
 
 from database import supabase_admin
 from fastapi import HTTPException
+from services.subscriptions_service import ensure_active_subscription
 
 MAX_MONTHLY_CREDITS = 3
 
@@ -214,18 +215,8 @@ def retirar_Todoscredito(
 
 def _update_active_subscription_discount(user_id: str, discount_percentage: int):
     user_id = str(user_id)
-    response = (
-        _client().table("subscriptions")
-        .select("id")
-        .eq("user_id", user_id)
-        .eq("status", "ACTIVA")
-        .limit(1)
-        .execute()
-    )
-    if not response.data:
-        raise HTTPException(status_code=404, detail="El usuario no tiene una suscripción activa.")
-
-    subscription_id = response.data[0]["id"]
+    subscription = ensure_active_subscription(user_id)
+    subscription_id = subscription["id"]
     (
         _client().table("subscriptions")
         .update({"discount_percentage": discount_percentage})
