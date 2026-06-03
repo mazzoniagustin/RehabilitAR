@@ -180,7 +180,7 @@ def upload_certificate(user_id: str, file: UploadFile):
     return {'message': 'Apto físico enviado.', 'status': 'PENDIENTE'}
 
     
-PUBLIC_FIELDS = 'id, name, surname, rol, gender'
+PUBLIC_FIELDS = 'id, name, surname, rol, gender, specialty'
 
 def search_users_public(name: str = None, role: str = None):
     try:
@@ -230,7 +230,8 @@ def show_user_public_info(user_id: str):
             'surname': base.get('surname'),
             'rol': base.get('rol'),
             'gender': base.get('gender'),
-            'age': age
+            'age': age,
+            'specialty': base.get('specialty')
         }
         
         return base
@@ -260,16 +261,23 @@ def show_user_admin_info(user_id: str):
             age = today.year - born.year - ((today.month, today.day) < (born.month, born.day))
         
 
-        credits_list = data.pop('credits', []) or []
-        date_now = datetime.now()
-        current = next (
-            (c for c in credits_list 
-            if c.get('month') and 
-            datetime.fromisoformat(str(c['month'])).month == date_now.month and
-            datetime.fromisoformat(str(c['month'])).year == date_now.year),
-            None
-        )
-        data['available_credits'] = current.get('available_credits') if current else 0
+        credits_raw = data.pop('credits', None)
+        date_now = datetime.now()  # ← mover acá arriba, fuera del elif
+
+        if isinstance(credits_raw, dict):
+            data['available_credits'] = credits_raw.get('available_credits', 0)
+        elif isinstance(credits_raw, list):
+            credits_list = [c for c in credits_raw if isinstance(c, dict)]
+            current = next(
+                (c for c in credits_list
+                if c.get('month') and
+                datetime.fromisoformat(str(c['month'])).month == date_now.month and
+                datetime.fromisoformat(str(c['month'])).year == date_now.year),
+                None
+            )
+            data['available_credits'] = current.get('available_credits', 0) if current else 0
+        else:
+            data['available_credits'] = 0
         data['age'] = age
     
         return data
@@ -288,7 +296,8 @@ def request_unblock(user_id: str, reason):
             'previous_status': 'SUSPENDIDA',
             'new_status': 'SUSPENDIDA', 
             'reason': f'SOLICITUD DE DESBLOQUEO: {reason_text}',
-            'acted_by': user_id,
+            'request_status': 'PENDING',
+            'acted_by': None,
             #'created_at': datetime.now().isoformat(sep=' ', timespec='seconds') lo hace supabase automaticamente
         }).execute()
         return {'Mensaje': 'Solicitud enviada. Un administrador revisará tu caso.'}
