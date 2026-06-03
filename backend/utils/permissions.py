@@ -10,6 +10,8 @@ NAME_REGEX = re.compile(
     r"^[A-Za-zÁÉÍÓÚáéíóúÑñ]+(?: [A-Za-zÁÉÍÓÚáéíóúÑñ]+)*$"
 )
 
+SPECIALTY_REGEX = re.compile(r"^[A-Za-zÁÉÍÓÚáéíóúÑñ ]+$")
+
 security = HTTPBearer()
 SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET")
 ALGORITHM = "HS256"
@@ -87,6 +89,33 @@ def validate_person_name(value: str, field: str):
             detail=f'{field} inválido.'
         )
     return value
+
+def validate_reason(reason: str):
+    
+    if not reason or not reason.strip():
+        raise HTTPException(status_code=400, detail='El motivo es obligatorio.')
+    
+    reason = reason.strip()
+    
+    if re.fullmatch(r'[\W_]+', reason):
+        raise HTTPException(status_code=400, detail='Motivo inválido')
+    
+    if reason.isdigit():
+        raise HTTPException(status_code=400, detail='Motivo inválido')
+
+    return reason
+
+def validate_specialty(specialty: str):
+    
+    if not specialty or not specialty.strip():
+        raise HTTPException(status_code=400, detail='La especialidad es obligatoria para este rol.')
+
+    specialty = specialty.strip()
+    
+    if not SPECIALTY_REGEX.fullmatch(specialty):
+        raise HTTPException(status_code=400, detail='Especialidad inválida.')
+    
+    return specialty
 
 def user_data_validators(data):
     
