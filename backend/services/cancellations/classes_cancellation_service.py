@@ -193,7 +193,7 @@ def cancelar_si_corresponde_sin_profesor(class_id: str, clase: dict = None):
     class_id = str(class_id)
     if clase is None:
         clase = (
-            supabase.table('classes')
+            _client().table('classes')
             .select('id, status, professor_id, start_time')
             .eq('id', class_id)
             .single()
@@ -217,6 +217,36 @@ def asegurar_clase_reservable_con_profesor(class_id: str, clase: dict = None):
         )
 
 
+def sincronizar_reservas_de_clases_canceladas(user_id: str = None):
+    try:
+        query = (
+            _client().table('reservations')
+            .select('id, class_id, user_id, classes(status)')
+            .eq('status', 'CONFIRMADA')
+        )
+        if user_id:
+            query = query.eq('user_id', str(user_id))
+
+        reservas = query.execute()
+        class_ids = {
+            str(reserva['class_id'])
+            for reserva in (reservas.data or [])
+            if (reserva.get('classes') or {}).get('status') == 'CANCELADA'
+        }
+
+        for class_id in class_ids:
+            _cancelar_reservas_de_clase(
+                class_id,
+                'Cancelación de reserva por clase cancelada.',
+                tipo='AUTOMATICA'
+            )
+
+        return {'synced_count': len(class_ids), 'class_ids': list(class_ids)}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f'Error al sincronizar reservas de clases canceladas: {str(e)}')
+
+
 def cancelar_clases_sin_profesor():
     """
     Cancela todas las clases programadas sin profesor que comienzan dentro
@@ -227,7 +257,7 @@ def cancelar_clases_sin_profesor():
         limite = ahora + timedelta(hours=12)
 
         clases = (
-            supabase.table('classes')
+            _client().table('classes')
             .select('id')
             .eq('status', 'PROGRAMADA')
             .is_('professor_id', None)
