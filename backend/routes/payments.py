@@ -1,6 +1,7 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from services.payments_service import *
 from pydantic import BaseModel
+from utils.permissions import check_permission
 
 routerPayments = APIRouter(
     prefix="/payments",
@@ -13,6 +14,11 @@ class DebtRequest(BaseModel):
     user_id: str
     debt_id: str
     amount: float
+
+class ReservationPaymentRequest(BaseModel):
+    class_id: str
+    class_type: str
+    payment_percentage: int
 
 @routerPayments.post("/subscription")
 def subscription_payment(data: SubscriptionRequest):
@@ -30,3 +36,45 @@ def debts(user_id: str):
 @routerPayments.post("/debt")
 def debt_payment(data: DebtRequest):
     return pay_debt(data.user_id, data.debt_id, data.amount)
+
+@routerPayments.get("/subscription/status/{user_id}")
+def subscription_status(user_id: str):
+    res = supabase.table("users") \
+        .select("rol") \
+        .eq("id", user_id) \
+        .single() \
+        .execute()
+
+    return {
+        "is_subscribed": res.data["rol"] == "ABONADO",
+        "rol": res.data["rol"]
+    }
+
+@routerPayments.get("/debt/status/{debt_id}")
+def debt_status(debt_id: str):
+    res = supabase.table("payments") \
+        .select("status") \
+        .eq("id", debt_id) \
+        .single() \
+        .execute()
+
+    return {
+        "is_paid": res.data["status"] == "PAGADO",
+        "status": res.data["status"]
+    }
+
+
+
+
+@routerPayments.post("/reservation")
+def reservation_payment(data: ReservationPaymentRequest, current_user=Depends(check_permission(['NO_ABONADO', 'ABONADO']))):
+    return pay_reservation(
+        current_user["id"],
+        data.class_id,
+        data.class_type,
+        data.payment_percentage
+    )  
+
+@routerPayments.get("/reservation/status/{payment_id}")
+def reservation_status(payment_id: str):
+    return check_reservation_payment_status(payment_id)

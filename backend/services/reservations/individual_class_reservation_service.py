@@ -61,7 +61,7 @@ def reservar_clase_individual(user_id: str, class_id: str, payment_percentage: i
         if clase['current_capacity'] >= clase['max_capacity']:
             return waitlist_service.unirse_a_waitlist(user_id, class_id)
 
-        payment_status = 'SENADO_50' if payment_percentage == 50 else 'PENDIENTE'
+        payment_status = 'SENADO_50' if payment_percentage == 50 else 'PAGADO'
 
         existing_cancelled = (
             supabase.table('reservations')
@@ -97,13 +97,34 @@ def reservar_clase_individual(user_id: str, class_id: str, payment_percentage: i
             'current_capacity': clase['current_capacity'] + 1
         }).eq('id', class_id).execute()
 
+        reservation_response = (
+            supabase.table('reservations')
+            .select('id')
+            .eq('user_id', user_id)
+            .eq('class_id', class_id)
+            .eq('status', 'CONFIRMADA')
+            .single()
+            .execute()
+        )
+        reservation_id = reservation_response.data['id']
+
+        supabase.table('payments').insert({
+            'user_id': user_id,
+            'reservation_id': reservation_id,
+            'amount': float(clase['price']) * 0.5,
+            'status': 'PENDIENTE',
+            'payment_reason': 'DEBT',
+            'payment_type': 'RESERVATION_REMAINING'
+        }).execute()
+            
         supabase.table('users').update({
             'total_reservations_count': user['total_reservations_count'] + 1
         }).eq('id', user_id).execute()
-
-        if payment_percentage == 50:
-            return {'message': 'Inscripción exitosa. Debe pagar el 50% restante antes de la clase.'}
-        return {'message': 'Inscripción exitosa.'}
+            
+        return {
+            'message': 'Reserva generada. Escaneá el QR para completar el pago.',
+            'reservation_id': reservation_id,
+        }
 
     except HTTPException:
         raise

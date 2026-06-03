@@ -8,6 +8,11 @@ const clearAuth = () => { localStorage.removeItem('token'); localStorage.removeI
 const authH     = () => ({ 'Content-Type': 'application/json', 'Authorization': `Bearer ${getToken()}` });
 const setUser   = u  => localStorage.setItem('currentUser', JSON.stringify(u));
 const getUser   = () => JSON.parse(localStorage.getItem('currentUser') || 'null');
+let subscriptionCheckInterval = null;
+let debtCheckInterval = null;
+let pendingReservationClassId = null;
+let pendingReservationClassType = null;
+let reservationCheckInterval = null;
 
 function getAge(birthDateStr) {
   const today = new Date();
@@ -1500,20 +1505,85 @@ async function assignProfessorToClass(classId) {
   }
 }
 
-async function reserveClass(classId, classType) {
-  try {
-    const isFija = classType === 'FIJA';
-    const url  = isFija ? `${API}/reservations/regular` : `${API}/reservations/individual`;
-    const body = isFija
-      ? { class_id: classId }
-      : { class_id: classId, payment_percentage: 100 }; // payment_percentage: pendiente módulo de pagos
+function reserveClass(classId, classType) {
+  pendingReservationClassId = classId;
+  pendingReservationClassType = classType;
 
-    const res  = await fetch(url, { method: 'POST', headers: authH(), body: JSON.stringify(body) });
+  document.getElementById('reservationPaymentAlert').className = 'alert';
+  document.getElementById('reservationPaymentModal').classList.add('open');
+}
+
+function closeReservationPaymentModal() {
+  document.getElementById('reservationPaymentModal').classList.remove('open');
+  pendingReservationClassId = null;
+  pendingReservationClassType = null;
+}
+
+async function confirmReservationPayment(paymentPercentage) {
+  try {
+    const payRes = await fetch(`${API}/payments/reservation`, {
+      method: 'POST',
+      headers: authH(),
+      body: JSON.stringify({
+        class_id: pendingReservationClassId,
+        class_type: pendingReservationClassType,
+        payment_percentage: paymentPercentage
+      })
+    });
+
+    const payData = await payRes.json();
+
+    if (!payRes.ok) {
+      return showAlert(
+        'reservationPaymentAlert',
+        payData.detail || 'No se pudo generar el QR.'
+      );
+    }
+
+    closeReservationPaymentModal();
+
+    document.getElementById('paymentQrTitle').textContent = 'Pagar reserva';
+    document.getElementById('paymentQrSubtitle').textContent =
+      `Escaneá el QR con Mercado Pago para abonar el ${paymentPercentage}% de la reserva.`;
+    document.getElementById('paymentQrImage').src = payData.qr_url;
+    document.getElementById('paymentQrModal').classList.add('open');
+
+    startReservationStatusCheck(payData.payment_id);
+
+  } catch (error) {
+    console.error(error);
+    showAlert('reservationPaymentAlert', 'No se pudo conectar con el servidor.');
+  }
+}
+
+function startReservationStatusCheck(paymentId) {
+  if (reservationCheckInterval) clearInterval(reservationCheckInterval);
+
+  reservationCheckInterval = setInterval(async () => {
+    const res = await fetch(`${API}/payments/reservation/status/${paymentId}`, {
+      headers: authH()
+    });
+
     const data = await res.json();
-    if (!res.ok) return showAlert('clasesAlert', typeof data.detail === 'string' ? data.detail : 'Error al reservar.');
-    showAlert('clasesAlert', data.message || '¡Reserva realizada!', 'success');
-    loadClases();
-  } catch { showAlert('clasesAlert', 'No se pudo conectar.'); }
+
+    console.log("Estado pago:", data);
+
+    if (data.is_paid) {
+      clearInterval(reservationCheckInterval);
+      reservationCheckInterval = null;
+
+      closePaymentQrModal();
+
+      showAlert(
+        'clasesAlert',
+        'Inscripción exitosa. El pago fue acreditado correctamente.',
+        'success'
+      );
+
+      loadClases();
+      loadReservas();
+    }
+  }, 3000);
 }
 
 async function joinWaitlist(classId) {
@@ -2561,6 +2631,7 @@ async function paySubscription() {
     document.getElementById('paymentQrSubtitle').textContent = 'Escaneá el QR con Mercado Pago para abonar la mensualidad.';
     document.getElementById('paymentQrImage').src = data.qr_url;
     document.getElementById('paymentQrModal').classList.add('open');
+    startSubscriptionStatusCheck(user.id);
 
   } catch (error) {
 
@@ -2573,9 +2644,62 @@ async function paySubscription() {
   } 
 }
 
+function startSubscriptionStatusCheck(userId) {
+  if (subscriptionCheckInterval) {
+    clearInterval(subscriptionCheckInterval);
+  }
+
+  subscriptionCheckInterval = setInterval(async () => {
+    try {
+      const res = await fetch(`${API}/payments/subscription/status/${userId}`, {
+        headers: authH()
+      });
+
+      const data = await res.json();
+
+      if (data.is_subscribed) {
+        clearInterval(subscriptionCheckInterval);
+        subscriptionCheckInterval = null;
+
+        closePaymentQrModal();
+
+        const user = getUser();
+        user.rol = "ABONADO";
+        setUser(user);
+
+        showAlert(
+          'pagosAlert',
+          'Pago registrado correctamente. Ahora sos cliente abonado.',
+          'success'
+        );
+
+        setTimeout(() => {
+          location.reload();
+        }, 1500);
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  }, 3000);
+}
 function closePaymentQrModal() {
   document.getElementById('paymentQrModal').classList.remove('open');
+
+  if (subscriptionCheckInterval) {
+    clearInterval(subscriptionCheckInterval);
+    subscriptionCheckInterval = null;
+  }
+
+  if (debtCheckInterval) {
+    clearInterval(debtCheckInterval);
+    debtCheckInterval = null;
+  }
+  if (reservationCheckInterval) {
+    clearInterval(reservationCheckInterval);
+    reservationCheckInterval = null;
+  }
 }
+
 async function loadDebts() {
   const user = getUser();
 
@@ -2660,7 +2784,41 @@ async function payDebt(debtId, amount) {
   document.getElementById('paymentQrSubtitle').textContent = 'Escaneá el QR con Mercado Pago para abonar tu deuda.';
   document.getElementById('paymentQrImage').src = data.qr_url;
   document.getElementById('paymentQrModal').classList.add('open');
+  startDebtStatusCheck(debtId);
 }
+function startDebtStatusCheck(debtId) {
+  if (debtCheckInterval) {
+    clearInterval(debtCheckInterval);
+  }
+
+  debtCheckInterval = setInterval(async () => {
+    try {
+      const res = await fetch(`${API}/payments/debt/status/${debtId}`, {
+        headers: authH()
+      });
+
+      const data = await res.json();
+
+      if (data.is_paid) {
+        clearInterval(debtCheckInterval);
+        debtCheckInterval = null;
+
+        closePaymentQrModal();
+
+        showAlert(
+          'pagosAlert',
+          'Pago registrado correctamente. La deuda fue saldada.',
+          'success'
+        );
+
+        loadDebts();
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  }, 3000);
+}
+
 // LOGOUT
 
 async function handleLogout() {

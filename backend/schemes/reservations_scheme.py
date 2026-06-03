@@ -7,6 +7,7 @@ class IndividualReservation(BaseModel):
 
 class RegularReservation(BaseModel):
     class_id: UUID
+    payment_percentage: int = 100
 
 class WaitlistJoin(BaseModel):
     class_id: UUID

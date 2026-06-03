@@ -711,6 +711,30 @@
     >
   </div>
 </div>
+<div class="modal-overlay" id="reservationPaymentModal">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-header">
+      <h3>Elegir forma de pago</h3>
+      <button class="modal-close" onclick="closeReservationPaymentModal()">✕</button>
+    </div>
+
+    <div id="reservationPaymentAlert" class="alert"></div>
+
+    <p style="color:var(--muted);font-size:.9rem;margin-bottom:18px">
+      Seleccioná cómo querés pagar la reserva.
+    </p>
+
+    <div style="display:flex;gap:12px;flex-wrap:wrap">
+      <button class="btn" onclick="confirmReservationPayment(50)">
+        Pagar 50%
+      </button>
+
+      <button class="btn" onclick="confirmReservationPayment(100)">
+        Pagar 100%
+      </button>
+    </div>
+  </div>
+</div>
 
 <div class="modal-overlay" id="attendanceModal">
   <div class="modal" style="max-width:720px">

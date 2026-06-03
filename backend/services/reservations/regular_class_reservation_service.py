@@ -3,7 +3,7 @@ from fastapi import HTTPException
 from services.reservations import waitlist_service
 
 
-def reservar_clase_fija(user_id: str, class_id: str):
+def reservar_clase_fija(user_id: str, class_id: str, payment_percentage: int = 100):
     try:
         # Normalizar a str por si llegan como objetos UUID desde Pydantic
         user_id = str(user_id)
@@ -39,7 +39,8 @@ def reservar_clase_fija(user_id: str, class_id: str):
                 status_code=403,
                 detail='Reserva fallida, no se encuentra habilitado para tomar la clase.'
             )
-
+        if user['rol'] != 'ABONADO' and payment_percentage not in (50, 100):
+            raise HTTPException(status_code=400, detail='El porcentaje de pago debe ser 50 o 100.')
         existing_active = (
             supabase.table('reservations')
             .select('id, status')
@@ -54,7 +55,7 @@ def reservar_clase_fija(user_id: str, class_id: str):
         if clase['current_capacity'] >= clase['max_capacity']:
             return waitlist_service.unirse_a_waitlist(user_id, class_id)
 
-        payment_status = 'PAGADO' if user['rol'] == 'ABONADO' else 'PENDIENTE'
+        payment_status = 'PAGADO' if user['rol'] == 'ABONADO' else ('SENADO_50' if payment_percentage == 50 else 'PAGADO')
 
         existing_cancelled = (
             supabase.table('reservations')
@@ -90,7 +91,22 @@ def reservar_clase_fija(user_id: str, class_id: str):
             'current_capacity': clase['current_capacity'] + 1
         }).eq('id', class_id).execute()
 
-        return {'message': 'Inscripción exitosa.'}
+        reservation_response = (
+            supabase.table('reservations')
+            .select('id')
+            .eq('user_id', user_id)
+            .eq('class_id', class_id)
+            .eq('status', 'CONFIRMADA')
+            .single()
+            .execute()
+        )
+
+        reservation_id = reservation_response.data['id']
+
+        return {
+            'message': 'Reserva generada. Escaneá el QR para completar el pago.',
+            'reservation_id': reservation_id,
+        }
 
     except HTTPException:
         raise
