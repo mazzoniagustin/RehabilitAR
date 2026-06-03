@@ -198,8 +198,8 @@ function onPanelShow(panel) {
 }
 // CARGA DEL DASHBOARD
 const STAT_MAPS = {
-  NO_ABONADO:    [{ label:'Reservas totales', key:'total_reservations' }, { label:'Ausencias', key:'total_absences' }],
-  ABONADO:       [{ label:'Reservas totales', key:'total_reservations' }, { label:'Ausencias', key:'total_absences' }, { label:'Créditos disponibles', key:'credits' }],
+  NO_ABONADO:    [{ label:'Reservas actuales', key:'total_reservations' }, { label:'Ausencias', key:'total_absences' }],
+  ABONADO:       [{ label:'Reservas actuales', key:'total_reservations' }, { label:'Ausencias', key:'total_absences' }, { label:'Créditos disponibles', key:'credits' }],
   ADMINISTRATIVO:[{ label:'Usuarios registrados', key:'total_users' }],
   RECEPCIONISTA: [{ label:'Usuarios registrados', key:'total_users' }],
   PROFESOR:      [{ label:'Clases dictadas', key:'total_classes' }],
