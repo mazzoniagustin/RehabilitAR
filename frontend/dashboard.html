@@ -391,11 +391,12 @@
         <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> 
         Pendientes
       </h3>
+      <div id="certsAlert" class="alert"></div>
       <div id="pendingCertsContainer">
         <div class="empty-state"><p>Cargando...</p></div>
       </div>
     </div>
-  </div>
+    </div>
 
 
   <div class="panel" id="panelSolicitudes">
@@ -533,9 +534,33 @@
     </div>
     <p>El usuario será notificado y no podrá acceder al sistema hasta ser reactivado.</p>
     <div class="form-group"><label>Motivo de la suspensión</label><input type="text" id="blockReason" placeholder="Ej: Inasistencia superior al 50%"/></div>
+    <div id="blockModalAlert" class="alert" style="display:none"></div>
     <div class="modal-actions">
       <button class="btn btn-sm btn-danger" onclick="confirmBlock()">Suspender</button>
       <button class="btn btn-sm btn-outline" onclick="closeBlockModal()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Reactivar usuario -->
+<div class="modal-overlay" id="unblockModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="unblockModalTitle">Reactivar usuario</h3>
+      <button class="modal-close" onclick="closeUnblockModal()">✕</button>
+    </div>
+
+    <p>¿Desea reactivar la cuenta?.</p>
+
+    <div id="unblockModalAlert" class="alert" style="display:none"></div>
+
+    <div class="modal-actions">
+      <button class="btn btn-sm" onclick="unblockUser()">
+        Reactivar
+      </button>
+      <button class="btn btn-sm btn-outline" onclick="closeUnblockModal()">
+        Cancelar
+      </button>
     </div>
   </div>
 </div>
