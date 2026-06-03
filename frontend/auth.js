@@ -148,6 +148,9 @@ async function handleRegister() {
     return showAlert('alertBox', 'Completá todos los campos obligatorios.');
   if (body.password.length < 6)
     return showAlert('alertBox', 'La contraseña debe tener al menos 6 caracteres.');
+  if (body.dni.length < 6)
+    return showAlert('alertBox', 'El DNI debe tener al menos 6 dígitos.');
+
 
   setLoading('registerBtn', true, 'Crear cuenta');
   try {
