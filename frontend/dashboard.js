@@ -1776,7 +1776,7 @@ function renderUsersTable(data, isAdmin) {
             ${isAdmin
               ? (u.account_status === 'ACTIVA'
                   ? `<button class="action-btn danger" onclick="openBlockModal('${u.id}','${u.name} ${u.surname}')">Suspender</button>`
-                  : `<button class="action-btn success" onclick="unblockUser('${u.id}')">Reactivar</button>`)
+                  : `<button class="action-btn success" onclick="openUnblockModal('${u.id}', '${u.name} ${u.surname}')">Reactivar cuenta</button>`)
               : ''}
           </td>
         </tr>`).join('')}
@@ -1821,14 +1821,14 @@ async function openUserProfile(userId) {
         ['Dirección',    u.address      || '—'],
         ...(!isEmp ? [['Apto físico', badge(u.physical_certificate, CERT_LABELS)]] : []),
         ...(ROLES_WITH_SPECIALTY.includes(u.rol) ? [['Especialidad', u.specialty || '—']] : []),
-        ...(u.rol === 'ABONADO' ? [['Créditos', `${u.credits ?? 0}/3`]] : []),
+        ...(u.rol === 'ABONADO' ? [['Créditos', `${u.available_credits ?? 0}/3`]] : []),
       ];
 
       const actions = document.getElementById('modalActions');
 
       const suspendBtn = u.account_status === 'ACTIVA'
         ? `<button class="btn btn-sm btn-danger" onclick="closeUserModal();openBlockModal('${u.id}','${u.name} ${u.surname}')">Suspender cuenta</button>`
-        : `<button class="btn btn-sm" onclick="unblockFromModal('${u.id}')">Reactivar cuenta</button>`;
+        : `<button class="btn btn-sm" onclick="openUnblockModal('${u.id}', '${u.name} ${u.surname}')">Reactivar cuenta</button>`;
 
       actions.innerHTML = `
         ${suspendBtn}
@@ -1841,7 +1841,7 @@ async function openUserProfile(userId) {
         ['Rol',     badge(u.rol, ROL_LABELS)],
         ['Edad',    u.age ? `${u.age} años` : '—'],
         ['Género', u.gender || '—'],
-        ...(u.rol === 'ABONADO' ? [['Tipo', badge('ABONADO', ROL_LABELS)]] : []),
+        ...(ROLES_WITH_SPECIALTY.includes(u.rol) ? [['Especialidad', u.specialty || '—']] : []),
       ];
     }
 
@@ -1861,6 +1861,10 @@ async function openUserProfile(userId) {
 }
 
 const ROLES_WITH_SPECIALTY = ['RECEPCIONISTA', 'PROFESOR'];
+
+function roleRequiresSpecialty(role) {
+  return ROLES_WITH_SPECIALTY.includes(role);
+}
 
 function getEditableRoles(currentRole) {
   const all = ['RECEPCIONISTA', 'ADMINISTRATIVO', 'PROFESOR', 'NO_ABONADO'];
@@ -1956,19 +1960,25 @@ function cancelEditUser() {
 }
 
 async function saveUserProfile(userId) {
-  const roleEl = document.getElementById('editUserRole');
+  const name    = document.getElementById('editUserName')?.value.trim();
+  const surname = document.getElementById('editUserSurname')?.value.trim();
+  const phone   = document.getElementById('editUserPhone')?.value.trim()  || null;
+  const address = document.getElementById('editUserAddress')?.value.trim() || null;
+  const gender  = document.getElementById('editUserGender')?.value        || null;
+
+  const roleEl      = document.getElementById('editUserRole');
   const specialtyEl = document.getElementById('editUserSpecialty');
 
-  const newRole = roleEl?.value;
+  const newRole      = roleEl?.value;
   const originalRole = roleEl?.dataset.original;
+  const roleChanged  = newRole && newRole !== originalRole;
 
-  const roleChanged = newRole && newRole !== originalRole;
-  const requiresSpecialty = roleRequiresSpecialty(newRole);
+  
+  const specialtyVisible = specialtyEl && specialtyEl.offsetParent !== null;
 
-  if (roleChanged && requiresSpecialty) {
-    if (!specialtyEl || !specialtyEl.value.trim()) {
+  if (roleChanged && roleRequiresSpecialty(newRole)) {
+    if (!specialtyEl || !specialtyEl.value.trim())
       return showEditUserAlert('La especialidad es obligatoria para este rol.');
-    }
   }
 
   const body = {
@@ -1977,17 +1987,46 @@ async function saveUserProfile(userId) {
     phone,
     address,
     gender,
-    ...(roleChanged ? { rol: newRole } : {}),
-    ...(roleChanged && requiresSpecialty
-      ? { specialty: specialtyEl.value.trim() }
-      : {}),
+    ...(roleChanged      ? { rol: newRole }                                 : {}),
+    ...(specialtyVisible ? { specialty: specialtyEl.value.trim() || null }  : {}),
   };
 
-  const res = await fetch(`${API}/users/${userId}`, {
-    method: 'PUT',
-    headers: authH(),
-    body: JSON.stringify(body),
-  });
+  try {
+    const res  = await fetch(`${API}/users/${userId}`, {
+      method: 'PUT',
+      headers: authH(),
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+
+    if (!res.ok)
+      return showEditUserAlert(typeof data.detail === 'string' ? data.detail : 'Error al guardar.');
+
+  showEditUserAlert('Usuario actualizado correctamente.', 'success');
+
+
+  cancelEditUser();
+  await openUserProfile(userId);
+
+
+  const viewMode = document.getElementById('userViewMode');
+  if (viewMode) {
+    const banner = document.createElement('div');
+    banner.className = 'alert success';
+    banner.textContent = 'Usuario actualizado correctamente.';
+    banner.style.display = 'block';
+    banner.style.marginBottom = '12px';
+    viewMode.prepend(banner);
+  }
+
+  setTimeout(() => {
+    closeUserModal();
+    loadUsers();
+  }, 2500);
+
+  } catch {
+    showEditUserAlert('No se pudo conectar.');
+  }
 }
 
 function showEditUserAlert(msg, type = 'error') {
@@ -2000,23 +2039,55 @@ function showEditUserAlert(msg, type = 'error') {
 
 function closeUserModal() { document.getElementById('userProfileModal').classList.remove('open'); }
 
-async function unblockUser(userId) {
-  if (!confirm('¿Reactivar esta cuenta?')) return;
+let unblockTargetId = null;
+
+function openUnblockModal(userId, userName) {
+  unblockTargetId = userId;
+
+  document.getElementById('unblockModalTitle').textContent =
+    `Reactivar a ${userName}`;
+
+  const alert = document.getElementById('unblockModalAlert');
+  if (alert) alert.style.display = 'none';
+
+  document.getElementById('unblockModal').classList.add('open');
+}
+
+function closeUnblockModal() {
+  const modal = document.getElementById('unblockModal');
+  const alert = document.getElementById('unblockModalAlert');
+
+  modal.classList.remove('open');
+  if (alert) alert.style.display = 'none';
+
+  unblockTargetId = null;
+}
+
+
+async function unblockUser() {
+  if (!unblockTargetId) return;
   try {
-    const res  = await fetch(`${API}/staff/unblock_user/${userId}`, { method:'POST', headers:authH() });
-    if (!res.ok) return showAlert('usuariosAlert', typeof data.detail === 'string' ? data.detail : 'Error.');
+    const res  = await fetch(`${API}/staff/unblock_user/${unblockTargetId}`, { method:'POST', headers:authH() });
+    const data = await res.json();
+    if (!res.ok) return showUnblockModalAlert(typeof data.detail === 'string' ? data.detail : 'Error.');
+    closeUnblockModal();
     showAlert('usuariosAlert', 'Cuenta reactivada.', 'success');
     loadUsers();
   } catch (e) { 
     console.error(e);
-    showAlert('usuariosAlert', 'No se pudo conectar.'); 
+    showUnblockModalAlert('No se pudo conectar.'); 
   }
 }
 
-async function unblockFromModal(userId) {
-  closeUserModal();
-  await unblockUser(userId);
+function showUnblockModalAlert(msg, type = 'error') {
+  const el = document.getElementById('unblockModalAlert');
+  if (!el) return;
+
+  el.textContent = msg;
+  el.className = `alert ${type}`;
+  el.style.display = 'block';
 }
+
 function openBlockModal(userId, userName) {
   blockTargetId = userId;
   document.getElementById('blockModalTitle').textContent = `Suspender a ${userName}`;
@@ -2027,19 +2098,39 @@ function closeBlockModal() { document.getElementById('blockModal').classList.rem
 
 async function confirmBlock() {
   const reason = document.getElementById('blockReason').value.trim();
-  if (!reason) return showAlert('usuariosAlert', 'El motivo es obligatorio.');
+  if (!reason) return showBlockModalAlert('El motivo es obligatorio.');
   try {
-    const res  = await fetch(`${API}/staff/block_user/${blockTargetId}`, { method:'POST', headers:authH(), body:JSON.stringify({ reason }) });
-    if (!res.ok) return showAlert('usuariosAlert', typeof data.detail === 'string' ? data.detail : 'Error.');
+    const res  = await fetch(`${API}/staff/block_user/${blockTargetId}`, { 
+      method:'POST', 
+      headers:authH(), 
+      body:JSON.stringify({ reason }),
+    });
+    const data = await res.json();
+    if (!res.ok) return showBlockModalAlert(typeof data.detail === 'string' ? data.detail : 'Error.');
     closeBlockModal();
     showAlert('usuariosAlert', 'Usuario suspendido.', 'success');
     loadUsers();
   } catch (e){ 
     console.error(e);
-    showAlert('usuariosAlert', 'No se pudo conectar.'); 
+    showBlockModalAlert('No se pudo conectar.'); 
   }
 }
 
+function showBlockModalAlert(msg, type = 'error') {
+  const el = document.getElementById('blockModalAlert');
+  if (!el) return;
+  el.textContent = msg;
+  el.className = `alert ${type}`;
+  el.style.display = 'block';
+}
+
+function closeBlockModal() {
+  const modal = document.getElementById('blockModal');
+  const alert = document.getElementById('blockModalAlert');
+  modal.classList.remove('open');
+  if (alert) alert.style.display = 'none';
+  blockTargetId = null;
+}
 
 let rejectTargetId = null;
 
@@ -2110,10 +2201,17 @@ async function approveCert(userId) {
       body: JSON.stringify({ id: userId }) 
     });
     const data = await res.json();
-    if (!res.ok) return showAlert('usuariosAlert', typeof data.detail === 'string' ? data.detail : 'Error.');
-    showAlert('usuariosAlert', 'Apto físico aprobado.', 'success');
-    loadCertificados();
-  } catch { showAlert('usuariosAlert', 'No se pudo conectar.'); }
+    if (!res.ok) return showAlert('certsAlert', typeof data.detail === 'string' ? data.detail : 'Error.');
+
+    const certsAlert = document.getElementById('certsAlert');
+    certsAlert.textContent = 'Apto físico aprobado.';
+    certsAlert.className = 'alert success show';
+
+    setTimeout(() => {
+      certsAlert.classList.remove('show');
+      loadCertificados();
+    }, 2000);
+  } catch { showAlert('certsAlert', 'No se pudo conectar.'); }
 }
 
 function openRejectModal(userId) { rejectTargetId = userId; document.getElementById('rejectReason').value = ''; document.getElementById('rejectModal').classList.add('open'); }
@@ -2133,9 +2231,17 @@ async function confirmReject() {
     });
     const data = await res.json();
     if (!res.ok) return showAlert('rejectAlert', typeof data.detail === 'string' ? data.detail : 'Error.');
-    else showAlert('rejectAlert', 'Apto físico rechazado.', 'success');
     closeRejectModal();
-    loadCertificados();
+
+
+    const certsAlert = document.getElementById('certsAlert');
+    certsAlert.textContent = 'Apto físico rechazado.';
+    certsAlert.className = 'alert success show';
+
+    setTimeout(() => {
+      certsAlert.classList.remove('show');
+      loadCertificados();
+    }, 2000);
   } catch { showAlert('rejectAlert', 'No se pudo conectar.'); }
 }
 
@@ -2155,7 +2261,7 @@ async function loadSolicitudes() {
       <table class="data-table">
         <thead><tr><th>Usuario</th><th>Motivo del reclamo</th><th>Fecha</th><th>Acciones</th></tr></thead>
         <tbody>${data.map(s => {
-          // 💡 Limpiamos el texto acá en el Front para quitarle el prefijo feo
+
           const cleanReason = s.reason ? s.reason.replace('SOLICITUD DE DESBLOQUEO: ', '') : '—';
 
           return `
@@ -2190,44 +2296,8 @@ async function loadReactivacionPanel() {
 
   if (u.account_status !== 'SUSPENDIDA') {
     formEl.innerHTML = '<p style="color:var(--muted);font-size:.88rem">Tu cuenta está activa. No necesitás enviar una solicitud.</p>';
-    return;async function loadSolicitudes() {
-  const container = document.getElementById('solicitudesContainer');
-  container.innerHTML = '<div class="empty-state"><p>Cargando...</p></div>';
-  try {
-    const res  = await fetch(`${API}/staff/pending_unblocks`, { headers: authH() });
-    const data = await res.json();
-    if (!res.ok) { container.innerHTML = `<div class="empty-state"><p>${data.detail || 'Error.'}</p></div>`; return; }
-    if (!data.length) {
-      container.innerHTML = '<div class="empty-state"><svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg><p>No hay solicitudes pendientes</p></div>';
-      return;
-    }
-    container.innerHTML = `
-      <table class="data-table">
-        <thead><tr><th>Usuario</th><th>Motivo del reclamo</th><th>Fecha</th><th>Acciones</th></tr></thead>
-        <tbody>${data.map(s => {
-          // 💡 Limpiamos el texto acá en el Front para quitarle el prefijo feo
-          const cleanReason = s.reason ? s.reason.replace('SOLICITUD DE DESBLOQUEO: ', '') : '—';
-
-          return `
-          <tr>
-            <td>
-              <strong style="color:var(--teal-dim)">${s.name} ${s.surname}</strong>
-              <span style="display:block;font-size:.78rem;color:var(--muted)">${s.email || ''}</span>
-            </td>
-            <td style="font-size:.85rem">${cleanReason}</td>
-            <td style="font-size:.82rem;color:var(--muted)">${s.created_at ? new Date(s.created_at).toLocaleDateString('es-AR') : '—'}</td>
-            <td style="display:flex;gap:6px">
-              <button class="action-btn success" onclick="approveUnlock('${s.user_id}','${s.user_id}')">Aprobar</button>
-              <button class="action-btn danger"  onclick="openRejectUnlockModal('${s.user_id}','${s.user_id}')">Rechazar</button>
-            </td>
-          </tr>`;
-        }).join('')}
-        </tbody>
-      </table>`;
-  } catch { container.innerHTML = '<div class="empty-state"><p>No se pudo conectar.</p></div>'; }
-}
+    return;
   }
-
 }
 
 async function submitUnblockRequest() {
@@ -2261,7 +2331,10 @@ async function approveUnlock(userId) {
     const data = await res.json();
     if (!res.ok) return showAlert('solicitudesAlert', typeof data.detail === 'string' ? data.detail : 'Error.');
     showAlert('solicitudesAlert', 'Cuenta reactivada.', 'success');
-    loadSolicitudes();
+
+    setTimeout(() => {
+      loadSolicitudes();
+    },2000);
   } catch { showAlert('solicitudesAlert', 'No se pudo conectar.'); }
 }
 
@@ -2287,7 +2360,9 @@ async function confirmRejectUnlock() {
     if (!res.ok) return showAlert('rejectAlert', typeof data.detail === 'string' ? data.detail : 'Error.');
     else showAlert('rejectAlert', 'Solicitud rechazada.', 'success');
     closeRejectUnlockModal();
-    loadSolicitudes();
+    setTimeout(() => {
+      loadSolicitudes();
+    }, 2000);
   } catch { showAlert('rejectAlert', 'No se pudo conectar.'); }
 }
 
