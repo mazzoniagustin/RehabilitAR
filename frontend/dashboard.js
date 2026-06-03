@@ -2820,8 +2820,8 @@ async function loadDebts() {
       ${debts.map(d => `
         <div class="debt-item">
           <div class="debt-info">
-            <strong>Deuda #${d.id}</strong>
-            <span>Fecha de vencimiento: ${d.due_date}</span>
+            <strong>${d.payment_type === 'RESERVATION_REMAINING' ? 'Deuda por pagar 50%' : 'Deuda pendiente'}</strong>
+            <span>${d.due_date ? `Fecha de vencimiento: ${d.due_date}` : 'Pago pendiente'}</span>
           </div>
 
           <div class="debt-amount">$${d.amount}</div>

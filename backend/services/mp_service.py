@@ -34,7 +34,7 @@ def create_qr_order(items, user_id, payment_type=None, debt_id=None):
             ]
         },
         "items": [ {
-                "title": item["title"],
+                "title": payment_type or item["title"],
                 "quantity": int(item["quantity"]),
                 "unit_price": str(item["unit_price"]),
                 "unit_measure": "unit"

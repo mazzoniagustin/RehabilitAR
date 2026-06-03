@@ -24,6 +24,17 @@ def create_qr(data):
 
     return f"data:image/png;base64,{qr_base64}"
 
+def get_payment_title(payment_type):
+    if payment_type == "SUBSCRIPTION":
+        return "Mensualidad de RehabilitAR"
+    elif payment_type == "RESERVATION_50":
+        return "Reserva 50% RehabilitAR"
+    elif payment_type =="RESERVATION_100":
+        return "Reserva 100% RehabilitAR"
+    elif payment_type == "DEBT":
+        return "Deuda de RehabilitAR"
+    return "Pago RehabilitAR"
+
 def generate_mp_qr(items, user_id, payment_type, debt_id=None, reservation_id=None):
     amount = sum(float(i["unit_price"]) * int(i["quantity"]) for i in items)
     
@@ -36,6 +47,7 @@ def generate_mp_qr(items, user_id, payment_type, debt_id=None, reservation_id=No
             "payment_reason": "SUBSCRIPTION"
         }).execute()
         payment_row_id = payment_res.data[0]["id"]
+
     elif payment_type == "DEBT":
         payment_row_id = debt_id
         supabase.table("payments").update({
@@ -53,7 +65,7 @@ def generate_mp_qr(items, user_id, payment_type, debt_id=None, reservation_id=No
     order = create_qr_order(
         items=items,
         user_id=payment_row_id,
-        payment_type=payment_type,
+        payment_type=get_payment_title(payment_type),
         debt_id=debt_id
     )
 
@@ -121,6 +133,17 @@ def pay_reservation(user_id, class_id, class_type, payment_percentage):
         "payment_id": payment_id,
         "qr_url": create_qr(qr_data)
     }
+
+def get_payment_title(payment_type):
+    if payment_type == "SUBSCRIPTION":
+        return "Mensualidad de RehabilitAR"
+    elif payment_type == "RESERVATION_50":
+        return "Reserva 50% RehabilitAR"
+    elif payment_type =="RESERVATION_100":
+        return "Reserva 100% RehabilitAR"
+    elif payment_type == "DEBT":
+        return "Deuda de RehabilitAR"
+    return "Pago RehabilitAR"
 
 
 def pay_subscription(user_id):
@@ -190,7 +213,7 @@ def check_reservation_payment_status(payment_id: str):
 def pay_debt(user_id, debt_id, amount):
     item = [
         {
-            "title" : "Pago de deuda",
+            "title" : "Deuda de RehabilitAR",
             "quantity" : 1,
             "unit_price" : float(amount)
         }
