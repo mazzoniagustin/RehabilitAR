@@ -16,8 +16,8 @@ def approve_certificate(data: AproveCertificate, user = Depends(check_permission
     return admin_service.approve_certificate(data)
 
 @routerStaff.post('/reject_certificate')
-def reject_certificate(data: RejectCertificate, reason: ActionReason, user = Depends(check_permission(['ADMINISTRATIVO']))):
-    return admin_service.reject_certificate(data, reason)
+def reject_certificate(data: RejectCertificate, user = Depends(check_permission(['ADMINISTRATIVO']))):
+    return admin_service.reject_certificate(data)
 
 @routerStaff.post('/register_employee')
 def register_employee_by_staff(data: EmployeeRegisterByAdmin, user = Depends(check_permission(['ADMINISTRATIVO']))):

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, UploadFile, File, Query
 from services import user_service, admin_service
-from schemes.user_scheme import ActionReason, ChangePassword, UserUpdate
+from schemes.user_scheme import ActionReason, ChangePassword, UserAdminUpdate, UserUpdate
 from utils.permissions import get_current_user, check_permission
 
 routerUser = APIRouter(prefix='/users', tags=['Usuarios'])
@@ -16,7 +16,7 @@ def change_password(
     data: ChangePassword,
     current_user: dict = Depends(get_current_user)
 ):
-    return user_service.change_password(data)
+    return user_service.change_password(data, current_user)
 
 @routerUser.post("/upload-certificate")
 def upload_certificate(
@@ -32,6 +32,15 @@ def update_my_profile(
 ):
     update_dict = data.dict(exclude_unset=True)
     return user_service.update_user_info(current_user['id'], update_dict)
+
+@routerUser.put('/{user_id}')
+def update_user_by_admin(
+    user_id: str,
+    data: UserAdminUpdate,
+    admin = Depends(check_permission(['ADMINISTRATIVO']))
+):
+    update_dict = data.dict(exclude_unset=True)
+    return admin_service.update_user_by_admin(user_id, update_dict)
 
 
 @routerUser.get('/public/{user_id}')
@@ -58,9 +67,4 @@ def get_user_profile(
     user_id: str,
     current_user: dict = Depends(check_permission(['ADMINISTRATIVO']))
 ):
-    
     return user_service.show_user_admin_info(user_id)
-
-@routerUser.post('/request-unblock')
-def request_unblock(data: ActionReason, current_user: dict = Depends(get_current_user)):
-    return user_service.request_unblock(current_user['id'], data)

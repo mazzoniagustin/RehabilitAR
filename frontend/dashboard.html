@@ -139,7 +139,7 @@
         <div class="file-name" id="dashCertName" style="display:none"></div>
         <input type="file" id="dashCertInput" accept=".pdf,.jpg,.jpeg,.png" style="display:none" onchange="handleDashCertSelect(event)"/>
         <div class="btn-row" style="margin-top:12px">
-          <button class="btn btn-sm" id="uploadCertBtn" onclick="submitCertificate()" disabled>Enviar certificado</button>
+          <button class="btn btn-sm" id="uploadCertBtn" onclick="submitCertificate()" disabled>Subir apto físico</button>
         </div>
       </div>
     </div>
@@ -150,23 +150,149 @@
       <div class="section-card" style="max-width:420px">
         <h3><svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg> Cambiar contraseña</h3>
         <div id="pwAlert" class="alert"></div>
+        <div class="form-group"><label>Contraseña actual</label><input type="password" id="currentPw" placeholder="Tu contraseña actual" /></div>
         <div class="form-group"><label>Nueva contraseña</label><input type="password" id="newPw" placeholder="Mínimo 6 caracteres"/></div>
         <div class="form-group"><label>Confirmar contraseña</label><input type="password" id="confirmPw" placeholder="Repetí la contraseña"/></div>
         <button class="btn btn-sm" onclick="handleChangePassword()">Actualizar contraseña</button>
       </div>
     </div>
 
-    <!-- PANEL: Clases (clientes y profesores) -->
+    <!-- PANEL: Clases -->
     <div class="panel" id="panelClases">
-      <div class="page-header"><div class="page-header-left"><h2>Clases disponibles</h2><p>Explorá y reservá clases</p></div></div>
+      <div class="page-header"><div class="page-header-left"><h2 id="clasesTitle">Clases disponibles</h2><p id="clasesSubtitle">Explora y reserva clases</p></div></div>
       <div id="clasesAlert" class="alert"></div>
+      <div class="section-card" id="adminClassForm" style="display:none">
+        <h3><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Crear clase</h3>
+
+        <!-- Tabs selector -->
+        <div class="class-type-tabs" style="display:flex;gap:0;margin-bottom:20px;border-bottom:2px solid var(--border)">
+          <button id="tabIndividual" class="class-tab active" onclick="switchClassTab('individual')"
+            style="padding:8px 20px;border:none;background:none;cursor:pointer;font-size:.9rem;font-weight:600;border-bottom:2px solid var(--accent);margin-bottom:-2px;color:var(--accent)">
+            Individual
+          </button>
+          <button id="tabFija" class="class-tab" onclick="switchClassTab('fija')"
+            style="padding:8px 20px;border:none;background:none;cursor:pointer;font-size:.9rem;font-weight:500;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--muted)">
+            Fija (mensual)
+          </button>
+        </div>
+
+        <!-- ── FORM INDIVIDUAL ── -->
+        <div id="formIndividual">
+          <p style="font-size:.82rem;color:var(--muted);margin-bottom:14px">
+            Sesión puntual con fecha y hora exactas.
+          </p>
+          <input type="hidden" id="classDate"/>
+          <input type="hidden" id="classStartTime"/>
+          <input type="hidden" id="classDuration" value="60"/>
+          <div class="edit-row">
+            <div class="form-group">
+              <label>Fecha</label>
+              <div style="display:flex;gap:6px">
+                <select id="classDateDay" style="flex:1" onchange="syncClassDate()"><option value="">Día</option></select>
+                <select id="classDateMonth" style="flex:1.4" onchange="syncClassDate()">
+                  <option value="">Mes</option>
+                  <option value="1">Enero</option><option value="2">Febrero</option><option value="3">Marzo</option>
+                  <option value="4">Abril</option><option value="5">Mayo</option><option value="6">Junio</option>
+                  <option value="7">Julio</option><option value="8">Agosto</option><option value="9">Septiembre</option>
+                  <option value="10">Octubre</option><option value="11">Noviembre</option><option value="12">Diciembre</option>
+                </select>
+                <select id="classDateYear" style="flex:1" onchange="syncClassDate()"><option value="">Año</option></select>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Hora inicio</label>
+              <div style="display:flex;gap:6px">
+                <select id="classStartHour" style="flex:1" onchange="syncClassTime('Start')"></select>
+                <select id="classStartMinute" style="flex:1" onchange="syncClassTime('Start')"></select>
+              </div>
+            </div>
+          </div>
+
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:4px">
+            <button class="btn btn-sm btn-outline" id="checkIndividualBtn" onclick="checkIndividualAvailability()">Ver disponibilidad</button>
+          </div>
+
+          <div id="classDetailsFields" style="display:none;margin-top:16px">
+            <div id="individualPreview" style="display:none;margin-bottom:12px;padding:10px 14px;background:var(--surface-alt,#f5f5f5);border-radius:8px;font-size:.82rem;color:var(--muted)"></div>
+            <div class="edit-row">
+              <div class="form-group"><label>Sala</label><select id="classRoom"></select></div>
+              <div class="form-group">
+                <label>Actividad</label>
+                <select id="classActivity">
+                  <option value="TREN_SUPERIOR">Tren superior</option>
+                  <option value="TREN_MEDIO">Tren medio</option>
+                  <option value="TREN_INFERIOR">Tren inferior</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-group"><label>Cupo máximo</label><input type="number" id="classCapacity" min="1" step="1" placeholder="Ej: 10" oninput="this.value=this.value.replace(/[^0-9]/g,'')"/></div>
+            <div class="form-group"><label>Profesor inicial (opcional)</label><select id="classProfessor"></select></div>
+            <button class="btn btn-sm" id="createClassBtn" onclick="createIndividualClass()">Crear clase individual</button>
+          </div>
+        </div>
+
+        <!-- ── FORM FIJA ── -->
+        <div id="formFija" style="display:none">
+          <p style="font-size:.82rem;color:var(--muted);margin-bottom:14px">
+            Se genera una clase por cada ocurrencia del día elegido en el mes.
+          </p>
+          <div class="edit-row">
+            <div class="form-group">
+              <label>Día de la semana</label>
+              <select id="fijaDayOfWeek">
+                <option value="0">Lunes</option>
+                <option value="1">Martes</option>
+                <option value="2">Miércoles</option>
+                <option value="3">Jueves</option>
+                <option value="4">Viernes</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Hora de inicio</label>
+              <input type="hidden" id="fijaStartTime"/>
+              <div style="display:flex;gap:6px">
+                <select id="fijaStartHour" style="flex:1" onchange="syncFijaTime()"></select>
+                <select id="fijaStartMinute" style="flex:1" onchange="syncFijaTime()"></select>
+              </div>
+            </div>
+          </div>
+          <input type="hidden" id="fijaDuration" value="60"/>
+
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:4px">
+            <button class="btn btn-sm btn-outline" id="checkFijaBtn" onclick="checkFijaAvailability()">Ver disponibilidad</button>
+          </div>
+
+          <div id="fijaDetailsFields" style="display:none;margin-top:16px">
+            <div id="fijaPreview" style="display:none;margin-bottom:12px;padding:10px 14px;background:var(--surface-alt,#f5f5f5);border-radius:8px;font-size:.82rem;color:var(--muted)"></div>
+            <div class="edit-row">
+              <div class="form-group"><label>Sala</label><select id="fijaRoom"></select></div>
+              <div class="form-group">
+                <label>Actividad</label>
+                <select id="fijaActivity">
+                  <option value="TREN_SUPERIOR">Tren superior</option>
+                  <option value="TREN_MEDIO">Tren medio</option>
+                  <option value="TREN_INFERIOR">Tren inferior</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-group"><label>Cupo máximo</label><input type="number" id="fijaCapacity" min="1" step="1" placeholder="Ej: 15" oninput="this.value=this.value.replace(/[^0-9]/g,'')"/></div>
+            <div class="form-group"><label>Profesor inicial (opcional)</label><select id="fijaProfessor"></select></div>
+            <button class="btn btn-sm" id="createFijaBtn" onclick="createFijaClass()">Crear clases del mes</button>
+          </div>
+        </div>
+      </div>
+      <div class="section-card" id="adminProfessorRequests" style="display:none">
+        <h3><svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg> Solicitudes de profesores</h3>
+        <div id="professorRequestsContainer"><div class="empty-state"><p>Cargando...</p></div></div>
+      </div>
       <div class="section-card">
-        <h3><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Próximas clases</h3>
+        <h3 id="clasesListTitle"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Proximas clases</h3>
         <div id="clasesTableContainer"><div class="empty-state"><p>Cargando...</p></div></div>
       </div>
     </div>
     
     <div class="panel" id="panelReservas">
+      <div id="reservasAlert" class="alert"></div>
       <div class="page-header"><div class="page-header-left"><h2>Mis reservas</h2><p>Clases reservadas y su estado</p></div></div>
       <div class="section-card">
         <h3><svg viewBox="0 0 24 24"><path d="M20 12V22H4V12"/><path d="M22 7H2v5h20V7z"/><path d="M12 22V7"/></svg> Reservas activas</h3>
@@ -265,11 +391,12 @@
         <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> 
         Pendientes
       </h3>
+      <div id="certsAlert" class="alert"></div>
       <div id="pendingCertsContainer">
         <div class="empty-state"><p>Cargando...</p></div>
       </div>
     </div>
-  </div>
+    </div>
 
 
   <div class="panel" id="panelSolicitudes">
@@ -318,6 +445,70 @@
   </div>
 </div>
 
+<!--PANEL: Pagos (clientes)-->
+<div class="panel" id="panelPagos">
+  <div class="page-header">
+    <div class="page-header-left">
+      <h2>Pagos</h2>
+      <p>Conviertete en cliente abonado y disfruta de beneficios exclusivos</p>
+    </div>
+  </div>
+  <div id="pagosAlert" class="alert"></div>
+
+  <div class="section-card" style="max-width:700px">
+    <h3>
+      Beneficios de ser cliente abonado
+    </h3>
+    <div class="field-row">
+      <div class="benefit-icon">
+      <svg viewBox="0 0 24 24"><path d="M12 1v22"/><path d="M17 5H9.5a3.5 3.5 0 000 7H14a3.5 3.5 0 010 7H6"/></svg>
+      </div>
+      <span class="field-label">Descuentos exclusivos</span>
+      <span class="field-value">Accedé a descuentos especiales en clases y servicios.</span>
+    </div>
+
+    <div class="field-row">
+       <div class="benefit-icon">
+        <svg viewBox="0 0 24 24">
+          <path d="M8 2v4"/>
+          <path d="M16 2v4"/>
+          <rect x="3" y="6" width="18" height="15" rx="2"/>
+          <path d="M3 10h18"/>
+          <path d="M8 14h.01"/>
+          <path d="M12 14h.01"/>
+          <path d="M16 14h.01"/>
+        </svg>
+      </div>
+      <span class="field-label">Prioridad en reservas</span>
+      <span class="field-value">Tenés prioridad para reservar tus horarios favoritos.</span>
+    </div>
+
+    <div class="field-row">
+      <div class="benefit-icon">
+        <svg viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="9"/>
+          <path d="M12 7v5l3 3"/>
+        </svg>
+      </div>
+      <span class="field-label">Cancelaciones flexibles</span>
+      <span class="field-value">Más flexibilidad para reprogramar o cancelar tus clases.</span>
+    </div>
+
+    <div class="field-row">
+      <div class="benefit-icon">
+        <svg viewBox="0 0 24 24">
+          <path d="M12 17.27L18.18 21 16.54 14 22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24 7.46 14 5.82 21z"/>
+        </svg>
+      </div>
+      <span class="field-label">Sistema de creditos</span>
+      <span class="field-value">Un sistema que permite recuperar hasta 3 clases.</span>
+    </div>
+
+    <button class="btn" onclick="paySubscription()">Pagar mensualidad</button>
+  </div>
+  <div id="debtsContainer">
+</div>
+</div>
 </main>
 </div>
 
@@ -343,9 +534,33 @@
     </div>
     <p>El usuario será notificado y no podrá acceder al sistema hasta ser reactivado.</p>
     <div class="form-group"><label>Motivo de la suspensión</label><input type="text" id="blockReason" placeholder="Ej: Inasistencia superior al 50%"/></div>
+    <div id="blockModalAlert" class="alert" style="display:none"></div>
     <div class="modal-actions">
       <button class="btn btn-sm btn-danger" onclick="confirmBlock()">Suspender</button>
       <button class="btn btn-sm btn-outline" onclick="closeBlockModal()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Reactivar usuario -->
+<div class="modal-overlay" id="unblockModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="unblockModalTitle">Reactivar usuario</h3>
+      <button class="modal-close" onclick="closeUnblockModal()">✕</button>
+    </div>
+
+    <p>¿Desea reactivar la cuenta?.</p>
+
+    <div id="unblockModalAlert" class="alert" style="display:none"></div>
+
+    <div class="modal-actions">
+      <button class="btn btn-sm" onclick="unblockUser()">
+        Reactivar
+      </button>
+      <button class="btn btn-sm btn-outline" onclick="closeUnblockModal()">
+        Cancelar
+      </button>
     </div>
   </div>
 </div>
@@ -359,6 +574,7 @@
     </div>
     <p>Indicá el motivo del rechazo. El cliente será notificado.</p>
     <div class="form-group"><label>Motivo</label><input type="text" id="rejectReason" placeholder="Ej: El documento está vencido"/></div>
+    <div id="rejectAlert"></div>
     <div class="modal-actions">
       <button class="btn btn-sm btn-danger" onclick="confirmReject()">Rechazar</button>
       <button class="btn btn-sm btn-outline" onclick="closeRejectModal()">Cancelar</button>
@@ -378,6 +594,55 @@
     <div class="modal-actions">
       <button class="btn btn-sm btn-danger" onclick="confirmRejectUnlock()">Rechazar</button>
       <button class="btn btn-sm btn-outline" onclick="closeRejectUnlockModal()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Rechazar solicitud de profesor -->
+<div class="modal-overlay" id="rejectProfessorRequestModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Rechazar solicitud de profesor</h3>
+      <button class="modal-close" onclick="closeRejectProfessorRequestModal()">x</button>
+    </div>
+    <p>Indica el motivo del rechazo para dejar registrada la evaluacion.</p>
+    <div id="rejectProfessorRequestAlert" class="alert"></div>
+    <div class="form-group"><label>Motivo</label><input type="text" id="rejectProfessorRequestReason" placeholder="Ej: No cumple con los requisitos para esta clase"/></div>
+    <div class="modal-actions">
+      <button class="btn btn-sm btn-danger" onclick="confirmRejectProfessorRequest()">Rechazar</button>
+      <button class="btn btn-sm btn-outline" onclick="closeRejectProfessorRequestModal()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Modificar cupo -->
+<div class="modal-overlay" id="capacityModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Modificar cupo</h3>
+      <button class="modal-close" onclick="closeCapacityModal()">✕</button>
+    </div>
+    <div id="capacityAlert" class="alert"></div>
+    <p style="font-size:.88rem;color:var(--muted);margin-bottom:14px">Cupo actual: <strong id="currentCapacityText">—</strong></p>
+    <div class="form-group"><label>Nuevo cupo</label><input type="number" id="newCapacityInput" min="1" placeholder="Ej: 20"/></div>
+    <p style="font-size:.78rem;color:var(--muted);margin-top:8px">Si el nuevo cupo es menor a los inscriptos actuales, la clase se cancelará automáticamente.</p>
+    <div class="modal-actions">
+      <button class="btn btn-sm" onclick="confirmUpdateCapacity()">Guardar</button>
+      <button class="btn btn-sm btn-outline" onclick="closeCapacityModal()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Ver inscriptos -->
+<div class="modal-overlay" id="studentsModal">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-header">
+      <h3 id="studentsModalTitle">Inscriptos</h3>
+      <button class="modal-close" onclick="closeStudentsModal()">✕</button>
+    </div>
+    <div id="studentsContainer"><div class="empty-state"><p>Cargando...</p></div></div>
+    <div class="modal-actions">
+      <button class="btn btn-sm btn-outline" onclick="closeStudentsModal()">Cerrar</button>
     </div>
   </div>
 </div>
@@ -454,7 +719,23 @@
     </div>
   </div>
 </div>
+<div class="modal-overlay" id="paymentQrModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="paymentQrTitle">Pagar</h3>
+      <button class="modal-close" onclick="closePaymentQrModal()">✕</button>
+    </div>
 
-<script src="dashboard.js"></script>
+    <p id="paymentQrSubtitle">
+      Escaneá el QR con Mercado Pago para abonar.
+    </p>
+
+    <img
+      id="paymentQrImage"
+      style="width:260px;margin:20px auto;display:block"
+    >
+  </div>
+</div>
+<script src="dashboard.js?v=20260528-two-class-types"></script>
 </body>
 </html>

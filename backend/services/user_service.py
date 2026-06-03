@@ -2,28 +2,44 @@ import uuid
 from fastapi import HTTPException, UploadFile
 from database import supabase
 from datetime import datetime
+from supabase_auth.errors import AuthApiError
 
-def change_password(data): 
+def change_password(data,current_user): 
     try:
         if data.new_password != data.confirm_new_password:
             raise HTTPException(status_code=400, detail='Las contraseñas no coinciden.')
         
-        response = supabase.auth.update_user({
-            'password': data.new_password
-        })
+        try:
+            auth_res = supabase.auth.sign_in_with_password({
+                'email': current_user['email'],
+                'password': data.current_password
+            })
+        
+        except AuthApiError as e:
+            raise HTTPException(status_code=401, detail='Contraseña actual incorrecta.')
+        
+        try: 
+            response = supabase.auth.update_user({
+                'password': data.new_password
+            })
+        except AuthApiError as e:
+            msg = str(e).lower()
+            if 'different from the old password' in msg:
+                raise HTTPException(
+                    status_code=400,
+                    detail='La nueva contraseña no puede ser igual a la anterior.'
+                )
+            raise
         
         if not response.user:
             raise HTTPException(status_code=404, detail='Usuario no encontrado.')
         
-        supabase.table('users').update({'failed_attempts': 0}).eq('id', response.user.id).execute()
-
         return {'Mensaje': 'Contraseña actualizada exitosamente.'}
 
     except HTTPException:
         raise
-        
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f'Error al cambiar la contraseña')
+        raise HTTPException(status_code=500, detail=f'Error al actualizar la contraseña: {str(e)}')
 
 def show_user_info(user_id: str):
     try:
@@ -63,12 +79,12 @@ def show_user_info(user_id: str):
         }
 
         if user['rol'] == 'ABONADO':
-            credits_res = supabase.table('credits').select('available_credits').eq('user_id', user_id).single().execute()
+            credits_res = supabase.table('credits').select('available_credits').eq('user_id', user_id).execute()
             
-            base['credits'] = credits_res.data.get('available_credits') if credits_res.data else 0
+            base['credits'] = credits_res.data[0]['available_credits'] if credits_res.data else 0
             
-            subscription_res = supabase.table('subscriptions').select('end_date').eq('user_id', user_id).single().execute()
-            base['subscription_expiry'] = subscription_res.data.get('end_date') if subscription_res.data else None
+            subscription_res = supabase.table('subscriptions').select('end_date').eq('user_id', user_id).execute()
+            base['subscription_expiry'] = subscription_res.data[0]['end_date'] if subscription_res.data else None
 
         if user['rol'] in ('ADMINISTRATIVO', 'RECEPCIONISTA', 'PROFESOR'):
             base['specialty'] = user.get('specialty')
@@ -164,7 +180,7 @@ def upload_certificate(user_id: str, file: UploadFile):
     return {'message': 'Apto físico enviado.', 'status': 'PENDIENTE'}
 
     
-PUBLIC_FIELDS = 'id, name, surname, rol, gender'
+PUBLIC_FIELDS = 'id, name, surname, rol, gender, specialty'
 
 def search_users_public(name: str = None, role: str = None):
     try:
@@ -204,17 +220,18 @@ def show_user_public_info(user_id: str):
         
         age = None
         if base.get('birth_date'):
-            born = datetime.fromisoformat(res['birth_date'])
+            born = datetime.fromisoformat(base['birth_date'])
             today = datetime.now()
             age = today.year - born.year - ((today.month, today.day) < (born.month, born.day))
 
         base = {
-            'id': res.data.get('id'),
-            'name': res.data.get('name'),
-            'surname': res.data.get('surname'),
-            'rol': res.data.get('rol'),
-            'gender': res.data.get('gender'),
-            'age': age
+            'id': base.get('id'),
+            'name': base.get('name'),
+            'surname': base.get('surname'),
+            'rol': base.get('rol'),
+            'gender': base.get('gender'),
+            'age': age,
+            'specialty': base.get('specialty')
         }
         
         return base
@@ -244,16 +261,23 @@ def show_user_admin_info(user_id: str):
             age = today.year - born.year - ((today.month, today.day) < (born.month, born.day))
         
 
-        credits_list = data.pop('credits', []) or []
-        date_now = datetime.now()
-        current = next (
-            (c for c in credits_list 
-            if c.get('month') and 
-            datetime.fromisoformat(str(c['month'])).month == date_now.month and
-            datetime.fromisoformat(str(c['month'])).year == date_now.year),
-            None
-        )
-        data['available_credits'] = current.get('available_credits') if current else 0
+        credits_raw = data.pop('credits', None)
+        date_now = datetime.now()  # ← mover acá arriba, fuera del elif
+
+        if isinstance(credits_raw, dict):
+            data['available_credits'] = credits_raw.get('available_credits', 0)
+        elif isinstance(credits_raw, list):
+            credits_list = [c for c in credits_raw if isinstance(c, dict)]
+            current = next(
+                (c for c in credits_list
+                if c.get('month') and
+                datetime.fromisoformat(str(c['month'])).month == date_now.month and
+                datetime.fromisoformat(str(c['month'])).year == date_now.year),
+                None
+            )
+            data['available_credits'] = current.get('available_credits', 0) if current else 0
+        else:
+            data['available_credits'] = 0
         data['age'] = age
     
         return data
@@ -272,7 +296,8 @@ def request_unblock(user_id: str, reason):
             'previous_status': 'SUSPENDIDA',
             'new_status': 'SUSPENDIDA', 
             'reason': f'SOLICITUD DE DESBLOQUEO: {reason_text}',
-            'acted_by': user_id,
+            'request_status': 'PENDING',
+            'acted_by': None,
             #'created_at': datetime.now().isoformat(sep=' ', timespec='seconds') lo hace supabase automaticamente
         }).execute()
         return {'Mensaje': 'Solicitud enviada. Un administrador revisará tu caso.'}

@@ -71,6 +71,11 @@ function showAlert(id, msg, type = 'error') {
   setTimeout(() => { if (el) el.classList.remove('show'); }, 5000);
 }
 
+function handleUnauthorized() {
+  clearAuth();
+  window.location.href = 'login.html';
+}
+
 function badge(val, map) {
   const cls = (val || '').toLowerCase().replace(/[^a-z0-9]/g, '_');
   return `<span class="badge ${cls}">${map[val] || val || '—'}</span>`;
@@ -78,7 +83,7 @@ function badge(val, map) {
 
 function formatDate(iso) {
   if (!iso) return '—';
-  return new Date(iso).toLocaleString('es-AR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
+  return new Date(iso).toLocaleString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
 }
 
 const ROL_LABELS = {
@@ -101,6 +106,7 @@ const ICONS = {
   file:     '<path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/>',
   bell:   '<path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/>',
   users2: '<path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/>',
+  crown: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 7l5 5 5-8 5 8 5-5-3 13H5L2 7z"/></svg>`
 };
 
 const NAV_CONFIG = {
@@ -112,6 +118,7 @@ const NAV_CONFIG = {
     { label:'Mis reservas',    panel:'Reservas',  icon:'gift' },
     { label: 'Solicitar reactivación', panel:'Reactivacion', icon:'bell' },
     { label:'Seguridad',       panel:'Seguridad', icon:'lock' },
+    { label:'Pagos', panel:'Pagos', icon:'crown' },
   ],
   ABONADO: [
     { label:'Inicio',          panel:'Inicio',    icon:'grid' },
@@ -121,11 +128,13 @@ const NAV_CONFIG = {
     { label:'Mis reservas',    panel:'Reservas',  icon:'gift' },
     { label: 'Solicitar reactivación', panel:'Reactivacion', icon:'bell' },
     { label:'Seguridad',       panel:'Seguridad', icon:'lock' },
+    { label:'Pagos', panel:'Pagos', icon:'crown' },
   ],
   ADMINISTRATIVO: [
     { label:'Inicio',             panel:'Inicio',        icon:'grid' },
     { label:'Mi perfil',          panel:'Perfil',        icon:'user' },
     { label:'Usuarios',           panel:'Usuarios',      icon:'users',   section:'Administración' },
+    { label:'Clases',             panel:'Clases',        icon:'calendar' },
     { label:'Aptos físicos',      panel:'Certificados',  icon:'file' },
     { label:'Solicitudes',        panel:'Solicitudes',   icon:'bell' },
     { label:'Seguridad',          panel:'Seguridad',     icon:'lock' },
@@ -185,6 +194,7 @@ function onPanelShow(panel) {
   if (panel === 'Solicitudes')  loadSolicitudes();
   if (panel === 'Reactivacion') loadReactivacionPanel();
   if (panel === 'Buscar')       initUserPanel();
+  if (panel === 'Pagos') loadDebts();
 }
 // CARGA DEL DASHBOARD
 const STAT_MAPS = {
@@ -237,7 +247,7 @@ async function loadDashboard() {
   const isEmployee = EMPLOYEE_ROLES.includes(u.rol);
 
   // Solo empleados: mostrar especialidad
-  if (isEmployee) {
+  if (ROLES_WITH_SPECIALTY.includes(u.rol)) {
     document.getElementById('pfSpecialtyRow').style.display = 'flex';
     document.getElementById('pfSpecialty').textContent = u.specialty || '—';
   }
@@ -408,37 +418,1111 @@ async function submitCertificate() {
 }
 
 
-async function loadClases() {
+let adminClassRooms = [];
+let adminClassProfessors = [];
+let adminClassFormProfessors = [];
+let professorClassRequests = [];
+let classAvailabilityListenersReady = false;
+let currentClassTab = 'individual'; // 'individual' | 'fija'
+
+function apiErrorMessage(data, fallback = 'Error.') {
+  if (typeof data?.detail === 'string') return data.detail;
+  if (Array.isArray(data?.detail)) return data.detail.map(e => e.msg || e.message || JSON.stringify(e)).join(' ');
+  return fallback;
+}
+
+function combineDateAndTime(date, time) {
+  if (!date || !time) return null;
+  // Argentina es UTC-3 fijo (no usa horario de verano)
+  return `${date}T${time}:00-03:00`;
+}
+
+function professorName(professorId) {
+  const professor = adminClassProfessors.find(p => p.id === professorId);
+  return professor ? `${professor.name} ${professor.surname}` : '';
+}
+
+// ── Tab switching ─────────────────────────────────────────────────────────────
+
+function switchClassTab(tab) {
+  currentClassTab = tab;
+
+  const tabIndividual = document.getElementById('tabIndividual');
+  const tabFija = document.getElementById('tabFija');
+  const formIndividual = document.getElementById('formIndividual');
+  const formFija = document.getElementById('formFija');
+
+  if (tab === 'individual') {
+    tabIndividual.style.borderBottomColor = 'var(--accent)';
+    tabIndividual.style.color = 'var(--accent)';
+    tabIndividual.style.fontWeight = '600';
+    tabFija.style.borderBottomColor = 'transparent';
+    tabFija.style.color = 'var(--muted)';
+    tabFija.style.fontWeight = '500';
+    formIndividual.style.display = 'block';
+    formFija.style.display = 'none';
+  } else {
+    tabFija.style.borderBottomColor = 'var(--accent)';
+    tabFija.style.color = 'var(--accent)';
+    tabFija.style.fontWeight = '600';
+    tabIndividual.style.borderBottomColor = 'transparent';
+    tabIndividual.style.color = 'var(--muted)';
+    tabIndividual.style.fontWeight = '500';
+    formIndividual.style.display = 'none';
+    formFija.style.display = 'block';
+  }
+}
+
+// ── Individual: disponibilidad dinámica ───────────────────────────────────────
+
+async function loadAdminClassData() {
+  const professorsRes = await fetch(`${API}/classes/professors`, { headers: authH() });
+  const professors = await professorsRes.json();
+  if (!professorsRes.ok) throw new Error(apiErrorMessage(professors, 'No se pudieron cargar los profesores.'));
+  adminClassProfessors = professors || [];
+  bindClassAvailabilityInputs();
+  await refreshClassAvailabilityOptions();
+}
+
+// Devuelve la fecha de hoy en Argentina como string YYYY-MM-DD
+function todayArgentina() {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' });
+}
+
+// Devuelve la hora actual en Argentina como string HH:MM
+function nowTimeArgentina() {
+  return new Date().toLocaleTimeString('es-AR', {
+    timeZone: 'America/Argentina/Buenos_Aires',
+    hour: '2-digit', minute: '2-digit', hour12: false
+  });
+}
+// ── Selects custom de fecha y hora ───────────────────────────────────────────
+
+function _pad(n) { return String(n).padStart(2, '0'); }
+
+// Sincroniza los selects de fecha → hidden #classDate
+function syncClassDate() {
+  const d = document.getElementById('classDateDay').value;
+  const m = document.getElementById('classDateMonth').value;
+  const y = document.getElementById('classDateYear').value;
+  const hidden = document.getElementById('classDate');
+  if (d && m && y) {
+    hidden.value = `${y}-${_pad(m)}-${_pad(d)}`;
+  } else {
+    hidden.value = '';
+  }
+  applyIndividualDateConstraints();
+  // Ocultar detalles si el usuario cambia fecha después de haber verificado
+  _resetIndividualDetails();
+}
+
+// Sincroniza selects de hora → hidden #classStartTime
+function lockMinuteSelectAtClosingHour(hour, minuteSelect) {
+  if (!minuteSelect) return '';
+
+  if (hour === '19') {
+    minuteSelect.value = '00';
+    minuteSelect.disabled = true;
+    return '00';
+  }
+
+  minuteSelect.disabled = false;
+  return minuteSelect.value;
+}
+
+function syncClassTime(which) {
+  const h = document.getElementById(`class${which}Hour`).value;
+  const minuteSelect = document.getElementById(`class${which}Minute`);
+  const min = lockMinuteSelectAtClosingHour(h, minuteSelect);
+  const hidden = document.getElementById(`class${which}Time`);
+  hidden.value = (h && min !== undefined) ? `${h}:${min}` : '';
+  // Ocultar detalles si el usuario cambia hora después de haber verificado
+  _resetIndividualDetails();
+}
+
+// Sincroniza selects de hora fija → hidden #fijaStartTime
+function syncFijaTime() {
+  const h = document.getElementById('fijaStartHour').value;
+  const minuteSelect = document.getElementById('fijaStartMinute');
+  const min = lockMinuteSelectAtClosingHour(h, minuteSelect);
+  document.getElementById('fijaStartTime').value = `${h}:${min}`;
+  // Ocultar detalles si el usuario cambia hora después de haber verificado
+  _resetFijaDetails();
+}
+
+// Popula el select de minutos 00-59
+function _populateMinuteSelect(selectId) {
+  const sel = document.getElementById(selectId);
+  if (!sel) return;
+  const prev = sel.value;
+  sel.innerHTML = '';
+  for (let m = 0; m < 60; m++) {
+    const opt = document.createElement('option');
+    opt.value = String(m).padStart(2, '0');
+    opt.textContent = ':' + String(m).padStart(2, '0');
+    sel.appendChild(opt);
+  }
+  if (prev) sel.value = prev;
+}
+
+// Popula el select de horas (08–maxHour inclusive) filtrando horas pasadas si es hoy
+function _populateHourSelect(selectId, maxHour) {
+  const sel = document.getElementById(selectId);
+  if (!sel) return;
+  const prev = sel.value;
+  sel.innerHTML = '<option value="" disabled selected>--</option>';
+  const effectiveMax = Math.min(maxHour, 19);
+  for (let h = 8; h <= effectiveMax; h++) {
+    const opt = document.createElement('option');
+    opt.value = _pad(h);
+    opt.textContent = _pad(h);
+    sel.appendChild(opt);
+  }
+  if (prev) sel.value = prev;
+}
+
+// Popula día/mes/año con restricción de no pasado (Argentina)
+function initClassDateSelects() {
+  const today = todayArgentina(); // YYYY-MM-DD
+  const [ty, tm, td] = today.split('-').map(Number);
+
+  const yearSel  = document.getElementById('classDateYear');
+  const monthSel = document.getElementById('classDateMonth');
+  const daySel   = document.getElementById('classDateDay');
+  if (!yearSel) return;
+
+  // Años: este año y el próximo
+  yearSel.innerHTML = '<option value="">Año</option>';
+  for (let y = ty; y <= ty + 1; y++) {
+    const opt = document.createElement('option');
+    opt.value = y; opt.textContent = y;
+    yearSel.appendChild(opt);
+  }
+
+  // Al cambiar mes o año, repopular días válidos
+  function repopulateDays() {
+    const y = parseInt(yearSel.value) || ty;
+    const m = parseInt(monthSel.value) || tm;
+    const prevDay = daySel.value;
+    daySel.innerHTML = '<option value="">Día</option>';
+    const daysInMonth = new Date(y, m, 0).getDate();
+    const minDay = (y === ty && m === tm) ? td : 1;
+    for (let d = minDay; d <= daysInMonth; d++) {
+      const dow = new Date(y, m - 1, d).getDay();
+      if (dow === 0 || dow === 6) continue; // excluir sábado y domingo
+      const opt = document.createElement('option');
+      opt.value = d; opt.textContent = d;
+      daySel.appendChild(opt);
+    }
+    if (prevDay && parseInt(prevDay) >= minDay) daySel.value = prevDay;
+  }
+
+  // Meses: si es este año, desde el mes actual; si es año siguiente, todos
+  function repopulateMonths() {
+    const y = parseInt(yearSel.value) || ty;
+    const prevMonth = monthSel.value;
+    const meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
+                   'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+    monthSel.innerHTML = '<option value="">Mes</option>';
+    const minMonth = (y === ty) ? tm : 1;
+    for (let m = minMonth; m <= 12; m++) {
+      const opt = document.createElement('option');
+      opt.value = m; opt.textContent = meses[m - 1];
+      monthSel.appendChild(opt);
+    }
+    if (prevMonth && parseInt(prevMonth) >= minMonth) monthSel.value = prevMonth;
+    repopulateDays();
+  }
+
+  yearSel.addEventListener('change', repopulateMonths);
+  monthSel.addEventListener('change', repopulateDays);
+
+  yearSel.value = ty;
+  repopulateMonths();
+  monthSel.value = tm;
+  repopulateDays();
+
+  // Selects de hora de inicio (08-19). Las clases duran 1 hora.
+  _populateHourSelect('classStartHour', 19);
+  _populateMinuteSelect('classStartMinute');
+  _populateHourSelect('fijaStartHour', 19);
+  _populateMinuteSelect('fijaStartMinute');
+
+  // Sync inicial de fijaStartTime
+  syncFijaTime();
+
+  // Ocultar detalles de fija al cambiar día de la semana
+  const fijaDayOfWeekSel = document.getElementById('fijaDayOfWeek');
+  if (fijaDayOfWeekSel) fijaDayOfWeekSel.addEventListener('change', _resetFijaDetails);
+}
+
+
+// Aplica restricción de hora mínima si la fecha elegida es hoy
+function applyIndividualDateConstraints() {
+  const dateInput  = document.getElementById('classDate');
+  const startInput = document.getElementById('classStartTime');
+  if (!dateInput) return;
+
+  const today = todayArgentina();
+  dateInput.min = today;
+
+  const isToday = dateInput.value === today;
+  const minTime = isToday ? nowTimeArgentina() : '08:00';
+  if (startInput) { startInput.min = minTime; startInput.max = '19:00'; }
+}
+
+function bindClassAvailabilityInputs() {
+  if (classAvailabilityListenersReady) return;
+
+  // Inicializa selects custom de fecha y hora (ambos formularios)
+  initClassDateSelects();
+
+  classAvailabilityListenersReady = true;
+}
+
+function getClassFormTimeRange() {
+  const classDate = document.getElementById('classDate').value;
+  const startTime = document.getElementById('classStartTime').value;
+  if (!classDate || !startTime) return null;
+
+  const [hour, minute] = startTime.split(':').map(Number);
+  const endDate = new Date(`${classDate}T00:00:00`);
+  endDate.setHours(hour, minute + 60, 0, 0);
+  const endTime = `${_pad(endDate.getHours())}:${_pad(endDate.getMinutes())}`;
+
+  return {
+    start_time: combineDateAndTime(classDate, startTime),
+    end_time: combineDateAndTime(classDate, endTime)
+  };
+}
+
+// ── Helpers de reset ─────────────────────────────────────────────────────────
+
+function _resetIndividualDetails() {
+  const detailsFields = document.getElementById('classDetailsFields');
+  if (detailsFields) detailsFields.style.display = 'none';
+}
+
+function _resetFijaDetails() {
+  const detailsFields = document.getElementById('fijaDetailsFields');
+  if (detailsFields) detailsFields.style.display = 'none';
+}
+
+// ── Individual: Ver disponibilidad ───────────────────────────────────────────
+
+async function checkIndividualAvailability() {
+  const classDate  = document.getElementById('classDate').value;
+  const startTime  = document.getElementById('classStartTime').value;
+
+  if (!classDate || !startTime) {
+    return showAlert('clasesAlert', 'Seleccioná fecha y hora de inicio para verificar disponibilidad.');
+  }
+
+  const [sh, sm] = startTime.split(':').map(Number);
+  const startMinutes = sh * 60 + sm;
+
+  if (startMinutes < 8 * 60) {
+    return showAlert('clasesAlert', 'Las clases deben estar dentro del horario del centro: 08:00 a 20:00.');
+  }
+  if (startMinutes + 60 > 20 * 60) {
+    return showAlert('clasesAlert', 'El horario de inicio máximo es las 19:00 (la clase dura 1 hora).');
+  }
+
+  const apiStartTime = combineDateAndTime(classDate, startTime);
+  const nowAR = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Argentina/Buenos_Aires' }));
+  if (new Date(apiStartTime) <= nowAR) {
+    return showAlert('clasesAlert', 'La fecha y hora de inicio deben ser posteriores al momento actual.');
+  }
+
+  // Calcular end_time para consultar disponibilidad
+  const endMinutes = startMinutes + 60;
+  const endStr = `${String(Math.floor(endMinutes / 60)).padStart(2, '0')}:${String(endMinutes % 60).padStart(2, '0')}`;
+  const apiEndTime = combineDateAndTime(classDate, endStr);
+
+  const btn = document.getElementById('checkIndividualBtn');
+  btn.disabled = true;
+  btn.textContent = 'Verificando...';
+
+  try {
+    const params = new URLSearchParams({ start_time: apiStartTime, end_time: apiEndTime });
+    const [roomsRes, professorsRes] = await Promise.all([
+      fetch(`${API}/classes/rooms?${params.toString()}`, { headers: authH() }),
+      fetch(`${API}/classes/professors?${params.toString()}`, { headers: authH() })
+    ]);
+
+    const rooms      = await roomsRes.json();
+    const professors = await professorsRes.json();
+
+    if (!roomsRes.ok) throw new Error(apiErrorMessage(rooms, 'No se pudieron cargar las salas disponibles.'));
+    if (!professorsRes.ok) throw new Error(apiErrorMessage(professors, 'No se pudieron cargar los profesores disponibles.'));
+
+    if (!rooms || rooms.length === 0) {
+      return showAlert('clasesAlert', 'No hay salas disponibles para ese horario.');
+    }
+
+    const detailsFields    = document.getElementById('classDetailsFields');
+    const roomSelect       = document.getElementById('classRoom');
+    const professorSelect  = document.getElementById('classProfessor');
+    const preview          = document.getElementById('individualPreview');
+
+    // Preview informativo
+    const [dy, dm, dd] = classDate.split('-');
+    const monthNames = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+    preview.style.display = 'block';
+    preview.innerHTML = `<strong>Horario disponible:</strong> ${parseInt(dd)} de ${monthNames[parseInt(dm)-1]} ${dy} — ${startTime} a ${endStr}`;
+
+    roomSelect.innerHTML = rooms.map(r => `<option value="${r.id}">${r.name} — cupo sala: ${r.capacity}</option>`).join('');
+    professorSelect.innerHTML = '<option value="">Sin profesor inicial</option>'
+      + (professors || []).map(p => `<option value="${p.id}">${p.name} ${p.surname}${p.specialty ? ` — ${p.specialty}` : ''}</option>`).join('');
+
+    detailsFields.style.display = 'block';
+
+  } catch (e) {
+    showAlert('clasesAlert', e.message || 'No se pudo verificar disponibilidad.');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Ver disponibilidad';
+  }
+}
+
+// Mantenida para compatibilidad con cualquier llamada residual; ya no refresca automáticamente
+async function refreshClassAvailabilityOptions() {}
+
+// ── Fija: preview y disponibilidad ───────────────────────────────────────────
+
+async function checkFijaAvailability() {
+  const dayOfWeek = parseInt(document.getElementById('fijaDayOfWeek').value);
+  const startTime = document.getElementById('fijaStartTime').value;
+
+  const fijaHour = document.getElementById('fijaStartHour').value;
+  if (!fijaHour || !startTime || startTime.startsWith(':')) {
+    return showAlert('clasesAlert', 'Seleccioná fecha y hora de inicio para verificar disponibilidad.');
+  }
+
+  const [startHour, startMinute] = startTime.split(':').map(Number);
+  const endMinutes = startHour * 60 + startMinute + 60;
+
+  if (startHour < 8 || endMinutes > 20 * 60) {
+    return showAlert('clasesAlert', 'El horario de inicio máximo es las 19:00 (la clase dura 1 hora).');
+  }
+
+  const endH   = String(Math.floor(endMinutes / 60)).padStart(2, '0');
+  const endM   = String(endMinutes % 60).padStart(2, '0');
+  const endStr = `${endH}:${endM}`;
+
+  const dayNames   = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes'];
+  const monthNames = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+
+  // Calcular el mes objetivo (mismo que el backend)
+  const today = new Date();
+  let year  = today.getFullYear();
+  let month = today.getMonth(); // 0-indexed
+  const jsDayOfWeek = [1, 2, 3, 4, 5][dayOfWeek]; // 0=lun→1 … 4=vie→5
+  const daysInCurrentMonth = new Date(year, month + 1, 0).getDate();
+  let hasOccurrenceThisMonth = false;
+  for (let d = today.getDate(); d <= daysInCurrentMonth; d++) {
+    if (new Date(year, month, d).getDay() === jsDayOfWeek) {
+      hasOccurrenceThisMonth = true;
+      break;
+    }
+  }
+  if (!hasOccurrenceThisMonth) {
+    month = (month + 1) % 12;
+    if (month === 0) year++;
+  }
+
+  // Calcular ocurrencias del mes
+  const todayAR = todayArgentina();
+  const nowARTime = nowTimeArgentina();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  let occurrenceDates = [];
+  for (let d = 1; d <= daysInMonth; d++) {
+    if (new Date(year, month, d).getDay() !== jsDayOfWeek) continue;
+    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    if (dateStr > todayAR || (dateStr === todayAR && startTime > nowARTime)) {
+      occurrenceDates.push(d);
+    }
+  }
+
+  if (occurrenceDates.length === 0) {
+    month = (month + 1) % 12;
+    if (month === 0) year++;
+    const nextMonthDays = new Date(year, month + 1, 0).getDate();
+    occurrenceDates = [];
+    for (let d = 1; d <= nextMonthDays; d++) {
+      if (new Date(year, month, d).getDay() === jsDayOfWeek) occurrenceDates.push(d);
+    }
+  }
+
+  if (occurrenceDates.length === 0) {
+    return showAlert('clasesAlert', 'No hay ocurrencias disponibles para el día seleccionado.');
+  }
+
+  const btn = document.getElementById('checkFijaBtn');
+  btn.disabled = true;
+  btn.textContent = 'Verificando...';
+
+  try {
+    const occurrenceDateStrings = occurrenceDates.map(d => {
+      const occurrence = new Date(year, month, d);
+      return `${occurrence.getFullYear()}-${String(occurrence.getMonth()+1).padStart(2,'0')}-${String(occurrence.getDate()).padStart(2,'0')}`;
+    });
+
+    const availabilityResponses = [];
+    for (const dateStr of occurrenceDateStrings) {
+      const startISO = combineDateAndTime(dateStr, startTime);
+      const endISO = combineDateAndTime(dateStr, endStr);
+      const params = new URLSearchParams({ start_time: startISO, end_time: endISO });
+      const roomsRes = await fetch(`${API}/classes/rooms?${params.toString()}`, { headers: authH() });
+      const rooms = await roomsRes.json();
+      if (!roomsRes.ok) throw new Error(apiErrorMessage(rooms, 'No se pudieron cargar las salas disponibles.'));
+
+      const profsRes = await fetch(`${API}/classes/professors?${params.toString()}`, { headers: authH() });
+      const profs = await profsRes.json();
+      if (!profsRes.ok) throw new Error(apiErrorMessage(profs, 'No se pudieron cargar los profesores disponibles.'));
+
+      availabilityResponses.push({ dateStr, rooms: rooms || [], profs: profs || [] });
+    }
+
+    const roomAvailabilityCount = new Map();
+    const roomsById = new Map();
+    availabilityResponses.forEach(({ rooms }) => {
+      rooms.forEach(room => {
+        roomsById.set(room.id, room);
+        roomAvailabilityCount.set(room.id, (roomAvailabilityCount.get(room.id) || 0) + 1);
+      });
+    });
+    const rooms = [...roomsById.values()].filter(room => roomAvailabilityCount.get(room.id) === occurrenceDateStrings.length);
+
+    const professorAvailabilityCount = new Map();
+    const professorsById = new Map();
+    availabilityResponses.forEach(({ profs }) => {
+      profs.forEach(prof => {
+        professorsById.set(prof.id, prof);
+        professorAvailabilityCount.set(prof.id, (professorAvailabilityCount.get(prof.id) || 0) + 1);
+      });
+    });
+    const profs = [...professorsById.values()].map(prof => ({
+      ...prof,
+      available_count: professorAvailabilityCount.get(prof.id) || 0
+    }));
+
+    if (!rooms.length) {
+      return showAlert('clasesAlert', 'No hay salas disponibles para todas las fechas de esa clase fija.');
+    }
+
+    const fijaDetailsFields = document.getElementById('fijaDetailsFields');
+    const fijaRoomSelect    = document.getElementById('fijaRoom');
+    const fijaProfessorSelect = document.getElementById('fijaProfessor');
+    const preview           = document.getElementById('fijaPreview');
+
+    preview.style.display = 'block';
+    preview.innerHTML = `
+      <strong>Se crearán ${occurrenceDates.length} clase(s)</strong> para todos los <strong>${dayNames[dayOfWeek]}</strong> de <strong>${monthNames[month]} ${year}</strong>:<br>
+      ${occurrenceDates.map(d => `• ${d} de ${monthNames[month]} ${year} — ${startTime} a ${endStr}`).join('<br>')}
+      <br><br>Solo se muestran salas disponibles en todas las fechas. Los profesores se asignan solo en las fechas donde están disponibles.
+    `;
+
+    fijaRoomSelect.innerHTML = rooms.map(r => `<option value="${r.id}">${r.name} — cupo sala: ${r.capacity}</option>`).join('');
+    fijaProfessorSelect.innerHTML = '<option value="">Sin profesor inicial</option>'
+      + (profs || []).map(p => `<option value="${p.id}">${p.name} ${p.surname}${p.specialty ? ` — ${p.specialty}` : ''} — disponible en ${p.available_count}/${occurrenceDateStrings.length}</option>`).join('');
+
+    fijaDetailsFields.style.display = 'block';
+
+  } catch (e) {
+    showAlert('clasesAlert', e.message || 'No se pudo verificar disponibilidad.');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Ver disponibilidad';
+  }
+}
+
+async function fetchAvailableProfessorsForClasses(classes) {
+  const entries = await Promise.all(classes.map(async c => {
+    const res = await fetch(`${API}/classes/${c.id}/available-professors`, { headers: authH() });
+    const data = await res.json();
+    if (!res.ok) return [c.id, []];
+    return [c.id, data || []];
+  }));
+
+  return Object.fromEntries(entries);
+}
+
+async function loadAdminClasses() {
   const container = document.getElementById('clasesTableContainer');
   container.innerHTML = '<div class="empty-state"><p>Cargando...</p></div>';
+
   try {
-    const res  = await fetch(`${API}/classes/available`, { headers: authH() });
+    const res = await fetch(`${API}/classes/`, { headers: authH() });
+    const data = await res.json();
+
+    if (!res.ok) {
+      container.innerHTML = `<div class="empty-state"><p>${apiErrorMessage(data, 'Error al cargar las clases.')}</p></div>`;
+      return;
+    }
+
+    if (!data.length) {
+      container.innerHTML = '<div class="empty-state"><p>No hay clases programadas.</p></div>';
+      return;
+    }
+
+    console.log('CLASES DATA:', JSON.stringify(data.map(c => ({id: c.id, professor_id: c.professor_id, professor_name: c.professor_name}))));
+    const availableProfessorsByClass = await fetchAvailableProfessorsForClasses(data);
+
+    container.innerHTML = `
+      <table class="data-table">
+        <thead><tr><th>Actividad</th><th>Tipo</th><th>Sala</th><th>Inicio</th><th>Cupo</th><th>Profesor</th><th>Asignar</th><th>Acciones</th></tr></thead>
+        <tbody>${data.map(c => {
+          const assignedName = c.professor_name || professorName(c.professor_id);
+          const availableProfessors = availableProfessorsByClass[c.id] || [];
+          const hasAvailableProfessors = availableProfessors.length > 0;
+          const alreadyAssigned = !!c.professor_id;
+          const assignDisabled = alreadyAssigned || !hasAvailableProfessors;
+          return `
+          <tr>
+            <td><strong>${(c.activity_type || '').replace(/_/g, ' ')}</strong></td>
+            <td>${c.type || '-'}</td>
+            <td>${c.rooms?.name || '-'}</td>
+            <td>${formatDate(c.start_time)}</td>
+            <td>${c.current_capacity}/${c.max_capacity}</td>
+            <td>${assignedName || '<span style="color:var(--muted)">Sin asignar</span>'}</td>
+            <td>
+              <div style="display:flex;gap:6px;align-items:center;min-width:260px">
+                <select id="assignProfessor_${c.id}" style="min-width:170px" ${assignDisabled ? 'disabled' : ''}>
+                  <option value="">${alreadyAssigned ? 'Profesor ya asignado' : (hasAvailableProfessors ? 'Seleccionar profesor' : 'Sin disponibles')}</option>
+                  ${!alreadyAssigned ? availableProfessors.map(p => `<option value="${p.id}">${p.name} ${p.surname}</option>`).join('') : ''}
+                </select>
+                <button class="action-btn" ${assignDisabled ? 'disabled' : ''} onclick="assignProfessorToClass('${c.id}')">Asignar</button>
+              </div>
+            </td>
+            <td>
+              <div style="display:flex;gap:6px;flex-wrap:wrap">
+                <button class="action-btn" onclick="openStudentsModal('${c.id}', '${(c.activity_type || '').replace(/_/g, ' ')} ${formatDate(c.start_time)}')">Inscriptos</button>
+                <button class="action-btn" onclick="openCapacityModal('${c.id}', ${c.current_capacity}, ${c.max_capacity}, '${c.status}')">Cupo</button>
+                <button class="action-btn danger" onclick="cancelClass('${c.id}')">Cancelar</button>
+              </div>
+            </td>
+          </tr>`;
+        }).join('')}
+        </tbody>
+      </table>`;
+  } catch (e) {
+    container.innerHTML = `<div class="empty-state"><p>${e.message || 'No se pudo cargar.'}</p></div>`;
+  }
+}
+
+async function loadProfessorRequests() {
+  const container = document.getElementById('professorRequestsContainer');
+  container.innerHTML = '<div class="empty-state"><p>Cargando...</p></div>';
+
+  try {
+    const res = await fetch(`${API}/classes/requests/pending`, { headers: authH() });
+    const data = await res.json();
+
+    if (!res.ok) {
+      container.innerHTML = `<div class="empty-state"><p>${apiErrorMessage(data, 'Error al cargar solicitudes.')}</p></div>`;
+      return;
+    }
+
+    if (!data.length) {
+      container.innerHTML = '<div class="empty-state"><p>No hay solicitudes pendientes.</p></div>';
+      return;
+    }
+
+    container.innerHTML = `
+      <table class="data-table">
+        <thead><tr><th>Profesor</th><th>Clase</th><th>Sala</th><th>Horario</th><th>Acciones</th></tr></thead>
+        <tbody>${data.map(req => {
+          const clase = req.classes || {};
+          const professor = req.users || {};
+          return `
+            <tr>
+              <td><strong>${professor.name || ''} ${professor.surname || ''}</strong><span style="display:block;font-size:.78rem;color:var(--muted)">${professor.specialty || ''}</span></td>
+              <td>${(clase.activity_type || '').replace(/_/g, ' ')} / ${clase.type || '-'}</td>
+              <td>${clase.rooms?.name || '-'}</td>
+              <td>${formatDate(clase.start_time)}</td>
+              <td style="display:flex;gap:6px;flex-wrap:wrap">
+                <button class="action-btn success" onclick="evaluateProfessorRequest('${req.class_id}', '${req.id}', 'ACEPTADA')">Aceptar</button>
+                <button class="action-btn danger" onclick="rejectProfessorRequest('${req.class_id}', '${req.id}')">Rechazar</button>
+              </td>
+            </tr>`;
+        }).join('')}
+        </tbody>
+      </table>`;
+  } catch (e) {
+    container.innerHTML = `<div class="empty-state"><p>${e.message || 'No se pudo conectar.'}</p></div>`;
+  }
+}
+
+async function loadMyProfessorRequests() {
+  try {
+    const res = await fetch(`${API}/classes/requests/me`, { headers: authH() });
+    const data = await res.json();
+
+    if (!res.ok) {
+      professorClassRequests = [];
+      showAlert('clasesAlert', apiErrorMessage(data, 'Error al cargar tus solicitudes.'));
+      return;
+    }
+
+    professorClassRequests = data || [];
+  } catch {
+    professorClassRequests = [];
+    showAlert('clasesAlert', 'No se pudieron cargar tus solicitudes.');
+  }
+}
+
+function professorRequestForClass(classId) {
+  return professorClassRequests.find(req => req.class_id === classId);
+}
+
+async function loadClases() {
+  const u = getUser();
+  const isAdmin = u?.rol === 'ADMINISTRATIVO';
+  const isProfessor = u?.rol === 'PROFESOR';
+  const adminForm = document.getElementById('adminClassForm');
+  const requestsSection = document.getElementById('adminProfessorRequests');
+  const title = document.getElementById('clasesTitle');
+  const subtitle = document.getElementById('clasesSubtitle');
+  const listTitle = document.getElementById('clasesListTitle');
+  const container = document.getElementById('clasesTableContainer');
+
+  if (isAdmin) {
+    title.textContent = 'Gestion de clases';
+    subtitle.textContent = 'Crea clases y asigna profesores';
+    listTitle.innerHTML = '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Clases programadas';
+    adminForm.style.display = 'block';
+    requestsSection.style.display = 'block';
+    container.innerHTML = '<div class="empty-state"><p>Cargando...</p></div>';
+
+    loadProfessorRequests();
+
+    try {
+      await loadAdminClassData();
+      await loadAdminClasses();
+    } catch (e) {
+      container.innerHTML = `<div class="empty-state"><p>${e.message || 'No se pudo cargar.'}</p></div>`;
+    }
+    return;
+  }
+
+  requestsSection.style.display = 'none';
+  title.textContent = 'Clases disponibles';
+  subtitle.textContent = isProfessor ? 'Solicita asignacion a clases programadas' : 'Explora y reserva clases';
+  listTitle.innerHTML = '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Proximas clases';
+  adminForm.style.display = 'none';
+  container.innerHTML = '<div class="empty-state"><p>Cargando...</p></div>';
+
+  try {
+    if (isProfessor) await loadMyProfessorRequests();
+
+    const res  = await fetch(isProfessor ? `${API}/classes/available-for-professor` : `${API}/classes/available`, { headers: authH() });
     if (!res.ok) { container.innerHTML = '<div class="empty-state"><p>Error al cargar las clases.</p></div>'; return; }
     const data = await res.json();
     if (!data.length) { container.innerHTML = '<div class="empty-state"><p>No hay clases disponibles.</p></div>'; return; }
     container.innerHTML = `
       <table class="data-table">
         <thead><tr><th>Actividad</th><th>Tipo</th><th>Inicio</th><th>Cupo</th><th>Profesor</th><th></th></tr></thead>
-        <tbody>${data.map(c => `
+        <tbody>${data.map(c => {
+          const request = isProfessor ? professorRequestForClass(c.id) : null;
+          const hasProfessor = !!c.professor_id;
+          const buttonLabel = request
+            ? (request.status === 'PENDIENTE' ? 'Solicitada' : request.status === 'ACEPTADA' ? 'Aceptada' : 'Rechazada')
+            : hasProfessor ? 'Asignada' : 'Solicitar';
+          const buttonDisabled = isProfessor && (!!request || hasProfessor);
+          const isMyClass = isProfessor && request?.status === 'ACEPTADA';
+          const isFull = !isProfessor && !!c.is_full;
+          const clientBtn = isFull
+            ? `<button class="action-btn" style="background:var(--color-background-warning);color:var(--color-text-warning)" onclick="joinWaitlist('${c.id}')" title="La clase está llena — anotate en la lista de espera">Lista de espera</button>`
+            : `<button class="action-btn" onclick="reserveClass('${c.id}', '${c.type}')">Reservar</button>`;
+          return `
           <tr>
-            <td><strong>${(c.activity_type || '').replace('_', ' ')}</strong></td>
+            <td><strong>${(c.activity_type || '').replace(/_/g, ' ')}</strong></td>
             <td>${c.type || '—'}</td>
             <td>${formatDate(c.start_time)}</td>
-            <td>${c.current_capacity}/${c.max_capacity}</td>
+            <td>${c.current_capacity}/${c.max_capacity}${isFull ? ' <span style="color:var(--color-text-warning);font-size:11px">LLENA</span>' : ''}</td>
             <td>${c.professor_name || '<span style="color:var(--muted)">Sin asignar</span>'}</td>
-            <td><button class="action-btn" onclick="reserveClass('${c.id}')">Reservar</button></td>
-          </tr>`).join('')}
+            <td style="display:flex;gap:6px">
+              ${isProfessor
+                ? `<button class="action-btn" ${buttonDisabled ? 'disabled' : ''} onclick="requestProfessorClass('${c.id}')">${buttonLabel}</button>`
+                : clientBtn}
+              ${isMyClass ? `<button class="action-btn" onclick="openStudentsModal('${c.id}', '${(c.activity_type || '').replace(/_/g, ' ')}')">Inscriptos</button>` : ''}
+            </td>
+          </tr>`;
+        }).join('')}
         </tbody>
       </table>`;
   } catch { container.innerHTML = '<div class="empty-state"><p>No se pudo cargar.</p></div>'; }
 }
 
-async function reserveClass(classId) {
+async function requestProfessorClass(classId) {
   try {
-    const res  = await fetch(`${API}/reservations`, { method:'POST', headers:authH(), body:JSON.stringify({ class_id: classId }) });
+    const res = await fetch(`${API}/classes/${classId}/request`, {
+      method: 'POST',
+      headers: authH()
+    });
+    const data = await res.json();
+    if (!res.ok) return showAlert('clasesAlert', apiErrorMessage(data, 'Error al enviar la solicitud.'));
+    showAlert('clasesAlert', data.message || 'Solicitud enviada correctamente.', 'success');
+    await loadClases();
+  } catch {
+    showAlert('clasesAlert', 'No se pudo conectar.');
+  }
+}
+
+async function evaluateProfessorRequest(classId, requestId, status, reason = null) {
+  try {
+    const res = await fetch(`${API}/classes/${classId}/request/${requestId}`, {
+      method: 'PATCH',
+      headers: authH(),
+      body: JSON.stringify({ status, reason })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      const targetAlert = status === 'RECHAZADA' ? 'rejectProfessorRequestAlert' : 'clasesAlert';
+      showAlert(targetAlert, apiErrorMessage(data, 'Error al evaluar la solicitud.'));
+      return false;
+    }
+    showAlert('clasesAlert', data.message || 'Solicitud evaluada correctamente.', 'success');
+    await loadAdminClasses();
+    await loadProfessorRequests();
+    return true;
+  } catch {
+    const targetAlert = status === 'RECHAZADA' ? 'rejectProfessorRequestAlert' : 'clasesAlert';
+    showAlert(targetAlert, 'No se pudo conectar.');
+    return false;
+  }
+}
+
+let rejectProfessorClassId = null;
+let rejectProfessorRequestId = null;
+
+function rejectProfessorRequest(classId, requestId) {
+  rejectProfessorClassId = classId;
+  rejectProfessorRequestId = requestId;
+  document.getElementById('rejectProfessorRequestReason').value = '';
+  document.getElementById('rejectProfessorRequestAlert').className = 'alert';
+  document.getElementById('rejectProfessorRequestModal').classList.add('open');
+}
+
+function closeRejectProfessorRequestModal() {
+  document.getElementById('rejectProfessorRequestModal').classList.remove('open');
+  rejectProfessorClassId = null;
+  rejectProfessorRequestId = null;
+}
+
+async function confirmRejectProfessorRequest() {
+  const reason = document.getElementById('rejectProfessorRequestReason').value.trim();
+  if (!reason || !reason.trim()) {
+    showAlert('rejectProfessorRequestAlert', 'El rechazo debe incluir un motivo obligatorio.');
+    return;
+  }
+
+  const ok = await evaluateProfessorRequest(
+    rejectProfessorClassId,
+    rejectProfessorRequestId,
+    'RECHAZADA',
+    reason
+  );
+  if (ok) closeRejectProfessorRequestModal();
+}
+
+// ── Crear clase INDIVIDUAL ────────────────────────────────────────────────────
+
+async function createIndividualClass() {
+  const room_id = document.getElementById('classRoom').value;
+  const activity_type = document.getElementById('classActivity').value;
+  const max_capacity = Number(document.getElementById('classCapacity').value);
+  const class_date = document.getElementById('classDate').value;
+  const start_time = document.getElementById('classStartTime').value;
+  const professor_id = document.getElementById('classProfessor').value || null;
+
+  const classCapacityRaw = document.getElementById('classCapacity').value.trim();
+  if (!room_id || !activity_type || !class_date || !start_time || classCapacityRaw === '') {
+    return showAlert('clasesAlert', 'Debe completar todos los campos.');
+  }
+  if (!max_capacity || !Number.isInteger(max_capacity) || max_capacity < 1) {
+    return showAlert('clasesAlert', 'El cupo debe ser mayor a 0.');
+  }
+
+  const apiStartTime = combineDateAndTime(class_date, start_time);
+  const [sh, sm] = start_time.split(':').map(Number);
+  const startMinutes = sh * 60 + sm;
+  const selectedDate = new Date(`${class_date}T00:00`);
+
+  if (selectedDate.getDay() === 0 || selectedDate.getDay() === 6) {
+    return showAlert('clasesAlert', 'Las clases solo pueden programarse de lunes a viernes.');
+  }
+  if (startMinutes < 8 * 60) {
+    return showAlert('clasesAlert', 'Las clases deben estar dentro del horario del centro: 08:00 a 20:00.');
+  }
+  if (startMinutes + 60 > 20 * 60) {
+    return showAlert('clasesAlert', 'El horario de inicio máximo es las 19:00 (la clase dura 1 hora).');
+  }
+  const nowAR = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Argentina/Buenos_Aires' }));
+  if (new Date(apiStartTime) <= nowAR) {
+    return showAlert('clasesAlert', 'La fecha y hora de inicio deben ser posteriores al momento actual.');
+  }
+
+  const btn = document.getElementById('createClassBtn');
+  btn.disabled = true;
+  btn.textContent = 'Creando...';
+
+  try {
+    const res = await fetch(`${API}/classes/individual`, {
+      method: 'POST',
+      headers: authH(),
+      body: JSON.stringify({
+        room_id,
+        activity_type,
+        max_capacity,
+        start_time: apiStartTime,
+        professor_id
+      })
+    });
+
+    const data = await res.json();
+    if (!res.ok) return showAlert('clasesAlert', apiErrorMessage(data, 'Error al crear la clase.'));
+
+    showAlert('clasesAlert', data.message || 'Clase individual creada exitosamente.', 'success');
+    document.getElementById('classCapacity').value = '';
+    document.getElementById('classDate').value = '';
+    document.getElementById('classStartTime').value = '';
+    document.getElementById('classProfessor').value = '';
+    ['classDateDay','classDateMonth','classDateYear','classStartHour','classStartMinute'].forEach(id => {
+      const el = document.getElementById(id); if (el) el.value = '';
+    });
+    _resetIndividualDetails();
+    document.getElementById('individualPreview').style.display = 'none';
+    await loadAdminClasses();
+  } catch {
+    showAlert('clasesAlert', 'No se pudo conectar.');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Crear clase individual';
+  }
+}
+
+// ── Crear clases FIJA ─────────────────────────────────────────────────────────
+
+async function createFijaClass() {
+  const room_id = document.getElementById('fijaRoom').value;
+  const activity_type = document.getElementById('fijaActivity').value;
+  const max_capacity = Number(document.getElementById('fijaCapacity').value);
+  const day_of_week = parseInt(document.getElementById('fijaDayOfWeek').value);
+  const startTime = document.getElementById('fijaStartTime').value;
+  const professor_id = document.getElementById('fijaProfessor').value || null;
+
+  const fijaCapacityRaw = document.getElementById('fijaCapacity').value.trim();
+  if (!room_id || !activity_type || !startTime || fijaCapacityRaw === '') {
+    return showAlert('clasesAlert', 'Debe completar todos los campos.');
+  }
+  if (!max_capacity || !Number.isInteger(max_capacity) || max_capacity < 1) {
+    return showAlert('clasesAlert', 'El cupo debe ser mayor a 0.');
+  }
+  const [_sh, _sm] = startTime.split(':').map(Number);
+  if (_sh < 8 || _sh * 60 + _sm + 60 > 20 * 60) {
+    return showAlert('clasesAlert', 'El horario de inicio máximo es las 19:00 (la clase dura 1 hora).');
+  }
+
+  const [startHour, startMinute] = startTime.split(':').map(Number);
+
+  const btn = document.getElementById('createFijaBtn');
+  btn.disabled = true;
+  btn.textContent = 'Creando...';
+
+  try {
+    const res = await fetch(`${API}/classes/fija`, {
+      method: 'POST',
+      headers: authH(),
+      body: JSON.stringify({
+        room_id,
+        activity_type,
+        max_capacity,
+        day_of_week,
+        start_hour: startHour,
+        start_minute: startMinute,
+        professor_id
+      })
+    });
+
+    const data = await res.json();
+    if (!res.ok) return showAlert('clasesAlert', apiErrorMessage(data, 'Error al crear las clases fijas.'));
+
+    showAlert('clasesAlert', data.message || 'Clases fijas creadas exitosamente.', 'success');
+
+    // Limpiar formulario fijo
+    document.getElementById('fijaCapacity').value = '';
+    document.getElementById('fijaRoom').innerHTML = '';
+    document.getElementById('fijaProfessor').innerHTML = '';
+    document.getElementById('fijaPreview').style.display = 'none';
+    _resetFijaDetails();
+    await loadAdminClasses();
+  } catch {
+    showAlert('clasesAlert', 'No se pudo conectar.');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Crear clases del mes';
+  }
+}
+
+async function cancelClass(classId) {
+  if (!confirm('¿Cancelar esta clase? Esta acción no se puede deshacer.')) return;
+  try {
+    const res = await fetch(`${API}/classes/${classId}/cancel`, { method: 'PATCH', headers: authH() });
+    const data = await res.json();
+    if (res.status === 401) return handleUnauthorized();
+    if (!res.ok) return showAlert('clasesAlert', apiErrorMessage(data, 'Error al cancelar la clase.'));
+    showAlert('clasesAlert', data.message || 'Clase cancelada exitosamente.', 'success');
+    await loadAdminClasses();
+  } catch { showAlert('clasesAlert', 'No se pudo conectar.'); }
+}
+
+let capacityTargetId = null;
+
+function openCapacityModal(classId, currentCapacity, maxCapacity, status) {
+  capacityTargetId = classId;
+  document.getElementById('currentCapacityText').textContent = `${currentCapacity} inscriptos / ${maxCapacity} cupo`;
+  document.getElementById('newCapacityInput').value = maxCapacity;
+  document.getElementById('capacityAlert').className = 'alert';
+  document.getElementById('capacityModal').classList.add('open');
+
+  // Bug 1 fix: si la clase cambio de estado entre que se cargó la lista y que
+  // el admin abrió el modal (race condition), mostramos el error de inmediato
+  // y bloqueamos el input/botón para evitar un PATCH que el backend rechazará.
+  const isActive = status === 'PROGRAMADA' || status === 'EN CURSO';
+  const saveBtn = document.querySelector('#capacityModal .btn:not(.btn-outline)');
+  const input = document.getElementById('newCapacityInput');
+  if (!isActive) {
+    showAlert('capacityAlert', 'Solo se puede modificar el cupo de clases activas.');
+    if (saveBtn) saveBtn.disabled = true;
+    if (input) input.disabled = true;
+  } else {
+    if (saveBtn) saveBtn.disabled = false;
+    if (input) input.disabled = false;
+  }
+}
+
+function closeCapacityModal() {
+  document.getElementById('capacityModal').classList.remove('open');
+  capacityTargetId = null;
+}
+
+async function confirmUpdateCapacity() {
+  const newCapacity = Number(document.getElementById('newCapacityInput').value);
+  if (!newCapacity || newCapacity < 1) return showAlert('capacityAlert', 'Ingresá un cupo válido mayor a 0.');
+
+  // Bug 4 fix: deshabilitar el botón durante la llamada para evitar doble envío.
+  const saveBtn = document.querySelector('#capacityModal .btn:not(.btn-outline)');
+  if (saveBtn) saveBtn.disabled = true;
+
+  try {
+    const res = await fetch(`${API}/classes/${capacityTargetId}/capacity`, {
+      method: 'PATCH',
+      headers: authH(),
+      body: JSON.stringify({ new_capacity: newCapacity })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showAlert('capacityAlert', apiErrorMessage(data, 'Error al modificar el cupo.'));
+      return;
+    }
+    showAlert('clasesAlert', data.message || 'Cupo actualizado.', 'success');
+    closeCapacityModal();
+    await loadAdminClasses();
+  } catch {
+    showAlert('capacityAlert', 'No se pudo conectar.');
+  } finally {
+    // Rehabilitar siempre, incluso si closeCapacityModal ya lo cerró,
+    // para que el estado quede limpio si el modal se reabre.
+    if (saveBtn) saveBtn.disabled = false;
+  }
+}
+
+async function openStudentsModal(classId, className) {
+  document.getElementById('studentsModalTitle').textContent = `Inscriptos — ${className}`;
+  document.getElementById('studentsContainer').innerHTML = '<div class="empty-state"><p>Cargando...</p></div>';
+  document.getElementById('studentsModal').classList.add('open');
+  try {
+    const res = await fetch(`${API}/classes/${classId}/students`, { headers: authH() });
+    const data = await res.json();
+    if (!res.ok) {
+      document.getElementById('studentsContainer').innerHTML = `<div class="empty-state"><p>${apiErrorMessage(data, 'Error al cargar.')}</p></div>`;
+      return;
+    }
+    if (!data.length) {
+      document.getElementById('studentsContainer').innerHTML = '<div class="empty-state"><p>No hay inscriptos en esta clase.</p></div>';
+      return;
+    }
+    document.getElementById('studentsContainer').innerHTML = `
+      <table class="data-table">
+        <thead><tr><th>Nombre</th><th>Email</th><th>Teléfono</th></tr></thead>
+        <tbody>${data.map(s => {
+          const u = s.users || s;
+          return `<tr>
+            <td><strong>${u.name || ''} ${u.surname || ''}</strong></td>
+            <td style="font-size:.82rem">${u.email || '—'}</td>
+            <td style="font-size:.82rem">${u.phone || '—'}</td>
+          </tr>`;
+        }).join('')}
+        </tbody>
+      </table>`;
+  } catch {
+    document.getElementById('studentsContainer').innerHTML = '<div class="empty-state"><p>No se pudo conectar.</p></div>';
+  }
+}
+
+function closeStudentsModal() {
+  document.getElementById('studentsModal').classList.remove('open');
+}
+
+async function assignProfessorToClass(classId) {
+  const professor_id = document.getElementById(`assignProfessor_${classId}`).value;
+  if (!professor_id) return showAlert('clasesAlert', 'Selecciona un profesor.');
+
+  try {
+    const res = await fetch(`${API}/classes/${classId}/assign-professor`, {
+      method: 'PATCH',
+      headers: authH(),
+      body: JSON.stringify({ professor_id })
+    });
+
+    const data = await res.json();
+    if (!res.ok) return showAlert('clasesAlert', apiErrorMessage(data, 'Error al asignar profesor.'));
+
+    showAlert('clasesAlert', data.message || 'Se asigno el profesor correctamente.', 'success');
+    await loadAdminClasses();
+  } catch {
+    showAlert('clasesAlert', 'No se pudo conectar.');
+  }
+}
+
+async function reserveClass(classId, classType) {
+  try {
+    const isFija = classType === 'FIJA';
+    const url  = isFija ? `${API}/reservations/regular` : `${API}/reservations/individual`;
+    const body = isFija
+      ? { class_id: classId }
+      : { class_id: classId, payment_percentage: 100 }; // payment_percentage: pendiente módulo de pagos
+
+    const res  = await fetch(url, { method: 'POST', headers: authH(), body: JSON.stringify(body) });
     const data = await res.json();
     if (!res.ok) return showAlert('clasesAlert', typeof data.detail === 'string' ? data.detail : 'Error al reservar.');
-    showAlert('clasesAlert', '¡Reserva realizada!', 'success');
+    showAlert('clasesAlert', data.message || '¡Reserva realizada!', 'success');
+    loadClases();
+  } catch { showAlert('clasesAlert', 'No se pudo conectar.'); }
+}
+
+async function joinWaitlist(classId) {
+  try {
+    const res  = await fetch(`${API}/reservations/waitlist`, {
+      method: 'POST',
+      headers: authH(),
+      body: JSON.stringify({ class_id: classId })
+    });
+    const data = await res.json();
+    if (!res.ok) return showAlert('clasesAlert', typeof data.detail === 'string' ? data.detail : 'Error al unirse a la lista de espera.');
+    showAlert('clasesAlert', data.message || 'Te anotaste en la lista de espera.', 'success');
     loadClases();
   } catch { showAlert('clasesAlert', 'No se pudo conectar.'); }
 }
@@ -453,29 +1537,63 @@ async function loadReservas() {
     if (!data.length) { container.innerHTML = '<div class="empty-state"><p>No tenés reservas activas.</p></div>'; return; }
     container.innerHTML = `
       <table class="data-table">
-        <thead><tr><th>Actividad</th><th>Inicio</th><th>Estado</th><th>Pago</th><th></th></tr></thead>
-        <tbody>${data.map(r => `
+        <thead><tr><th>Actividad</th><th>Tipo</th><th>Inicio</th><th>Estado</th><th>Pago</th><th>Posición</th><th></th></tr></thead>
+        <tbody>${data.map(r => {
+          const isWaitlist = r.kind === 'WAITLIST';
+          const estado = isWaitlist
+            ? badge(r.status, { EN_ESPERA:'En espera' })
+            : badge(r.status, { CONFIRMADA:'Confirmada', CANCELADA:'Cancelada', AUSENTE:'Ausente' });
+          const pago = r.payment_status
+            ? badge(r.payment_status, { PENDIENTE:'Pendiente', SENADO_50:'50% señado', PAGADO:'Pagado', DEVUELTO:'Devuelto', CREDITO_APLICADO:'Crédito' })
+            : '—';
+          const posicion = isWaitlist ? `#${r.waitlist_position || '—'}` : '—';
+          const action = isWaitlist
+            ? `<button class="action-btn danger" onclick="leaveWaitlist('${r.class_id}')">Salir</button>`
+            : (r.status === 'CONFIRMADA' ? `<button class="action-btn danger" onclick="cancelReserva('${r.id}')">Cancelar</button>` : '');
+          return `
           <tr>
-            <td>${(r.activity_type || '').replace('_', ' ') || '—'}</td>
+            <td>${(r.activity_type || '').replace(/_/g, ' ') || '—'}</td>
+            <td>${r.type || '—'}</td>
             <td>${formatDate(r.start_time)}</td>
-            <td>${badge(r.status, { CONFIRMADA:'Confirmada', CANCELADA:'Cancelada', AUSENTE:'Ausente' })}</td>
-            <td>${badge(r.payment_status, { PENDIENTE:'Pendiente', SENADO_50:'50% señado', PAGADO:'Pagado', DEVUELTO:'Devuelto', CREDITO_APLICADO:'Crédito' })}</td>
-            <td>${r.status === 'CONFIRMADA' ? `<button class="action-btn danger" onclick="cancelReserva('${r.id}')">Cancelar</button>` : ''}</td>
-          </tr>`).join('')}
+            <td>${estado}</td>
+            <td>${pago}</td>
+            <td>${posicion}</td>
+            <td>${action}</td>
+          </tr>`;
+        }).join('')}
         </tbody>
       </table>`;
   } catch { container.innerHTML = '<div class="empty-state"><p>No se pudo cargar.</p></div>'; }
 }
 
+async function leaveWaitlist(classId) {
+  if (!confirm('¿Querés salir de la lista de espera?')) return;
+  try {
+    const res = await fetch(`${API}/reservations/waitlist/${classId}`, {
+      method: 'DELETE',
+      headers: authH()
+    });
+    const data = await res.json();
+    if (!res.ok) return showAlert('reservasAlert', typeof data.detail === 'string' ? data.detail : 'Error.');
+    showAlert('reservasAlert', data.message || 'Saliste de la lista de espera.', 'success');
+    loadReservas();
+  } catch { showAlert('reservasAlert', 'No se pudo conectar.'); }
+}
+
 async function cancelReserva(id) {
   if (!confirm('¿Confirmás la cancelación? Se aplicarán las políticas del centro.')) return;
   try {
-    const res  = await fetch(`${API}/reservations/${id}/cancel`, { method:'POST', headers:authH() });
+    // FIX: endpoint y body correctos
+    const res  = await fetch(`${API}/cancellations/reservation`, {
+      method: 'POST',
+      headers: authH(),
+      body: JSON.stringify({ reservation_id: id })
+    });
     const data = await res.json();
-    if (!res.ok) return showAlert('clasesAlert', typeof data.detail === 'string' ? data.detail : 'Error.');
-    showAlert('clasesAlert', 'Reserva cancelada.', 'success');
+    if (!res.ok) return showAlert('reservasAlert', typeof data.detail === 'string' ? data.detail : 'Error.');
+    showAlert('reservasAlert', data.message || 'Reserva cancelada.', 'success');
     loadReservas();
-  } catch { showAlert('clasesAlert', 'No se pudo conectar.'); }
+  } catch { showAlert('reservasAlert', 'No se pudo conectar.'); }
 }
 
 
@@ -658,7 +1776,7 @@ function renderUsersTable(data, isAdmin) {
             ${isAdmin
               ? (u.account_status === 'ACTIVA'
                   ? `<button class="action-btn danger" onclick="openBlockModal('${u.id}','${u.name} ${u.surname}')">Suspender</button>`
-                  : `<button class="action-btn success" onclick="unblockUser('${u.id}')">Reactivar</button>`)
+                  : `<button class="action-btn success" onclick="openUnblockModal('${u.id}', '${u.name} ${u.surname}')">Reactivar cuenta</button>`)
               : ''}
           </td>
         </tr>`).join('')}
@@ -685,6 +1803,9 @@ async function openUserProfile(userId) {
 
     document.getElementById('modalUserName').textContent = `${u.name} ${u.surname}`;
 
+    // Guardamos los datos del usuario en el modal para usarlos al editar
+    document.getElementById('userProfileModal').dataset.userId = u.id;
+
     let fields = [];
 
     if (isAdmin) {
@@ -699,16 +1820,20 @@ async function openUserProfile(userId) {
         ['Edad',         u.age ? `${u.age} años` : '—'],
         ['Dirección',    u.address      || '—'],
         ...(!isEmp ? [['Apto físico', badge(u.physical_certificate, CERT_LABELS)]] : []),
-        ...(u.specialty ? [['Especialidad', u.specialty]] : []),
-        ...(u.rol === 'ABONADO' ? [['Créditos', `${u.credits ?? 0}/3`]] : []),
+        ...(ROLES_WITH_SPECIALTY.includes(u.rol) ? [['Especialidad', u.specialty || '—']] : []),
+        ...(u.rol === 'ABONADO' ? [['Créditos', `${u.available_credits ?? 0}/3`]] : []),
       ];
 
       const actions = document.getElementById('modalActions');
-      if (u.account_status === 'ACTIVA') {
-        actions.innerHTML = `<button class="btn btn-sm btn-danger" onclick="closeUserModal();openBlockModal('${u.id}','${u.name} ${u.surname}')">Reactivar cuenta</button>`;
-      } else {
-        actions.innerHTML = `<button class="btn btn-sm" onclick="unblockFromModal('${u.id}')">Reactivar cuenta</button>`;
-      }
+
+      const suspendBtn = u.account_status === 'ACTIVA'
+        ? `<button class="btn btn-sm btn-danger" onclick="closeUserModal();openBlockModal('${u.id}','${u.name} ${u.surname}')">Suspender cuenta</button>`
+        : `<button class="btn btn-sm" onclick="openUnblockModal('${u.id}', '${u.name} ${u.surname}')">Reactivar cuenta</button>`;
+
+      actions.innerHTML = `
+        ${suspendBtn}
+        <button class="btn btn-sm btn-secondary" onclick="toggleEditUser(${JSON.stringify(u).replace(/"/g, '&quot;')})">Editar datos</button>
+      `;
 
     } else {
       fields = [
@@ -716,36 +1841,253 @@ async function openUserProfile(userId) {
         ['Rol',     badge(u.rol, ROL_LABELS)],
         ['Edad',    u.age ? `${u.age} años` : '—'],
         ['Género', u.gender || '—'],
-        ...(u.rol === 'ABONADO' ? [['Tipo', badge('ABONADO', ROL_LABELS)]] : []),
+        ...(ROLES_WITH_SPECIALTY.includes(u.rol) ? [['Especialidad', u.specialty || '—']] : []),
       ];
     }
 
-    document.getElementById('modalUserBody').innerHTML = fields.map(([label, value]) =>
-      `<div class="profile-field"><span class="profile-field-label">${label}</span><span class="profile-field-value">${value}</span></div>`
-    ).join('');
+    document.getElementById('modalUserBody').innerHTML = `
+      <div id="userViewMode">
+        ${fields.map(([label, value]) =>
+          `<div class="profile-field">
+            <span class="profile-field-label">${label}</span>
+            <span class="profile-field-value">${value}</span>
+          </div>`
+        ).join('')}
+      </div>
+      <div id="userEditMode" style="display:none"></div>
+    `;
 
   } catch { document.getElementById('modalUserName').textContent = 'Error al cargar.'; }
 }
 
+const ROLES_WITH_SPECIALTY = ['RECEPCIONISTA', 'PROFESOR'];
+
+function roleRequiresSpecialty(role) {
+  return ROLES_WITH_SPECIALTY.includes(role);
+}
+
+function getEditableRoles(currentRole) {
+  const all = ['RECEPCIONISTA', 'ADMINISTRATIVO', 'PROFESOR', 'NO_ABONADO'];
+  const others = all.filter(r => r !== currentRole);
+  return [currentRole, ...others];
+}
+
+function toggleEditUser(u) {
+  const viewMode = document.getElementById('userViewMode');
+  const editMode = document.getElementById('userEditMode');
+
+  if (editMode.style.display === 'none' || !editMode.style.display) {
+
+    const availableRoles = getEditableRoles(u.rol);
+    const showRoleSelector = availableRoles !== null;
+    const showSpecialty = ROLES_WITH_SPECIALTY.includes(u.rol);
+
+    editMode.innerHTML = `
+      <div style="display:flex; flex-direction:column; margin-top:16px;">
+        <div id="editUserAlert" style="display:none" class="alert"></div>
+
+        <div class="profile-field" style="flex-direction:column; gap:6px; align-items:flex-start;">
+          <span class="profile-field-label">Nombre</span>
+          <input id="editUserName" class="form-input" type="text" value="${u.name || ''}" style="width:100%;" />
+        </div>
+
+        <div class="profile-field" style="flex-direction:column; gap:6px; align-items:flex-start;">
+          <span class="profile-field-label">Apellido</span>
+          <input id="editUserSurname" class="form-input" type="text" value="${u.surname || ''}" style="width:100%;" />
+        </div>
+
+        <div class="profile-field" style="flex-direction:column; gap:6px; align-items:flex-start;">
+          <span class="profile-field-label">Teléfono</span>
+          <input id="editUserPhone" class="form-input" type="text" value="${u.phone || ''}" style="width:100%;" />
+        </div>
+
+        <div class="profile-field" style="flex-direction:column; gap:6px; align-items:flex-start;">
+          <span class="profile-field-label">Dirección</span>
+          <input id="editUserAddress" class="form-input" type="text" value="${u.address || ''}" style="width:100%;" />
+        </div>
+
+        <div class="profile-field" style="flex-direction:column; gap:6px; align-items:flex-start;">
+          <span class="profile-field-label">Género</span>
+          <select id="editUserGender" class="form-input" style="width:100%;">
+            <option value="">— Sin especificar —</option>
+            <option value="MASCULINO" ${u.gender === 'MASCULINO' ? 'selected' : ''}>Masculino</option>
+            <option value="FEMENINO"  ${u.gender === 'FEMENINO'  ? 'selected' : ''}>Femenino</option>
+            <option value="OTRO"      ${u.gender === 'OTRO'      ? 'selected' : ''}>Otro</option>
+          </select>
+        </div>
+
+        ${showRoleSelector ? `
+        <div class="profile-field" style="flex-direction:column; gap:6px; align-items:flex-start;">
+          <span class="profile-field-label">Rol</span>
+          <select id="editUserRole" class="form-input" style="width:100%;"
+            data-original="${u.rol}"
+            onchange="handleRoleChange(this.value)">
+            ${availableRoles.map(r =>
+              `<option value="${r}">${ROL_LABELS[r] || r}</option>`
+            ).join('')}
+          </select>
+        </div>
+
+        <div class="profile-field" id="editSpecialtyField" style="flex-direction:column; gap:6px; align-items:flex-start; display:${showSpecialty ? 'flex' : 'none'};">
+          <span class="profile-field-label">Especialidad</span>
+          <input id="editUserSpecialty" class="form-input" type="text" value="${u.specialty || ''}" style="width:100%;"
+            data-original="${u.specialty || ''}" />
+        </div>` : ''}
+
+        <div style="display:flex; gap:8px; margin-top:16px; flex-wrap:wrap;">
+          <button class="btn btn-sm" onclick="saveUserProfile('${u.id}')">Guardar</button>
+          <button class="btn btn-sm btn-secondary" onclick="cancelEditUser()">Cancelar</button>
+        </div>
+      </div>
+    `;
+
+    viewMode.style.display = 'none';
+    editMode.style.display = 'block';
+  } else {
+    cancelEditUser();
+  }
+}
+
+function handleRoleChange(role) {
+  const specialtyField = document.getElementById('editSpecialtyField');
+  if (!specialtyField) return;
+  specialtyField.style.display = ROLES_WITH_SPECIALTY.includes(role) ? 'flex' : 'none';
+}
+
+function cancelEditUser() {
+  document.getElementById('userEditMode').style.display = 'none';
+  document.getElementById('userViewMode').style.display = 'block';
+}
+
+async function saveUserProfile(userId) {
+  const name    = document.getElementById('editUserName')?.value.trim();
+  const surname = document.getElementById('editUserSurname')?.value.trim();
+  const phone   = document.getElementById('editUserPhone')?.value.trim()  || null;
+  const address = document.getElementById('editUserAddress')?.value.trim() || null;
+  const gender  = document.getElementById('editUserGender')?.value        || null;
+
+  const roleEl      = document.getElementById('editUserRole');
+  const specialtyEl = document.getElementById('editUserSpecialty');
+
+  const newRole      = roleEl?.value;
+  const originalRole = roleEl?.dataset.original;
+  const roleChanged  = newRole && newRole !== originalRole;
+
+  
+  const specialtyVisible = specialtyEl && specialtyEl.offsetParent !== null;
+
+  if (roleChanged && roleRequiresSpecialty(newRole)) {
+    if (!specialtyEl || !specialtyEl.value.trim())
+      return showEditUserAlert('La especialidad es obligatoria para este rol.');
+  }
+
+  const body = {
+    name,
+    surname,
+    phone,
+    address,
+    gender,
+    ...(roleChanged      ? { rol: newRole }                                 : {}),
+    ...(specialtyVisible ? { specialty: specialtyEl.value.trim() || null }  : {}),
+  };
+
+  try {
+    const res  = await fetch(`${API}/users/${userId}`, {
+      method: 'PUT',
+      headers: authH(),
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+
+    if (!res.ok)
+      return showEditUserAlert(typeof data.detail === 'string' ? data.detail : 'Error al guardar.');
+
+  showEditUserAlert('Usuario actualizado correctamente.', 'success');
+
+
+  cancelEditUser();
+  await openUserProfile(userId);
+
+
+  const viewMode = document.getElementById('userViewMode');
+  if (viewMode) {
+    const banner = document.createElement('div');
+    banner.className = 'alert success';
+    banner.textContent = 'Usuario actualizado correctamente.';
+    banner.style.display = 'block';
+    banner.style.marginBottom = '12px';
+    viewMode.prepend(banner);
+  }
+
+  setTimeout(() => {
+    closeUserModal();
+    loadUsers();
+  }, 2500);
+
+  } catch {
+    showEditUserAlert('No se pudo conectar.');
+  }
+}
+
+function showEditUserAlert(msg, type = 'error') {
+  const el = document.getElementById('editUserAlert');
+  if (!el) return;
+  el.textContent = msg;
+  el.className = `alert ${type}`;
+  el.style.display = 'block';
+}
+
 function closeUserModal() { document.getElementById('userProfileModal').classList.remove('open'); }
 
-async function unblockUser(userId) {
-  if (!confirm('¿Reactivar esta cuenta?')) return;
+let unblockTargetId = null;
+
+function openUnblockModal(userId, userName) {
+  unblockTargetId = userId;
+
+  document.getElementById('unblockModalTitle').textContent =
+    `Reactivar a ${userName}`;
+
+  const alert = document.getElementById('unblockModalAlert');
+  if (alert) alert.style.display = 'none';
+
+  document.getElementById('unblockModal').classList.add('open');
+}
+
+function closeUnblockModal() {
+  const modal = document.getElementById('unblockModal');
+  const alert = document.getElementById('unblockModalAlert');
+
+  modal.classList.remove('open');
+  if (alert) alert.style.display = 'none';
+
+  unblockTargetId = null;
+}
+
+
+async function unblockUser() {
+  if (!unblockTargetId) return;
   try {
-    const res  = await fetch(`${API}/staff/unblock_user/${userId}`, { method:'POST', headers:authH() });
-    if (!res.ok) return showAlert('usuariosAlert', typeof data.detail === 'string' ? data.detail : 'Error.');
+    const res  = await fetch(`${API}/staff/unblock_user/${unblockTargetId}`, { method:'POST', headers:authH() });
+    const data = await res.json();
+    if (!res.ok) return showUnblockModalAlert(typeof data.detail === 'string' ? data.detail : 'Error.');
+    closeUnblockModal();
     showAlert('usuariosAlert', 'Cuenta reactivada.', 'success');
     loadUsers();
   } catch (e) { 
     console.error(e);
-    showAlert('usuariosAlert', 'No se pudo conectar.'); 
+    showUnblockModalAlert('No se pudo conectar.'); 
   }
 }
 
-async function unblockFromModal(userId) {
-  closeUserModal();
-  await unblockUser(userId);
+function showUnblockModalAlert(msg, type = 'error') {
+  const el = document.getElementById('unblockModalAlert');
+  if (!el) return;
+
+  el.textContent = msg;
+  el.className = `alert ${type}`;
+  el.style.display = 'block';
 }
+
 function openBlockModal(userId, userName) {
   blockTargetId = userId;
   document.getElementById('blockModalTitle').textContent = `Suspender a ${userName}`;
@@ -756,19 +2098,39 @@ function closeBlockModal() { document.getElementById('blockModal').classList.rem
 
 async function confirmBlock() {
   const reason = document.getElementById('blockReason').value.trim();
-  if (!reason) return showAlert('usuariosAlert', 'El motivo es obligatorio.');
+  if (!reason) return showBlockModalAlert('El motivo es obligatorio.');
   try {
-    const res  = await fetch(`${API}/staff/block_user/${blockTargetId}`, { method:'POST', headers:authH(), body:JSON.stringify({ reason }) });
-    if (!res.ok) return showAlert('usuariosAlert', typeof data.detail === 'string' ? data.detail : 'Error.');
+    const res  = await fetch(`${API}/staff/block_user/${blockTargetId}`, { 
+      method:'POST', 
+      headers:authH(), 
+      body:JSON.stringify({ reason }),
+    });
+    const data = await res.json();
+    if (!res.ok) return showBlockModalAlert(typeof data.detail === 'string' ? data.detail : 'Error.');
     closeBlockModal();
     showAlert('usuariosAlert', 'Usuario suspendido.', 'success');
     loadUsers();
   } catch (e){ 
     console.error(e);
-    showAlert('usuariosAlert', 'No se pudo conectar.'); 
+    showBlockModalAlert('No se pudo conectar.'); 
   }
 }
 
+function showBlockModalAlert(msg, type = 'error') {
+  const el = document.getElementById('blockModalAlert');
+  if (!el) return;
+  el.textContent = msg;
+  el.className = `alert ${type}`;
+  el.style.display = 'block';
+}
+
+function closeBlockModal() {
+  const modal = document.getElementById('blockModal');
+  const alert = document.getElementById('blockModalAlert');
+  modal.classList.remove('open');
+  if (alert) alert.style.display = 'none';
+  blockTargetId = null;
+}
 
 let rejectTargetId = null;
 
@@ -839,10 +2201,17 @@ async function approveCert(userId) {
       body: JSON.stringify({ id: userId }) 
     });
     const data = await res.json();
-    if (!res.ok) return showAlert('usuariosAlert', typeof data.detail === 'string' ? data.detail : 'Error.');
-    showAlert('usuariosAlert', 'Apto físico aprobado.', 'success');
-    loadCertificados();
-  } catch { showAlert('usuariosAlert', 'No se pudo conectar.'); }
+    if (!res.ok) return showAlert('certsAlert', typeof data.detail === 'string' ? data.detail : 'Error.');
+
+    const certsAlert = document.getElementById('certsAlert');
+    certsAlert.textContent = 'Apto físico aprobado.';
+    certsAlert.className = 'alert success show';
+
+    setTimeout(() => {
+      certsAlert.classList.remove('show');
+      loadCertificados();
+    }, 2000);
+  } catch { showAlert('certsAlert', 'No se pudo conectar.'); }
 }
 
 function openRejectModal(userId) { rejectTargetId = userId; document.getElementById('rejectReason').value = ''; document.getElementById('rejectModal').classList.add('open'); }
@@ -850,7 +2219,7 @@ function closeRejectModal() { document.getElementById('rejectModal').classList.r
 
 async function confirmReject() {
   const reason = document.getElementById('rejectReason').value.trim();
-  if (!reason) return alert('El motivo es obligatorio.');
+  if (!reason) return showAlert('rejectAlert', 'El motivo es obligatorio.');
   try {
     const res = await fetch(`${API}/staff/reject_certificate`, { 
       method: 'POST', 
@@ -860,10 +2229,20 @@ async function confirmReject() {
       }, 
       body: JSON.stringify({ id: rejectTargetId, reason }) 
     });
-    if (!res.ok) return alert(typeof data.detail === 'string' ? data.detail : 'Error.');
+    const data = await res.json();
+    if (!res.ok) return showAlert('rejectAlert', typeof data.detail === 'string' ? data.detail : 'Error.');
     closeRejectModal();
-    loadCertificados();
-  } catch { alert('No se pudo conectar.'); }
+
+
+    const certsAlert = document.getElementById('certsAlert');
+    certsAlert.textContent = 'Apto físico rechazado.';
+    certsAlert.className = 'alert success show';
+
+    setTimeout(() => {
+      certsAlert.classList.remove('show');
+      loadCertificados();
+    }, 2000);
+  } catch { showAlert('rejectAlert', 'No se pudo conectar.'); }
 }
 
 
@@ -882,7 +2261,7 @@ async function loadSolicitudes() {
       <table class="data-table">
         <thead><tr><th>Usuario</th><th>Motivo del reclamo</th><th>Fecha</th><th>Acciones</th></tr></thead>
         <tbody>${data.map(s => {
-          // 💡 Limpiamos el texto acá en el Front para quitarle el prefijo feo
+
           const cleanReason = s.reason ? s.reason.replace('SOLICITUD DE DESBLOQUEO: ', '') : '—';
 
           return `
@@ -917,44 +2296,8 @@ async function loadReactivacionPanel() {
 
   if (u.account_status !== 'SUSPENDIDA') {
     formEl.innerHTML = '<p style="color:var(--muted);font-size:.88rem">Tu cuenta está activa. No necesitás enviar una solicitud.</p>';
-    return;async function loadSolicitudes() {
-  const container = document.getElementById('solicitudesContainer');
-  container.innerHTML = '<div class="empty-state"><p>Cargando...</p></div>';
-  try {
-    const res  = await fetch(`${API}/staff/pending_unblocks`, { headers: authH() });
-    const data = await res.json();
-    if (!res.ok) { container.innerHTML = `<div class="empty-state"><p>${data.detail || 'Error.'}</p></div>`; return; }
-    if (!data.length) {
-      container.innerHTML = '<div class="empty-state"><svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg><p>No hay solicitudes pendientes</p></div>';
-      return;
-    }
-    container.innerHTML = `
-      <table class="data-table">
-        <thead><tr><th>Usuario</th><th>Motivo del reclamo</th><th>Fecha</th><th>Acciones</th></tr></thead>
-        <tbody>${data.map(s => {
-          // 💡 Limpiamos el texto acá en el Front para quitarle el prefijo feo
-          const cleanReason = s.reason ? s.reason.replace('SOLICITUD DE DESBLOQUEO: ', '') : '—';
-
-          return `
-          <tr>
-            <td>
-              <strong style="color:var(--teal-dim)">${s.name} ${s.surname}</strong>
-              <span style="display:block;font-size:.78rem;color:var(--muted)">${s.email || ''}</span>
-            </td>
-            <td style="font-size:.85rem">${cleanReason}</td>
-            <td style="font-size:.82rem;color:var(--muted)">${s.created_at ? new Date(s.created_at).toLocaleDateString('es-AR') : '—'}</td>
-            <td style="display:flex;gap:6px">
-              <button class="action-btn success" onclick="approveUnlock('${s.user_id}','${s.user_id}')">Aprobar</button>
-              <button class="action-btn danger"  onclick="openRejectUnlockModal('${s.user_id}','${s.user_id}')">Rechazar</button>
-            </td>
-          </tr>`;
-        }).join('')}
-        </tbody>
-      </table>`;
-  } catch { container.innerHTML = '<div class="empty-state"><p>No se pudo conectar.</p></div>'; }
-}
+    return;
   }
-
 }
 
 async function submitUnblockRequest() {
@@ -988,7 +2331,10 @@ async function approveUnlock(userId) {
     const data = await res.json();
     if (!res.ok) return showAlert('solicitudesAlert', typeof data.detail === 'string' ? data.detail : 'Error.');
     showAlert('solicitudesAlert', 'Cuenta reactivada.', 'success');
-    loadSolicitudes();
+
+    setTimeout(() => {
+      loadSolicitudes();
+    },2000);
   } catch { showAlert('solicitudesAlert', 'No se pudo conectar.'); }
 }
 
@@ -1007,14 +2353,17 @@ function closeRejectUnlockModal() {
 
 async function confirmRejectUnlock() {
   const reason = document.getElementById('rejectUnlockReason').value.trim();
-  if (!reason) return alert('El motivo es obligatorio.');
+  if (!reason) return showAlert('rejectAlert', 'El motivo es obligatorio.');
   try {
     const res  = await fetch(`${API}/staff/reject_unblock_request/${rejectUnlockTargetId}`, { method:'POST', headers:authH(), body:JSON.stringify({ reason }) });
     const data = await res.json();
-    if (!res.ok) return alert(typeof data.detail === 'string' ? data.detail : 'Error.');
+    if (!res.ok) return showAlert('rejectAlert', typeof data.detail === 'string' ? data.detail : 'Error.');
+    else showAlert('rejectAlert', 'Solicitud rechazada.', 'success');
     closeRejectUnlockModal();
-    loadSolicitudes();
-  } catch { alert('No se pudo conectar.'); }
+    setTimeout(() => {
+      loadSolicitudes();
+    }, 2000);
+  } catch { showAlert('rejectAlert', 'No se pudo conectar.'); }
 }
 
 function clearValue(id) {
@@ -1123,22 +2472,146 @@ async function submitRegisterUser() {
 // SEGURIDAD
 
 async function handleChangePassword() {
+  const current = document.getElementById('currentPw').value;
   const np = document.getElementById('newPw').value;
   const cp = document.getElementById('confirmPw').value;
-  if (!np || !cp)      return showAlert('pwAlert', 'Completá ambos campos.');
+  if (!np || !cp || !current)      return showAlert('pwAlert', 'Completá todos los campos.');
   if (np.length < 6)   return showAlert('pwAlert', 'Mínimo 6 caracteres.');
   if (np !== cp)       return showAlert('pwAlert', 'Las contraseñas no coinciden.');
   try {
-    const res  = await fetch(`${API}/users/me/change-password`, { method:'POST', headers:authH(), body:JSON.stringify({ new_password:np, confirm_new_password:cp }) });
+    const res  = await fetch(`${API}/users/me/change-password`, { method:'POST', headers:authH(), body:JSON.stringify({ current_password:current, new_password:np, confirm_new_password:cp }) });
     const data = await res.json();
     if (!res.ok) return showAlert('pwAlert', typeof data.detail === 'string' ? data.detail : 'Error.');
     showAlert('pwAlert', 'Contraseña actualizada correctamente.', 'success');
+    document.getElementById('currentPw').value = '';
     document.getElementById('newPw').value = '';
     document.getElementById('confirmPw').value = '';
   } catch { showAlert('pwAlert', 'No se pudo conectar.'); }
 }
 
 
+// Pagos
+async function paySubscription() {
+
+  try {
+    const user = getUser();
+    const res = await fetch(`${API}/payments/subscription`, {
+      method: 'POST',
+      headers: authH(),
+      body: JSON.stringify({
+        user_id: user.id
+      })
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      return showAlert('pagosAlert', data.detail || 'No se pudo generar el pago.');
+    }
+    document.getElementById('paymentQrTitle').textContent = 'Pagar mensualidad';
+    document.getElementById('paymentQrSubtitle').textContent = 'Escaneá el QR con Mercado Pago para abonar la mensualidad.';
+    document.getElementById('paymentQrImage').src = data.qr_url;
+    document.getElementById('paymentQrModal').classList.add('open');
+
+  } catch (error) {
+
+    console.error(error);
+
+    showAlert(
+      'pagosAlert',
+      'No se pudo conectar con el servidor.'
+    );
+  } 
+}
+
+function closePaymentQrModal() {
+  document.getElementById('paymentQrModal').classList.remove('open');
+}
+async function loadDebts() {
+  const user = getUser();
+
+  const res = await fetch(`${API}/payments/debts/${user.id}`, {
+    headers: authH()
+  });
+
+  const debts = await res.json();
+  console.log("DEUDAS RECIBIDAS:", debts);
+  console.log("CANTIDAD:", debts.length);
+  const container = document.getElementById('debtsContainer');
+
+  if (!debts.length) {
+    container.innerHTML = `
+    <div class="section-card debts-card no-debts-card">
+
+      <h3>Deudas pendientes</h3>
+
+      <div class="no-debts-content">
+
+        <div class="no-debts-icon">
+          ✓
+        </div>
+
+        <h4>No tenés deudas pendientes</h4>
+
+        <p>
+          ¡Excelente! Estás al día con tus pagos.
+        </p>
+
+      </div>
+
+    </div>
+    `;
+    return;
+  }
+  
+
+  container.innerHTML = `
+    <div class="section-card debts-card">
+      <h3>Deudas pendientes</h3>
+
+      ${debts.map(d => `
+        <div class="debt-item">
+          <div class="debt-info">
+            <strong>Deuda #${d.id}</strong>
+            <span>Fecha de vencimiento: ${d.due_date}</span>
+          </div>
+
+          <div class="debt-amount">$${d.amount}</div>
+
+          <button class="btn btn-sm" onclick="payDebt('${d.id}', ${d.amount})">
+            Pagar deuda
+          </button>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+
+async function payDebt(debtId, amount) {
+  const user = getUser();
+
+  const res = await fetch(`${API}/payments/debt`, {
+    method: 'POST',
+    headers: authH(),
+    body: JSON.stringify({
+      user_id: user.id,
+      debt_id: debtId,
+      amount: amount
+    })
+  });
+
+  const data = await res.json();
+
+  if (!res.ok) {
+    return showAlert('pagosAlert', data.detail || 'No se pudo generar el pago.');
+  }
+
+  document.getElementById('paymentQrTitle').textContent = 'Pagar deuda';
+  document.getElementById('paymentQrSubtitle').textContent = 'Escaneá el QR con Mercado Pago para abonar tu deuda.';
+  document.getElementById('paymentQrImage').src = data.qr_url;
+  document.getElementById('paymentQrModal').classList.add('open');
+}
 // LOGOUT
 
 async function handleLogout() {

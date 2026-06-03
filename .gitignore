@@ -2,3 +2,7 @@
 __pycache__/
 *.pyc
 .env
+__pycache__/
+*.pyc
+*.pyo
+supabase/

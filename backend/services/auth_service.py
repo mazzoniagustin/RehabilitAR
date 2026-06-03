@@ -1,5 +1,5 @@
 from fastapi import HTTPException
-from utils.permissions import check_user_existance
+from utils.permissions import check_user_existance, user_data_validators
 from database import supabase
 
 #Aplicacion de las reglas de negocio.
@@ -7,6 +7,12 @@ from database import supabase
 def register_user(data):
     try:
         
+        
+        if len(data.password) < 6:
+            raise HTTPException(status_code=400, detail='La contraseña debe tener al menos 6 caracteres.')
+
+        user_data_validators(data)
+
         check_user_existance(data.email)
         
         auth_response = supabase.auth.sign_up({
