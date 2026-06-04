@@ -1058,8 +1058,12 @@ async function loadClases() {
     if (isProfessor) await loadMyProfessorRequests();
 
     const res  = await fetch(isProfessor ? `${API}/classes/available-for-professor` : `${API}/classes/available`, { headers: authH() });
-    if (!res.ok) { container.innerHTML = '<div class="empty-state"><p>Error al cargar las clases.</p></div>'; return; }
     const data = await res.json();
+    if (res.status === 401) return handleUnauthorized();
+    if (!res.ok) {
+      container.innerHTML = `<div class="empty-state"><p>${apiErrorMessage(data, 'Error al cargar las clases.')}</p></div>`;
+      return;
+    }
     if (!data.length) { container.innerHTML = '<div class="empty-state"><p>No hay clases disponibles.</p></div>'; return; }
     container.innerHTML = `
       <table class="data-table">
@@ -1473,8 +1477,12 @@ async function loadReservas() {
   container.innerHTML = '<div class="empty-state"><p>Cargando...</p></div>';
   try {
     const res  = await fetch(`${API}/reservations/me`, { headers: authH() });
-    if (!res.ok) { container.innerHTML = '<div class="empty-state"><p>Error al cargar.</p></div>'; return; }
     const data = await res.json();
+    if (res.status === 401) return handleUnauthorized();
+    if (!res.ok) {
+      container.innerHTML = `<div class="empty-state"><p>${apiErrorMessage(data, 'Error al cargar.')}</p></div>`;
+      return;
+    }
     if (!data.length) { container.innerHTML = '<div class="empty-state"><p>No tenés reservas activas.</p></div>'; return; }
     container.innerHTML = `
       <table class="data-table">

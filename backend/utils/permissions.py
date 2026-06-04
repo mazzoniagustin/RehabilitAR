@@ -52,6 +52,9 @@ def check_permission(allowed_roles: list[str]):
 
     def permission_checker(current_user: dict = Depends(get_current_user)):
 
+        if current_user['account_status'] == 'SUSPENDIDA':
+            raise HTTPException(status_code=403, detail='Acceso denegado. Tu cuenta está suspendida.')
+
         if current_user['account_status'] != 'ACTIVA':
             raise HTTPException(status_code=403, detail='Acceso denegado. Tu cuenta no se encuentra activa.')
 
