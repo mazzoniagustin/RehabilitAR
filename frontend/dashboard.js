@@ -2697,6 +2697,12 @@ async function paySubscription() {
 
   try {
     const user = getUser();
+    if (user?.rol === 'ABONADO') {
+      return showAlert(
+        'pagosAlert',
+        'Ya sos cliente abonado. No podés volver a pagar la mensualidad.'
+      );
+    }
     const res = await fetch(`${API}/payments/subscription`, {
       method: 'POST',
       headers: authH(),

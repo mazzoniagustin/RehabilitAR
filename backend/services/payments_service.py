@@ -96,6 +96,32 @@ def pay_reservation(user_id, class_id, class_type, payment_percentage):
         .execute() \
         .data
 
+    start_time = clase["start_time"]
+
+    conflict_res = supabase.table("reservations") \
+        .select("id, classes!inner(start_time)") \
+        .eq("user_id", user_id) \
+        .neq("status", "CANCELADA") \
+        .eq("classes.start_time", start_time) \
+        .execute()
+
+    if conflict_res.data:
+        raise HTTPException(
+            status_code=400,
+            detail="Ya estás inscripto en otra clase en el mismo día y horario."
+        )
+
+    conflict_waitlist = supabase.table("waitlist") \
+        .select("id, classes!inner(start_time)") \
+        .eq("user_id", user_id) \
+        .eq("classes.start_time", start_time) \
+        .execute()
+
+    if conflict_waitlist.data:
+        raise HTTPException(
+            status_code=400,
+            detail="Ya estás anotado en lista de espera para otra clase en el mismo día y horario."
+        )
     amount = float(clase["price"]) * (payment_percentage / 100)
 
     payment_reason = "RESERVATION_50" if payment_percentage == 50 else "RESERVATION_100"
