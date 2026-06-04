@@ -157,7 +157,7 @@ const NAV_CONFIG = {
     { label:'Inicio',             panel:'Inicio',        icon:'grid' },
     { label:'Mi perfil',          panel:'Perfil',        icon:'user' },
     { label:'Encontrar',    panel:'Usuarios',        icon:'users' },
-    { label:'Mis clases',         panel:'Clases',        icon:'calendar', section:'Clases' },
+    { label:'Clases',         panel:'Clases',        icon:'calendar', section:'Clases' },
     { label: 'Solicitar reactivación', panel:'Reactivacion', icon:'bell' },
     { label:'Seguridad',          panel:'Seguridad',     icon:'lock' },
   ],
