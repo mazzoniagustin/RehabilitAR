@@ -301,6 +301,7 @@ async function loadDashboard() {
 }
 
   buildSidebar(u.rol);
+  initNotifications();
 }
 
 
@@ -2906,6 +2907,108 @@ function startDebtStatusCheck(debtId) {
       console.error(error);
     }
   }, 3000);
+}
+
+let notifPollTimer = null;
+
+function initNotifications() {
+  fetchNotifications();
+  notifPollTimer = setInterval(fetchNotifications, 30000);
+  document.addEventListener('click', (e) => {
+    const wrapper = document.getElementById('notification-wrapper');
+    if (wrapper && !wrapper.contains(e.target)) closeNotificationDropdown();
+  });
+}
+
+async function fetchNotifications() {
+  try {
+    const res = await fetch(`${API}/notifications/`, { headers: authH() });
+    if (!res.ok) return;
+    const data = await res.json();
+    renderBell(data.unread_count);
+    renderDropdown(data.notifications);
+    updateToggleBtn(data.notifications_enabled);
+  } catch (err) {
+    console.error('Error notificaciones:', err);
+  }
+}
+
+function renderBell(unreadCount) {
+  const badge = document.getElementById('notif-badge');
+  if (!badge) return;
+  if (unreadCount > 0) {
+    badge.textContent = unreadCount > 99 ? '99+' : unreadCount;
+    badge.classList.remove('notif-badge--hidden');
+  } else {
+    badge.classList.add('notif-badge--hidden');
+  }
+}
+
+function renderDropdown(notifications) {
+  const list = document.getElementById('notif-list');
+  if (!list) return;
+  if (!notifications.length) {
+    list.innerHTML = `<div class="notif-empty">Sin notificaciones</div>`;
+    return;
+  }
+  list.innerHTML = notifications.map(n => `
+    <div class="notif-item ${n.is_read ? 'notif-item--read' : 'notif-item--unread'}"
+         onclick="handleNotifClick('${n.id}', ${n.is_read})">
+      <div class="notif-item__title">${n.title}</div>
+      <div class="notif-item__message">${n.message || ''}</div>
+      <div class="notif-item__time">${formatNotifTime(n.created_at)}</div>
+    </div>
+  `).join('');
+}
+
+function toggleNotificationDropdown() {
+  document.getElementById('notif-dropdown')?.classList.toggle('notif-dropdown--hidden');
+}
+
+function closeNotificationDropdown() {
+  document.getElementById('notif-dropdown')?.classList.add('notif-dropdown--hidden');
+}
+
+function updateToggleBtn(enabled) {
+  const btn = document.getElementById('notifToggleBtn');
+  if (!btn) return;
+  btn.textContent = enabled ? 'Desactivar' : 'Activar';
+}
+
+async function handleNotifClick(id, isRead) {
+  if (!isRead) await markAsRead(id);
+}
+
+async function markAsRead(id) {
+  try {
+    await fetch(`${API}/notifications/${id}/read`, { method: 'PATCH', headers: authH() });
+    fetchNotifications();
+  } catch (err) { console.error(err); }
+}
+
+async function markAllAsRead() {
+  try {
+    await fetch(`${API}/notifications/read-all`, { method: 'PATCH', headers: authH() });
+    fetchNotifications();
+  } catch (err) { console.error(err); }
+}
+
+async function toggleNotifications() {
+  try {
+    const res = await fetch(`${API}/notifications/toggle`, { method: 'PATCH', headers: authH() });
+    const data = await res.json();
+    updateToggleBtn(data.notifications_enabled);
+  } catch (err) { console.error(err); }
+}
+
+function formatNotifTime(isoString) {
+  const date = new Date(isoString);
+  const diffMin = Math.floor((new Date() - date) / 60000);
+  if (diffMin < 1) return 'Ahora';
+  if (diffMin < 60) return `Hace ${diffMin} min`;
+  const diffHrs = Math.floor(diffMin / 60);
+  if (diffHrs < 24) return `Hace ${diffHrs} h`;
+  return date.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' });
 }
 
 // LOGOUT

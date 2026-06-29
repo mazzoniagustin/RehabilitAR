@@ -114,7 +114,13 @@ input::placeholder { color:var(--muted) }
 .nav-item:hover { background:var(--bg); color:var(--teal-dark) }
 .nav-item.active { background:var(--teal-glow); color:var(--teal-dark); font-weight:600 }
 
-.sidebar-footer { padding:14px 10px; border-top:1px solid var(--border) }
+.sidebar-footer {
+  padding: 14px 10px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
 .user-chip { display:flex; align-items:center; gap:10px; padding:8px 10px }
 .avatar { width:36px; height:36px; background:var(--teal); border-radius:50%; display:flex; align-items:center; justify-content:center; color:#fff; font-weight:700; font-size:.85rem; flex-shrink:0 }
 .btn-logout { width:100%; margin-top:8px; padding:9px; border:1.5px solid var(--border); border-radius:10px; background:none; color:var(--muted); font-size:.82rem; font-weight:500; transition:all .18s; cursor:pointer; font-family:inherit; display:flex; align-items:center; justify-content:center; gap:6px }
@@ -346,11 +352,163 @@ input::placeholder { color:var(--muted) }
 .modal p { font-size:.88rem; color:var(--muted); margin-bottom:16px }
 .modal-actions { display:flex; gap:10px; margin-top:20px }
 
-/* Profile fields en modal */
+
 .profile-field { display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--bg); font-size:.875rem }
 .profile-field:last-child { border-bottom:none }
 .profile-field-label { color:var(--muted); font-size:.78rem; font-weight:600; text-transform:uppercase; letter-spacing:.04em }
 .profile-field-value { color:var(--text); font-weight:500; text-align:right }
+
+.notif-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+
+.notif-bell {
+  position: relative;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: none;
+  background: none;
+  font-size: .875rem;
+  font-weight: 500;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all .18s;
+  font-family: inherit;
+}
+
+.notif-bell:hover {
+  background: var(--bg);
+  color: var(--teal-dark);
+}
+
+.notif-bell svg {
+  width: 17px;
+  height: 17px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex-shrink: 0;
+}
+
+.notif-badge {
+  margin-left: auto;
+  background: #e53e3e;
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+  min-width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+}
+
+.notif-badge--hidden {
+  display: none;
+}
+
+.notif-dropdown {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  width: 300px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 16px 40px rgba(13,148,136,.18);
+  overflow: hidden;
+  z-index: 20;
+  animation: fadeIn .18s ease;
+}
+
+.notif-dropdown--hidden {
+  display: none;
+}
+
+.notif-header {
+  padding: 12px 14px;
+  font-size: .75rem;
+  font-weight: 700;
+  color: var(--teal-dim);
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.notif-mark-all {
+  background: none;
+  border: none;
+  color: #4a90d9;
+  font-size: 12px;
+  cursor: pointer;
+}
+.notif-mark-all:hover {
+  text-decoration: underline;
+}
+
+.notif-list {
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+
+.notif-item {
+  padding: 12px 14px;
+  font-size: .82rem;
+  color: var(--text);
+  border-bottom: 1px solid var(--bg);
+  cursor: pointer;
+  transition: background .15s;
+}
+
+.notif-item:last-child {
+  border-bottom: none;
+}
+
+.notif-item:hover {
+  background: var(--bg);
+}
+
+.notif-item--unread {
+  background: #eef4ff;
+  border-left: 3px solid #4a90d9;
+}
+.notif-item--read {
+  border-left: 3px solid transparent;
+}
+.notif-item__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1a202c;
+  margin-bottom: 2px;
+}
+.notif-item__message {
+  font-size: 12px;
+  color: #4a5568;
+  margin-bottom: 4px;
+}
+.notif-item__time {
+  font-size: 11px;
+  color: #a0aec0;
+}
+
+.notif-empty {
+  padding: 32px 16px;
+  text-align: center;
+  color: #a0aec0;
+  font-size: 13px;
+}
 
 /* Search bar */
 .search-bar { display:grid; grid-template-columns:1fr 200px auto; gap:12px; align-items:end; margin-bottom:20px }
