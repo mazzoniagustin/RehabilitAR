@@ -4,14 +4,29 @@ import os
 
 acc_password = os.getenv('acc_password')
 
-def send_account_created_email(to_email: str, name: str, password: str):
+def send_email(to_email: str, subject: str, body: str):
     msg = EmailMessage()
-    msg['Subject'] = 'Cuenta creada en RehabilitAR'
+    msg['Subject'] = subject
     msg['From'] = 'RehabilitAR <rehabilitar.faq@gmail.com>'
     msg['To'] = to_email
+    msg.set_content(body)
 
-    msg.set_content(
-        f"""Hola {name},
+    try:
+        with smtplib.SMTP('smtp.gmail.com', 587) as smtp:
+            smtp.starttls()
+            smtp.login('rehabilitar.faq@gmail.com', acc_password)
+            smtp.send_message(msg)
+    except Exception as e:
+        print(f'Error al enviar el correo: {e}')
+
+
+
+def send_account_created_email(to_email: str, name: str, password: str):
+    
+    send_email(
+        to_email=to_email,
+        subject='Cuenta creada en RehabilitAR',
+        body=f"""Hola {name},
 
         Tu cuenta ha sido creada exitosamente.
 
@@ -24,12 +39,122 @@ def send_account_created_email(to_email: str, name: str, password: str):
         Equipo RehabilitAR
         """
     )
+    
+def send_account_suspended_email(to_email: str, name: str, reason: str):
+    
+    send_email(
+        to_email=to_email,
+        subject='Tu cuenta se encuentra suspendida.',
+        body=f"""Hola {name},
 
-    try:
-        with smtplib.SMTP('smtp.gmail.com', 587) as smtp:
-            smtp.starttls() 
-            smtp.login('rehabilitar.faq@gmail.com', acc_password)
-            smtp.send_message(msg)
+        Tu cuenta ha sido suspendida por la administración.
 
-    except Exception as e:
-        print(f'Error al enviar el correo: {e}')
+        Motivo: {reason}
+
+        Para volver a tener acceso a las funciones de nuestro centro, solicitá la reactivación dentro de la página web.
+
+        Saludos,
+        Equipo RehabilitAR
+        """
+    )
+    
+def send_account_reactivated_email(to_email: str, name: str):
+    
+    send_email(
+        to_email=to_email,
+        subject='Tu cuenta ha sido reactivada.',
+        body=f"""Hola {name},
+
+        Tu cuenta ha sido reactivada por la administración.
+
+        Ya podes disfrutar de nuestras actividades nuevamente!
+
+        Saludos,
+        Equipo RehabilitAR
+        """
+    )
+
+def send_account_reactivation_approved(to_email: str, name: str):
+    
+    send_email(
+        to_email=to_email,
+        subject='Tu cuenta ha sido reactivada.',
+        body=f"""Hola {name},
+
+        Tu solicitud de reactivación ha sido aprobada por administración.
+
+        Ya podes disfrutar de nuestras actividades nuevamente!
+
+        Saludos,
+        Equipo RehabilitAR
+        """
+    )
+
+def send_account_reactivation_rejected(to_email: str, name: str, reason: str):
+    
+    send_email(
+        to_email=to_email,
+        subject='Tu solicitud de reactivación ha sido rechazada.',
+        body=f"""Hola {name},
+
+        Tu solicitud de reactivación ha sido rechazada por administración.
+        
+        Motivo: {reason}
+
+        Podes realizar nuevamente tu solicitud de reactivación dentro de la página web.
+
+        Saludos,
+        Equipo RehabilitAR
+        """
+    )
+
+def send_profile_edited_by_admin(to_email: str, name: str):
+    
+    send_email(
+        to_email=to_email,
+        subject='Tu perfil ha sido editado por un administrador.',
+        body=f"""Hola {name},
+
+        Tu perfil ha sido editado por un administrador.
+
+        Por favor, revisa los cambios realizados.
+
+        Saludos,
+        Equipo RehabilitAR
+        """
+    )
+
+def send_physical_certificate_approved(to_email: str, name: str):
+    
+    send_email(
+        to_email=to_email,
+        subject='Tu apto físico ha sido aprobado.',
+        body=f"""Hola {name},
+
+        Tu apto físico ha sido aprobado.
+
+        Ya podes realizar actividades!
+
+        Saludos,
+        Equipo RehabilitAR
+        """
+    )
+
+def send_physical_certificate_rejected(to_email: str, name: str, reason: str):
+    
+    send_email(
+        to_email=to_email,
+        subject='Tu apto físico ha sido rechazado.',
+        body=f"""Hola {name},
+
+        Tu apto físico ha sido rechazado.
+        
+        Motivo: {reason}
+        
+
+        Podes subir nuevamente tu apto físico dentro de la página web.
+
+        Saludos,
+        Equipo RehabilitAR
+        """
+    )
