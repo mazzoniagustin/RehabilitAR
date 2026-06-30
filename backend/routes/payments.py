@@ -20,6 +20,9 @@ class ReservationPaymentRequest(BaseModel):
     class_type: str
     payment_percentage: int
 
+class CashSubscriptionRequest(BaseModel):
+    user_id: str
+
 @routerPayments.post("/subscription")
 def subscription_payment(data: SubscriptionRequest):
     result = pay_subscription(data.user_id)
@@ -78,3 +81,15 @@ def reservation_payment(data: ReservationPaymentRequest, current_user=Depends(ch
 @routerPayments.get("/reservation/status/{payment_id}")
 def reservation_status(payment_id: str):
     return check_reservation_payment_status(payment_id)
+
+@routerPayments.get("/subscription/cash/validate/{user_id}")
+def validate_cash_subscription(
+    user_id: str,
+    current_user=Depends(check_permission(['RECEPCIONISTA']))
+):
+    result = validate_subscription_payment(user_id)
+
+    if "Error" in result:
+        raise HTTPException(status_code=400, detail=result["Error"])
+
+    return result

@@ -761,6 +761,31 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="cashSubscriptionModal">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-header">
+      <h3>Confirmar pago en efectivo</h3>
+      <button class="modal-close" onclick="closeCashSubscriptionModal()">✕</button>
+    </div>
+
+    <div id="cashSubscriptionAlert" class="alert"></div>
+
+    <p style="color:var(--muted);font-size:.9rem;margin-bottom:18px">
+      Confirmá que el cliente pagó la mensualidad en efectivo.
+      Al aceptar, el cliente pasará a ser abonado.
+    </p>
+
+    <div class="modal-actions">
+      <button class="btn btn-sm" onclick="confirmCashSubscription()">
+        Confirmar pago
+      </button>
+      <button class="btn btn-sm btn-outline" onclick="closeCashSubscriptionModal()">
+        Cancelar
+      </button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="attendanceModal">
   <div class="modal" style="max-width:720px">
     <div class="modal-header">

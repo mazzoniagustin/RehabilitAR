@@ -1,6 +1,6 @@
 import qrcode
 import base64
-from datetime import datetime
+from datetime import datetime, timedelta
 from database import supabase
 from io import BytesIO
 from services.mp_service import create_qr_order
@@ -253,9 +253,59 @@ def pay_debt(user_id, debt_id, amount):
 
 def generate_receipt():
     print()
-def pay_with_MP():
-    print()
 
+def validate_subscription_payment(user_id):
+    user_response = supabase.table("users") \
+        .select("id") \
+        .eq("id", user_id) \
+        .single() \
+        .execute()
 
-def pay_with_cash():
-    print()
+    if not user_response.data:
+        return {
+            "Error": "Usuario no encontrado."
+        }
+
+    if get_active_subscription(user_id):
+        return {
+            "Error": "Ya sos cliente abonado. No podés volver a pagar la mensualidad."
+        }
+
+    today = datetime.now()
+
+    if today.day > 10:
+        return {
+            "Error": "No puede pagar su mensualidad debido a que ya pasaron los 10 días limites de iniciado el mes"
+        }
+
+    return {
+        "message": "El cliente puede registrar la mensualidad."
+    }
+
+def pay_with_cash(user_id: str):
+    validation = validate_subscription_payment(user_id)
+    if "Error" in validation:
+        return validation
+
+    today = datetime.now()
+
+    supabase.table("payments").insert({
+        "user_id": user_id,
+        "amount": 16,
+        "status": "PAGADO",
+        "payment_method": "EFECTIVO",
+        "payment_reason": "SUBSCRIPTION",
+        "payment_type": "SUBSCRIPTION",
+        "paid_at": today.isoformat()
+    }).execute()
+
+    supabase.table("users").update({
+        "rol": "ABONADO"
+    }).eq("id", user_id).execute()
+
+    return {
+        "message": "Mensualidad registrada correctamente. El cliente ahora es abonado."
+    }
+
+    
+

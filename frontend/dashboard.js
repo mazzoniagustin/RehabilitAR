@@ -13,7 +13,7 @@ let debtCheckInterval = null;
 let pendingReservationClassId = null;
 let pendingReservationClassType = null;
 let reservationCheckInterval = null;
-
+let cashSubscriptionUserId = null;
 function getAge(birthDateStr) {
   const today = new Date();
   const birth = new Date(birthDateStr);
@@ -1995,7 +1995,7 @@ async function openUserProfile(userId) {
 
   const currentUser = getUser();
   const isAdmin = currentUser?.rol === 'ADMINISTRATIVO';
-
+  const isReceptionist = currentUser?.rol === 'RECEPCIONISTA';
   const url = isAdmin ? `${API}/users/${userId}` : `${API}/users/public/${userId}`;
 
   try {
@@ -2047,6 +2047,13 @@ async function openUserProfile(userId) {
       ];
     }
 
+    if (isReceptionist && u.rol === 'NO_ABONADO') {
+      document.getElementById('modalActions').innerHTML = `
+        <button class="btn btn-sm" onclick="registerCashSubscription('${u.id}')">
+          Registrar mensualidad en efectivo
+        </button> 
+      `;
+    }
     document.getElementById('modalUserBody').innerHTML = `
       <div id="userViewMode">
         ${fields.map(([label, value]) =>
@@ -2916,6 +2923,71 @@ async function handleLogout() {
   window.location.href = 'login.html';
 }
 
+async function registerCashSubscription(userId) {
+  try {
+    const res = await fetch(`${API}/payments/subscription/cash/validate/${userId}`, {
+      headers: authH()
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      return showAlert(
+        'usuariosAlert',
+        data.detail || 'No se puede registrar la mensualidad.'
+      );
+    }
+
+    cashSubscriptionUserId = userId;
+    document.getElementById('cashSubscriptionAlert').className = 'alert';
+    document.getElementById('cashSubscriptionModal').classList.add('open');
+
+  } catch (error) {
+    console.error(error);
+    showAlert('usuariosAlert', 'No se pudo conectar con el servidor.');
+  }
+}
+
+function closeCashSubscriptionModal() {
+  document.getElementById('cashSubscriptionModal').classList.remove('open');
+  cashSubscriptionUserId = null;
+}
+
+async function confirmCashSubscription() {
+  if (!cashSubscriptionUserId) return;
+
+  try {
+    const res = await fetch(`${API}/payments/subscription/cash`, {
+      method: 'POST',
+      headers: authH(),
+      body: JSON.stringify({ user_id: cashSubscriptionUserId })
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      return showAlert(
+        'cashSubscriptionAlert',
+        data.detail || 'No se pudo registrar la mensualidad.'
+      );
+    }
+
+    closeCashSubscriptionModal();
+    closeUserModal();
+
+    showAlert(
+      'usuariosAlert',
+      data.message || 'Mensualidad registrada correctamente.',
+      'success'
+    );
+
+    initUserPanel();
+
+  } catch (error) {
+    console.error(error);
+    showAlert('cashSubscriptionAlert', 'No se pudo conectar con el servidor.');
+  }
+}
 // INIT
 
 (async function init() {
