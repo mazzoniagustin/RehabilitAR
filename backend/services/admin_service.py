@@ -3,7 +3,7 @@ from utils.notifications import *
 from utils.password_utils import random_password
 from database import supabase, supabase_admin
 from utils.permissions import check_user_existance, user_data_validators, validate_person_name, validate_reason, validate_specialty
-from notifications_service import create_notification
+from services.notifications_service import create_notification
 #Aplicacion de las reglas de negocio.
 
 
@@ -125,8 +125,10 @@ def update_user_by_admin(user_id: str, update_data: dict):
                 update_data['specialty'] = None
         if 'specialty' in update_data and update_data['specialty']:
             update_data['specialty'] = validate_specialty(update_data['specialty'])
+            
         
-        send_profile_edited_by_admin(update_data.get('email'), update_data.get('name'))
+        user_data = supabase.table("users").select("email, name").eq('id', user_id).single().execute()
+        send_profile_edited_by_admin(user_data.data.get('email'), user_data.data.get('name'))
         create_notification(user_id, "Perfil editado por administración", "Tu perfil ha sido editado por un administrador. Por favor, revisa los cambios realizados.")
 
         supabase.table("users").update(update_data).eq('id', user_id).execute()
@@ -140,14 +142,14 @@ def update_user_by_admin(user_id: str, update_data: dict):
  
 def approve_certificate(data):
     try:
-        response = supabase.table('users').select('physical_certificate').eq('id', data.id).execute()
+        response = supabase.table('users').select('physical_certificate, email, name').eq('id', data.id).execute()
             
         if not response.data:
             raise HTTPException(status_code=404, detail='Usuario no encontrado.')
         if response.data[0]['physical_certificate'] == 'APROBADO':
             raise HTTPException(status_code=400, detail='El apto físico ya ha sido aprobado.')
-            
-        send_physical_certificate_approved(data.email, data.name)
+        
+        send_physical_certificate_approved(response.data[0]['email'], response.data[0]['name'])
         create_notification(data.id, "Apto físico aprobado", "Tu apto físico ha sido aprobado. Ya podes realizar actividades!")
         supabase.table('users').update({'physical_certificate': 'APROBADO'}).eq('id', data.id).execute()
         return {'Mensaje': 'Apto físico aprobado.'}
@@ -155,21 +157,26 @@ def approve_certificate(data):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f'Error al aprobar el certificado físico.')
+        raise HTTPException(status_code=400, detail=f'Error al aprobar el certificado físico. {e}')
     
 def reject_certificate(data):
     try:
         reason_text = data.reason if hasattr(data, 'reason') else data
         reason_text = validate_reason(reason_text)
-        response = supabase.table('users').select('physical_certificate').eq('id', data.id).execute()
+        response = supabase.table('users').select('physical_certificate, email, name').eq('id', data.id).execute()
             
         if not response.data:
             raise HTTPException(status_code=404, detail='Usuario no encontrado.')
         if response.data[0]['physical_certificate'] == 'RECHAZADO':
             raise HTTPException(status_code=400, detail='El apto físico ya ha sido rechazado.')
     
-        send_physical_certificate_rejected(data.email, data.name, reason_text)
-        create_notification(data.id, "Apto físico rechazado", f"Tu apto físico ha sido rechazado. Motivo: {reason_text}. Podes subir nuevamente tu apto físico dentro de la página web.")
+        send_physical_certificate_rejected(response.data[0]['email'], response.data[0]['name'], reason_text)
+        create_notification(data.id, "Apto físico rechazado", f"""
+                            Tu apto físico ha sido rechazado. 
+                            
+                            Motivo: {reason_text}. 
+                            
+                            """)
             
         supabase.table('users').update({
             'physical_certificate': 'RECHAZADO',
@@ -179,7 +186,7 @@ def reject_certificate(data):
     except HTTPException:
         raise   
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f'Error al rechazar el certificado físico.')
+        raise HTTPException(status_code=400, detail=f'Error al rechazar el certificado físico. {e}')
  
 def get_filtered_users(name: str = None, role: str = None, status: str = None):
     try:
@@ -205,7 +212,7 @@ def reject_unblock_request(user_id, reason, acted_by):
         )
 
         response = supabase.table('users')\
-            .select('account_status')\
+            .select('account_status, email, name')\
             .eq('id', user_id)\
             .single()\
             .execute()
@@ -223,7 +230,10 @@ def reject_unblock_request(user_id, reason, acted_by):
         }).eq('user_id', user_id).eq('request_status', 'PENDING').execute()
         
         send_account_reactivation_rejected(response.data.get('email'), response.data.get('name'), reason_text)
-        create_notification(user_id, "Solicitud de reactivación rechazada", f"Tu solicitud de reactivación ha sido rechazada por administración. Motivo: {reason_text}. Podes realizar nuevamente tu solicitud de reactivación dentro de la página web.")
+        create_notification(user_id, "Solicitud de reactivación rechazada", f"""Tu solicitud de reactivación ha sido rechazada por administración. 
+                            
+                            Motivo: {reason_text}. 
+                            """)
 
         return {'Mensaje': 'Solicitud de reactivacion rechazada.'}
 
@@ -235,7 +245,7 @@ def reject_unblock_request(user_id, reason, acted_by):
 def approve_unblock_request(user_id, acted_by):
     try:
         response = supabase.table('users')\
-            .select('account_status')\
+            .select('account_status, email, name')\
             .eq('id', user_id)\
             .single()\
             .execute()
@@ -263,7 +273,8 @@ def approve_unblock_request(user_id, acted_by):
 
         send_account_reactivation_approved(response.data.get('email'), response.data.get('name'))
 
-        create_notification(user_id, "Solicitud de reactivación aprobada", "Tu solicitud de reactivación ha sido aprobada por administración. Ya podes disfrutar de nuestras actividades nuevamente!")
+        create_notification(user_id, "Solicitud de reactivación aprobada", """Tu solicitud de reactivación ha sido aprobada por administración. 
+                            Ya podes disfrutar de nuestras actividades nuevamente!""")
 
         return {'Mensaje': 'Solicitud de reactivacion aprobada.'}
 
@@ -277,7 +288,7 @@ def block_user(user_id, reason, acted_by):
         reason_text = validate_reason(
             reason.reason if hasattr(reason, 'reason') else reason
         )
-        response = supabase.table('users').select('account_status').eq('id', user_id).single().execute()
+        response = supabase.table('users').select('account_status, email, name').eq('id', user_id).single().execute()
             
         if not response.data:
             raise HTTPException(status_code=404, detail='Usuario no encontrado.')
@@ -297,7 +308,12 @@ def block_user(user_id, reason, acted_by):
             'block_reason': reason_text
             }).eq('id', user_id).execute()
         
-        create_notification(user_id, "Cuenta suspendida", f"Tu cuenta ha sido suspendida por administración. Motivo: {reason_text}. Para volver a tener acceso a las funciones de nuestro centro, solicitá la reactivación dentro de la página web.")
+        create_notification(user_id, "Cuenta suspendida", f"""Tu cuenta ha sido suspendida por administración. 
+                            
+                            Motivo: {reason_text}. 
+                            
+                            """)
+        
         send_account_suspended_email(response.data.get('email'), response.data.get('name'), reason_text)
         return {'Mensaje': 'Usuario suspendido.'}
         
@@ -362,7 +378,7 @@ def get_pending_unblock_requests():
  
 def unblock_user(user_id, acted_by):
     try:
-        response = supabase.table('users').select('account_status').eq('id', user_id).single().execute()
+        response = supabase.table('users').select('account_status, email, name').eq('id', user_id).single().execute()
             
         if not response.data:
             raise HTTPException(status_code=404, detail='Usuario no encontrado.')
@@ -378,7 +394,9 @@ def unblock_user(user_id, acted_by):
             }).execute()
         
         send_account_reactivated_email(response.data.get('email'), response.data.get('name'))
-        create_notification(user_id, "Cuenta reactivada", "Tu cuenta ha sido reactivada por la administración. Ya podes disfrutar de nuestras actividades nuevamente!")
+        create_notification(user_id, "Cuenta reactivada", """Tu cuenta ha sido reactivada por la administración.                     
+                            Ya podes disfrutar de nuestras actividades nuevamente!""")
+        
         supabase.table('users').update({'account_status': 'ACTIVA'}).eq('id', user_id).execute()
         return {'Mensaje': 'Cuenta reactivada.'}
  
