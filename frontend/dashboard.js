@@ -2078,6 +2078,7 @@ function getEditableRoles(currentRole) {
 function toggleEditUser(u) {
   const viewMode = document.getElementById('userViewMode');
   const editMode = document.getElementById('userEditMode');
+  const actions = document.getElementById('modalActions');
 
   if (editMode.style.display === 'none' || !editMode.style.display) {
 
@@ -2146,6 +2147,8 @@ function toggleEditUser(u) {
 
     viewMode.style.display = 'none';
     editMode.style.display = 'block';
+    if (actions) actions.style.display = 'none';
+
   } else {
     cancelEditUser();
   }
@@ -2160,6 +2163,9 @@ function handleRoleChange(role) {
 function cancelEditUser() {
   document.getElementById('userEditMode').style.display = 'none';
   document.getElementById('userViewMode').style.display = 'block';
+
+  const actions = document.getElementById('modalActions');
+  if (actions) actions.style.display = 'flex';
 }
 
 async function saveUserProfile(userId) {
