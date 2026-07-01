@@ -258,3 +258,77 @@ def send_waitlist_promoted_email(to_email: str, name: str, class_desc: str):
         Equipo RehabilitAR
         """
     )
+
+def send_class_cancelled_credit_email(to_email: str, name: str, class_desc: str, reason: str):
+
+    send_email(
+        to_email=to_email,
+        subject='Tu clase fue cancelada: se te otorgó un crédito.',
+        body=f"""Hola {name},
+
+        Tu clase de {class_desc} fue cancelada.
+
+        Motivo: {reason}
+
+        Como sos cliente abonado, se te otorgó un crédito que podes usar para reservar otra clase.
+
+        Saludos,
+        Equipo RehabilitAR
+        """
+    )
+
+def send_class_cancelled_no_credit_email(to_email: str, name: str, class_desc: str, reason: str):
+
+    send_email(
+        to_email=to_email,
+        subject='Tu clase fue cancelada.',
+        body=f"""Hola {name},
+
+        Tu clase de {class_desc} fue cancelada.
+
+        Motivo: {reason}
+
+        Alcanzaste el máximo de créditos disponibles este mes, por lo que no pudimos otorgarte un crédito adicional por esta cancelación.
+
+        Ante cualquier duda, podes contactarte con administración.
+
+        Saludos,
+        Equipo RehabilitAR
+        """
+    )
+
+def send_class_cancelled_refund_email(to_email: str, name: str, class_desc: str, reason: str):
+
+    send_email(
+        to_email=to_email,
+        subject='Tu clase fue cancelada: se procesará tu reembolso.',
+        body=f"""Hola {name},
+
+        Tu clase de {class_desc} fue cancelada.
+
+        Motivo: {reason}
+
+        Se procesará el reembolso de tu pago. Te avisaremos cuando esté acreditado.
+
+        Saludos,
+        Equipo RehabilitAR
+        """
+    )
+
+def send_waitlist_removed_class_cancelled_email(to_email: str, name: str, class_desc: str, reason: str):
+
+    send_email(
+        to_email=to_email,
+        subject='Se canceló una clase de tu lista de espera.',
+        body=f"""Hola {name},
+
+        La clase de {class_desc}, en la que estabas anotado/a en lista de espera, fue cancelada.
+
+        Motivo: {reason}
+
+        Fuiste removido/a de la lista de espera de esa clase. Podes anotarte a otras clases disponibles dentro de la página web.
+
+        Saludos,
+        Equipo RehabilitAR
+        """
+    )
