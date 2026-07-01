@@ -3,6 +3,7 @@ from fastapi import HTTPException
 from services.cancellations.classes_cancellation_service import asegurar_clase_reservable_con_profesor
 from services.reservations.overlap_validator import validate_user_has_no_overlapping_class
 from services.notifications_service import create_notification
+from utils.notifications import send_waitlist_joined_email, send_waitlist_advanced_email
 from utils.class_desc import build_class_desc
 
 
@@ -33,7 +34,7 @@ def unirse_a_waitlist(user_id: str, class_id: str):
                 detail='La clase tiene lugares disponibles. Podés reservarla directamente.'
             )
 
-        user_response = supabase.table('users').select('id, rol, account_status').eq('id', user_id).single().execute()
+        user_response = supabase.table('users').select('id, rol, account_status, email, name').eq('id', user_id).single().execute()
         if not user_response.data:
             raise HTTPException(status_code=404, detail='Usuario no encontrado.')
         user = user_response.data
@@ -69,10 +70,10 @@ def unirse_a_waitlist(user_id: str, class_id: str):
         class_type = clase['type']
 
         if class_type == 'INDIVIDUAL':
-            return _agregar_waitlist_individual(user_id, class_id, clase)
+            return _agregar_waitlist_individual(user_id, class_id, clase, user)
         if class_type == 'FIJA':
             prioridad = 'ABONADO' if user['rol'] == 'ABONADO' else 'NO_ABONADO'
-            return _agregar_waitlist_fija(user_id, class_id, prioridad, clase)
+            return _agregar_waitlist_fija(user_id, class_id, prioridad, clase, user)
 
         raise HTTPException(status_code=400, detail='Tipo de clase inválido para lista de espera.')
 
@@ -121,7 +122,7 @@ def salir_de_waitlist(user_id: str, class_id: str):
         raise HTTPException(status_code=500, detail=f'Error al salir de la lista de espera: {str(e)}')
 
 
-def _agregar_waitlist_individual(user_id: str, class_id: str, clase: dict = None):
+def _agregar_waitlist_individual(user_id: str, class_id: str, clase: dict = None, user: dict = None):
     waitlist_response = (
         supabase.table('waitlist')
         .select('position, priority_order')
@@ -142,7 +143,7 @@ def _agregar_waitlist_individual(user_id: str, class_id: str, clase: dict = None
         'priority_order': nuevo_priority_order,
     }).execute()
 
-    _notificar_union_waitlist(user_id, clase, nueva_posicion)
+    _notificar_union_waitlist(user_id, clase, nueva_posicion, user)
 
     return {
         'message': f'Te uniste a la lista de espera. Posición: {nueva_posicion}.',
@@ -150,7 +151,7 @@ def _agregar_waitlist_individual(user_id: str, class_id: str, clase: dict = None
     }
 
 
-def _agregar_waitlist_fija(user_id: str, class_id: str, prioridad: str, clase: dict = None):
+def _agregar_waitlist_fija(user_id: str, class_id: str, prioridad: str, clase: dict = None, user: dict = None):
     """
     FIFO con prioridad: ABONADO tiene prioridad sobre NO_ABONADO.
     Dentro del mismo nivel de prioridad, se respeta el orden de llegada.
@@ -196,7 +197,7 @@ def _agregar_waitlist_fija(user_id: str, class_id: str, prioridad: str, clase: d
         'priority_order': nuevo_priority_order,
     }).execute()
 
-    _notificar_union_waitlist(user_id, clase, posicion_visible)
+    _notificar_union_waitlist(user_id, clase, posicion_visible, user)
 
     return {
         'message': f'Te uniste a la lista de espera. Posición: {posicion_visible}.',
@@ -204,7 +205,7 @@ def _agregar_waitlist_fija(user_id: str, class_id: str, prioridad: str, clase: d
     }
 
 
-def _notificar_union_waitlist(user_id: str, clase: dict, posicion: int):
+def _notificar_union_waitlist(user_id: str, clase: dict, posicion: int, user: dict = None):
     try:
         desc = build_class_desc(clase) if clase else 'la clase'
         create_notification(
@@ -214,6 +215,18 @@ def _notificar_union_waitlist(user_id: str, clase: dict, posicion: int):
             f'Tu posición actual es {posicion}. '
             'Te avisaremos si entrás a la clase por una vacante o si avanzás de posición.'
         )
+
+        if user is None:
+            user = (
+                supabase.table('users')
+                .select('email, name')
+                .eq('id', user_id)
+                .single()
+                .execute()
+            ).data
+
+        if user and user.get('email'):
+            send_waitlist_joined_email(user['email'], user.get('name', 'usuario/a'), desc, posicion)
     except Exception:
         # No interrumpir el flujo principal si la notificación falla
         pass
@@ -279,6 +292,19 @@ def _notificar_avance_waitlist(class_id: str, class_type: str, posiciones_previa
                     f'Avanzaste de posición en la lista de espera de la clase de {desc}. '
                     f'Tu posición actual es {nueva_posicion}.'
                 )
+                try:
+                    user = (
+                        supabase.table('users')
+                        .select('email, name')
+                        .eq('id', user_id)
+                        .single()
+                        .execute()
+                    ).data
+                    if user and user.get('email'):
+                        send_waitlist_advanced_email(user['email'], user.get('name', 'usuario/a'), desc, nueva_posicion)
+                except Exception:
+                    # No interrumpir el flujo principal si el email falla
+                    pass
     except Exception:
         # No interrumpir el flujo principal si la notificación falla
         pass

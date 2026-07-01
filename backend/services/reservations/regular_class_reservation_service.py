@@ -4,6 +4,7 @@ from services.cancellations.classes_cancellation_service import asegurar_clase_r
 from services.reservations.overlap_validator import validate_user_has_no_overlapping_class
 from services.reservations import waitlist_service
 from services.notifications_service import create_notification
+from utils.notifications import send_reservation_confirmed_email
 from utils.class_desc import build_class_desc
 
 
@@ -117,6 +118,7 @@ def reservar_clase_fija(user_id: str, class_id: str, payment_percentage: int = 1
                 'Reserva confirmada',
                 f'Te uniste correctamente a la clase de {build_class_desc(clase)}.'
             )
+            send_reservation_confirmed_email(user['email'], user.get('name', 'usuario/a'), build_class_desc(clase))
         except Exception:
             # No interrumpir el flujo principal si la notificación falla:
             # la reserva ya quedó confirmada en la base de datos.

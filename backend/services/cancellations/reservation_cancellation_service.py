@@ -3,6 +3,7 @@ from fastapi import HTTPException
 from datetime import datetime, timezone
 from utils import benefits
 from services.notifications_service import create_notification
+from utils.notifications import send_waitlist_promoted_email
 from utils.class_desc import build_class_desc
 from services.reservations.waitlist_service import (
     _visible_positions_map,
@@ -228,7 +229,7 @@ def _confirmar_desde_waitlist(entrada: dict, class_id: str, capacidad_actual: in
     """Crea/reactiva la reserva del primer usuario en waitlist y lo elimina de la lista."""
     user_response = (
         supabase.table('users')
-        .select('rol')
+        .select('rol, email, name')
         .eq('id', entrada['user_id'])
         .single()
         .execute()
@@ -287,11 +288,15 @@ def _confirmar_desde_waitlist(entrada: dict, class_id: str, capacidad_actual: in
     _reordenar_posiciones_waitlist(class_id)
 
     try:
+        desc = build_class_desc(clase)
         create_notification(
             entrada['user_id'],
             '¡Entraste a la clase!',
-            f'Se liberó un lugar y entraste a la clase de {build_class_desc(clase)}.'
+            f'Se liberó un lugar y entraste a la clase de {desc}.'
         )
+        promovido = user_response.data or {}
+        if promovido.get('email'):
+            send_waitlist_promoted_email(promovido['email'], promovido.get('name', 'usuario/a'), desc)
     except Exception:
         # No interrumpir el flujo principal si la notificación falla
         pass

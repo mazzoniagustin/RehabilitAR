@@ -192,3 +192,69 @@ def send_professor_request_rejected(to_email: str, name: str, class_desc: str, r
         Equipo RehabilitAR
         """
     )
+
+def send_reservation_confirmed_email(to_email: str, name: str, class_desc: str):
+
+    send_email(
+        to_email=to_email,
+        subject='Tu reserva fue confirmada.',
+        body=f"""Hola {name},
+
+        Te uniste correctamente a la clase de {class_desc}.
+
+        Podes ver el detalle de tu reserva dentro de la página web.
+
+        Saludos,
+        Equipo RehabilitAR
+        """
+    )
+
+def send_waitlist_joined_email(to_email: str, name: str, class_desc: str, posicion: int):
+
+    send_email(
+        to_email=to_email,
+        subject='Te uniste a la lista de espera.',
+        body=f"""Hola {name},
+
+        Te uniste a la lista de espera de la clase de {class_desc}.
+
+        Tu posición actual es {posicion}.
+
+        Te avisaremos si entrás a la clase por una vacante o si avanzás de posición.
+
+        Saludos,
+        Equipo RehabilitAR
+        """
+    )
+
+def send_waitlist_advanced_email(to_email: str, name: str, class_desc: str, posicion: int):
+
+    send_email(
+        to_email=to_email,
+        subject='Avanzaste en la lista de espera.',
+        body=f"""Hola {name},
+
+        Avanzaste de posición en la lista de espera de la clase de {class_desc}.
+
+        Tu posición actual es {posicion}.
+
+        Saludos,
+        Equipo RehabilitAR
+        """
+    )
+
+def send_waitlist_promoted_email(to_email: str, name: str, class_desc: str):
+
+    send_email(
+        to_email=to_email,
+        subject='¡Entraste a la clase!',
+        body=f"""Hola {name},
+
+        Se liberó un lugar y entraste a la clase de {class_desc}.
+
+        Podes ver el detalle de tu reserva dentro de la página web.
+
+        Saludos,
+        Equipo RehabilitAR
+        """
+    )
