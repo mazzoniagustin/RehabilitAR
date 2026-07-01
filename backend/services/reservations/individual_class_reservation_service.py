@@ -5,6 +5,8 @@ from fastapi import HTTPException
 from services.cancellations.classes_cancellation_service import asegurar_clase_reservable_con_profesor
 from services.reservations.overlap_validator import validate_user_has_no_overlapping_class
 from services.reservations import waitlist_service
+from services.notifications_service import create_notification
+from utils.class_desc import build_class_desc
 
 
 def reservar_clase_individual(user_id: str, class_id: str, payment_percentage: int):
@@ -17,7 +19,7 @@ def reservar_clase_individual(user_id: str, class_id: str, payment_percentage: i
 
         clase = (
             supabase.table('classes')
-            .select('*')
+            .select('*, rooms(name)')
             .eq('id', class_id)
             .single()
             .execute()
@@ -126,7 +128,18 @@ def reservar_clase_individual(user_id: str, class_id: str, payment_percentage: i
         supabase.table('users').update({
             'total_reservations_count': user['total_reservations_count'] + 1
         }).eq('id', user_id).execute()
-            
+
+        try:
+            create_notification(
+                user_id,
+                'Reserva confirmada',
+                f'Te uniste correctamente a la clase de {build_class_desc(clase)}.'
+            )
+        except Exception:
+            # No interrumpir el flujo principal si la notificación falla:
+            # la reserva ya quedó confirmada en la base de datos.
+            pass
+
         return {
             'message': 'Reserva generada. Escaneá el QR para completar el pago.',
             'reservation_id': reservation_id,
