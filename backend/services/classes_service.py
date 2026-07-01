@@ -66,6 +66,33 @@ def _to_utc(dt: datetime) -> datetime:
     return dt.astimezone(timezone.utc)
 
 
+# Debe coincidir con la ventana usada en
+# services/cancellations/classes_cancellation_service.cancelar_clases_sin_profesor
+NO_PROFESSOR_WINDOW_HOURS = 12
+
+
+def _validate_not_too_close_without_professor(start_time: datetime):
+    """
+    Si la clase se crea sin profesor asignado, no se permite que su inicio caiga
+    dentro de la ventana de cancelación automática por falta de profesor (12hs).
+    Si se permitiera, la clase quedaría PROGRAMADA solo hasta el próximo ciclo
+    de cancelación automática, dando la falsa impresión de haberse creado bien.
+    """
+    now_utc = datetime.now(timezone.utc)
+    start_utc = _to_utc(start_time)
+    hours_until_start = (start_utc - now_utc).total_seconds() / 3600
+    if hours_until_start <= NO_PROFESSOR_WINDOW_HOURS:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                'No se puede crear la clase sin profesor asignado: falta menos de 12 horas '
+                'para el horario de inicio, por lo que quedaría sujeta a cancelación '
+                'automática por falta de profesor. Asigná un profesor o elegí un horario '
+                'con más anticipación.'
+            )
+        )
+
+
 def _overlaps(existing_start, existing_end, start_time, end_time):
     existing_start = _to_utc(datetime.fromisoformat(existing_start.replace('Z', '+00:00')))
     existing_end = _to_utc(datetime.fromisoformat(existing_end.replace('Z', '+00:00')))
@@ -150,6 +177,8 @@ def create_individual_class(data):
             validate_professor_exists(data.professor_id)
             validate_professor_weekly_hours(data.professor_id, data.start_time, end_time)
             validate_professor_schedule_availability(data.professor_id, data.start_time, end_time)
+        else:
+            _validate_not_too_close_without_professor(data.start_time)
 
         new_class = (
             supabase.table('classes')
@@ -245,6 +274,13 @@ def create_fija_class(data):
                     professor_assigned_count += 1
                 except HTTPException:
                     professor_id = None
+
+            if professor_id is None:
+                try:
+                    _validate_not_too_close_without_professor(start_dt)
+                except HTTPException as e:
+                    conflicts.append({'date': occ_date.isoformat(), 'reason': e.detail})
+                    continue
 
             rows_to_insert.append({
                 'room_id': str(data.room_id),
