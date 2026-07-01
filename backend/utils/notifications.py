@@ -158,3 +158,37 @@ def send_physical_certificate_rejected(to_email: str, name: str, reason: str):
         Equipo RehabilitAR
         """
     )
+
+def send_professor_request_accepted(to_email: str, name: str, class_desc: str):
+
+    send_email(
+        to_email=to_email,
+        subject='Tu solicitud para dictar una clase fue aceptada.',
+        body=f"""Hola {name},
+
+        Tu solicitud para dictar la clase {class_desc} fue aceptada.
+
+        Ya figurás como profesor/a asignado/a a esa clase.
+
+        Saludos,
+        Equipo RehabilitAR
+        """
+    )
+
+def send_professor_request_rejected(to_email: str, name: str, class_desc: str, reason: str):
+
+    send_email(
+        to_email=to_email,
+        subject='Tu solicitud para dictar una clase fue rechazada.',
+        body=f"""Hola {name},
+
+        Tu solicitud para dictar la clase {class_desc} fue rechazada.
+
+        Motivo: {reason}
+
+        Podes solicitar otras clases disponibles dentro de la página web.
+
+        Saludos,
+        Equipo RehabilitAR
+        """
+    )
