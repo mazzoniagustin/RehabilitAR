@@ -145,6 +145,30 @@ input::placeholder { color:var(--muted) }
   margin-bottom: 20px;
 }
 
+.user-chip {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+}
+
+.user-info {
+  min-width: 0;
+}
+
+#sidebarName {
+  display: block;
+  font-size: .82rem;
+  color: var(--text);
+}
+
+#sidebarEmail {
+  display: block;
+  font-size: .72rem;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 /* Benefits */
 .benefit-icon{
   width:48px;

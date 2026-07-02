@@ -222,12 +222,21 @@ def reject_unblock_request(user_id, reason, acted_by):
 
         if response.data['account_status'] == 'ACTIVA':
             raise HTTPException(status_code=400, detail='La cuenta ya está activa.')
-
+        
         supabase.table('user_status_history').update({
+            'request_status': 'REJECTED',
+            'reason': f'Solicitud rechazada: {reason_text}',
+            'acted_by': acted_by
+        }).eq('user_id', user_id).eq('request_status', 'PENDING').execute()
+
+        supabase.table('user_status_history').insert({
+            'user_id': user_id,
+            'previous_status': 'SUSPENDIDA',
+            'new_status': 'SUSPENDIDA',
             'reason': f'Solicitud rechazada: {reason_text}',
             'request_status': 'REJECTED',
             'acted_by': acted_by
-        }).eq('user_id', user_id).eq('request_status', 'PENDING').execute()
+        }).execute()
         
         send_account_reactivation_rejected(response.data.get('email'), response.data.get('name'), reason_text)
         create_notification(user_id, "Solicitud de reactivación rechazada", f"""Tu solicitud de reactivación ha sido rechazada por administración. 
@@ -255,17 +264,22 @@ def approve_unblock_request(user_id, acted_by):
 
         if response.data['account_status'] == 'ACTIVA':
             raise HTTPException(status_code=400, detail='La cuenta ya está activa.')
+        
+        supabase.table('user_status_history').update({
+            'request_status': 'APPROVED',
+            'acted_by': acted_by
+        }).eq('user_id', user_id).eq('request_status', 'PENDING').execute()
 
-        update_res = supabase.table('user_status_history')\
-            .update({
+
+        supabase.table('user_status_history').insert({
+                'user_id': user_id,
+                'previous_status': response.data['account_status'],
                 'new_status': 'ACTIVA',
                 'reason': 'Solicitud de reactivacion aprobada.',
                 'request_status': 'APPROVED',
                 'acted_by': acted_by
-            })\
-            .eq('user_id', user_id)\
-            .execute()
-        print("Filas actualizadas:", update_res.data)
+            }).execute()
+
         supabase.table('users')\
             .update({'account_status': 'ACTIVA'})\
             .eq('id', user_id)\

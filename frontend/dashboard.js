@@ -302,6 +302,10 @@ async function loadDashboard() {
 
   buildSidebar(u.rol);
   initNotifications();
+
+  if (typeof initAuditDashboard === 'function') {
+    window.initAuditDashboard();
+  }
 }
 
 
@@ -2702,6 +2706,13 @@ async function handleChangePassword() {
     document.getElementById('currentPw').value = '';
     document.getElementById('newPw').value = '';
     document.getElementById('confirmPw').value = '';
+    if (data.force_logout) {
+      localStorage.clear();
+      sessionStorage.clear();
+      setTimeout(() => {
+      window.location.href = 'http://localhost:8000/frontend/login.html';
+      }, 2500);
+    }
   } catch { showAlert('pwAlert', 'No se pudo conectar.'); }
 }
 

@@ -175,3 +175,176 @@ def send_physical_certificate_rejected(to_email: str, name: str, reason: str):
         """
     )
 
+def send_professor_request_accepted(to_email: str, name: str, class_desc: str):
+
+    send_email(
+        to_email=to_email,
+        subject='Tu solicitud para dictar una clase fue aceptada.',
+        body=f"""Hola {name},
+
+        Tu solicitud para dictar la clase {class_desc} fue aceptada.
+
+        Ya figurás como profesor/a asignado/a a esa clase.
+
+        Saludos,
+        Equipo RehabilitAR
+        """
+    )
+
+def send_professor_request_rejected(to_email: str, name: str, class_desc: str, reason: str):
+
+    send_email(
+        to_email=to_email,
+        subject='Tu solicitud para dictar una clase fue rechazada.',
+        body=f"""Hola {name},
+
+        Tu solicitud para dictar la clase {class_desc} fue rechazada.
+
+        Motivo: {reason}
+
+        Podes solicitar otras clases disponibles dentro de la página web.
+
+        Saludos,
+        Equipo RehabilitAR
+        """
+    )
+
+def send_reservation_confirmed_email(to_email: str, name: str, class_desc: str):
+
+    send_email(
+        to_email=to_email,
+        subject='Tu reserva fue confirmada.',
+        body=f"""Hola {name},
+
+        Te uniste correctamente a la clase de {class_desc}.
+
+        Podes ver el detalle de tu reserva dentro de la página web.
+
+        Saludos,
+        Equipo RehabilitAR
+        """
+    )
+
+def send_waitlist_joined_email(to_email: str, name: str, class_desc: str, posicion: int):
+
+    send_email(
+        to_email=to_email,
+        subject='Te uniste a la lista de espera.',
+        body=f"""Hola {name},
+
+        Te uniste a la lista de espera de la clase de {class_desc}.
+
+        Tu posición actual es {posicion}.
+
+        Te avisaremos si entrás a la clase por una vacante o si avanzás de posición.
+
+        Saludos,
+        Equipo RehabilitAR
+        """
+    )
+
+def send_waitlist_advanced_email(to_email: str, name: str, class_desc: str, posicion: int):
+
+    send_email(
+        to_email=to_email,
+        subject='Avanzaste en la lista de espera.',
+        body=f"""Hola {name},
+
+        Avanzaste de posición en la lista de espera de la clase de {class_desc}.
+
+        Tu posición actual es {posicion}.
+
+        Saludos,
+        Equipo RehabilitAR
+        """
+    )
+
+def send_waitlist_promoted_email(to_email: str, name: str, class_desc: str):
+
+    send_email(
+        to_email=to_email,
+        subject='¡Entraste a la clase!',
+        body=f"""Hola {name},
+
+        Se liberó un lugar y entraste a la clase de {class_desc}.
+
+        Podes ver el detalle de tu reserva dentro de la página web.
+
+        Saludos,
+        Equipo RehabilitAR
+        """
+    )
+
+def send_class_cancelled_credit_email(to_email: str, name: str, class_desc: str, reason: str):
+
+    send_email(
+        to_email=to_email,
+        subject='Tu clase fue cancelada: se te otorgó un crédito.',
+        body=f"""Hola {name},
+
+        Tu clase de {class_desc} fue cancelada.
+
+        Motivo: {reason}
+
+        Como sos cliente abonado, se te otorgó un crédito que podes usar para reservar otra clase.
+
+        Saludos,
+        Equipo RehabilitAR
+        """
+    )
+
+def send_class_cancelled_no_credit_email(to_email: str, name: str, class_desc: str, reason: str):
+
+    send_email(
+        to_email=to_email,
+        subject='Tu clase fue cancelada.',
+        body=f"""Hola {name},
+
+        Tu clase de {class_desc} fue cancelada.
+
+        Motivo: {reason}
+
+        Alcanzaste el máximo de créditos disponibles este mes, por lo que no pudimos otorgarte un crédito adicional por esta cancelación.
+
+        Ante cualquier duda, podes contactarte con administración.
+
+        Saludos,
+        Equipo RehabilitAR
+        """
+    )
+
+def send_class_cancelled_refund_email(to_email: str, name: str, class_desc: str, reason: str):
+
+    send_email(
+        to_email=to_email,
+        subject='Tu clase fue cancelada: se procesará tu reembolso.',
+        body=f"""Hola {name},
+
+        Tu clase de {class_desc} fue cancelada.
+
+        Motivo: {reason}
+
+        Se procesará el reembolso de tu pago. Te avisaremos cuando esté acreditado.
+
+        Saludos,
+        Equipo RehabilitAR
+        """
+    )
+
+def send_waitlist_removed_class_cancelled_email(to_email: str, name: str, class_desc: str, reason: str):
+
+    send_email(
+        to_email=to_email,
+        subject='Se canceló una clase de tu lista de espera.',
+        body=f"""Hola {name},
+
+        La clase de {class_desc}, en la que estabas anotado/a en lista de espera, fue cancelada.
+
+        Motivo: {reason}
+
+        Fuiste removido/a de la lista de espera de esa clase. Podes anotarte a otras clases disponibles dentro de la página web.
+
+        Saludos,
+        Equipo RehabilitAR
+        """
+    )

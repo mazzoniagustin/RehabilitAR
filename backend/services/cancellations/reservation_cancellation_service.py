@@ -2,6 +2,14 @@ from database import supabase
 from fastapi import HTTPException
 from datetime import datetime, timezone
 from utils import benefits
+from services.notifications_service import create_notification
+from utils.notifications import send_waitlist_promoted_email
+from utils.class_desc import build_class_desc
+from services.reservations.waitlist_service import (
+    _visible_positions_map,
+    _notificar_avance_waitlist,
+    _reordenar_waitlist as _reordenar_posiciones_waitlist,
+)
 #from services.mercadoPago_service import depositar_reserva  # pendiente de implementar
 
 
@@ -221,22 +229,24 @@ def _confirmar_desde_waitlist(entrada: dict, class_id: str, capacidad_actual: in
     """Crea/reactiva la reserva del primer usuario en waitlist y lo elimina de la lista."""
     user_response = (
         supabase.table('users')
-        .select('rol')
+        .select('rol, email, name')
         .eq('id', entrada['user_id'])
         .single()
         .execute()
     )
     class_response = (
         supabase.table('classes')
-        .select('type')
+        .select('type, activity_type, start_time, rooms(name)')
         .eq('id', class_id)
         .single()
         .execute()
     )
+    clase = class_response.data or {}
+    class_type = clase.get('type')
     payment_status = (
         'PAGADO'
         if (user_response.data or {}).get('rol') == 'ABONADO'
-        and (class_response.data or {}).get('type') == 'FIJA'
+        and class_type == 'FIJA'
         else 'PENDIENTE'
     )
 
@@ -269,30 +279,26 @@ def _confirmar_desde_waitlist(entrada: dict, class_id: str, capacidad_actual: in
         {'current_capacity': capacidad_actual + 1}
     ).eq('id', class_id).execute()
 
+    # Capturar posiciones antes de sacar al promovido de la lista, para poder
+    # avisarle al resto si mejoraron su lugar en la cola.
+    posiciones_previas = _visible_positions_map(class_id, class_type)
+
     supabase.table('waitlist').delete().eq('id', entrada['id']).execute()
 
-    # Reordenar posiciones globales de los restantes en la waitlist
-    restantes = (
-        supabase.table('waitlist')
-        .select('id, priority')
-        .eq('class_id', class_id)
-        .order('position', desc=False)
-        .execute()
-    ).data or []
-    for i, fila in enumerate(restantes, start=1):
-        supabase.table('waitlist').update({'position': i}).eq('id', fila['id']).execute()
+    _reordenar_posiciones_waitlist(class_id)
 
-    # Reordenar priority_order dentro de cada grupo de prioridad
-    for prioridad in ['ABONADO', 'NO_ABONADO']:
-        grupo = (
-            supabase.table('waitlist')
-            .select('id')
-            .eq('class_id', class_id)
-            .eq('priority', prioridad)
-            .order('position', desc=False)
-            .execute()
-        ).data or []
-        for i, fila in enumerate(grupo, start=1):
-            supabase.table('waitlist').update({'priority_order': i}).eq('id', fila['id']).execute()
+    try:
+        desc = build_class_desc(clase)
+        create_notification(
+            entrada['user_id'],
+            '¡Entraste a la clase!',
+            f'Se liberó un lugar y entraste a la clase de {desc}.'
+        )
+        promovido = user_response.data or {}
+        if promovido.get('email'):
+            send_waitlist_promoted_email(promovido['email'], promovido.get('name', 'usuario/a'), desc)
+    except Exception:
+        # No interrumpir el flujo principal si la notificación falla
+        pass
 
-    # TODO: notificar al usuario que fue promovido desde la lista de espera
+    _notificar_avance_waitlist(class_id, class_type, posiciones_previas)

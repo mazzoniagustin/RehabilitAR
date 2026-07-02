@@ -34,7 +34,8 @@ def change_password(data,current_user):
         if not response.user:
             raise HTTPException(status_code=404, detail='Usuario no encontrado.')
         
-        return {'Mensaje': 'Contraseña actualizada exitosamente.'}
+        return {'Mensaje': 'Contraseña actualizada exitosamente.',
+                'force_logout': True}
 
     except HTTPException:
         raise

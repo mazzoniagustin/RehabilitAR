@@ -2,6 +2,14 @@ from database import supabase, supabase_admin
 from datetime import datetime, timedelta, timezone
 from fastapi import HTTPException
 from utils import benefits
+from services.notifications_service import create_notification
+from utils.notifications import (
+    send_class_cancelled_credit_email,
+    send_class_cancelled_no_credit_email,
+    send_class_cancelled_refund_email,
+    send_waitlist_removed_class_cancelled_email,
+)
+from utils.class_desc import build_class_desc
 
 AUTO_NO_PROFESSOR_REASON = 'Cancelación automática por falta de profesor.'
 
@@ -45,8 +53,36 @@ def _registrar_cancelacion(
     _client().table('cancellations').insert(row).execute()
 
 
-def _limpiar_waitlist_de_clase(class_id: str):
+def _limpiar_waitlist_de_clase(class_id: str, class_desc: str = None, cancel_reason: str = None):
+    entradas = (
+        _client().table('waitlist')
+        .select('user_id, users(email, name)')
+        .eq('class_id', class_id)
+        .execute()
+    ).data or []
+
     _client().table('waitlist').delete().eq('class_id', class_id).execute()
+
+    if class_desc is None:
+        return
+
+    for entrada in entradas:
+        user_id = entrada.get('user_id')
+        persona = entrada.get('users') or {}
+        try:
+            create_notification(
+                user_id,
+                'Se canceló una clase de tu lista de espera',
+                f'La clase de {class_desc}, en la que estabas en lista de espera, fue cancelada. '
+                f'Motivo: {cancel_reason}.'
+            )
+            if persona.get('email'):
+                send_waitlist_removed_class_cancelled_email(
+                    persona['email'], persona.get('name', 'usuario/a'), class_desc, cancel_reason
+                )
+        except Exception:
+            # No interrumpir el flujo principal si la notificación falla
+            pass
 
 
 def _marcar_clase_cancelada(class_id: str):
@@ -84,6 +120,15 @@ def _cancelar_reservas_de_clase(class_id: str, cancel_reason: str, tipo: str):
     Al finalizar, resetea current_capacity a 0 para que la clase
     quede consistente aunque su status sea CANCELADA.
     """
+    clase_info = (
+        _client().table('classes')
+        .select('activity_type, start_time, rooms(name)')
+        .eq('id', class_id)
+        .single()
+        .execute()
+    ).data
+    class_desc = build_class_desc(clase_info) if clase_info else 'la clase'
+
     reservas = (
         _client().table('reservations')
         .select('*')
@@ -97,7 +142,7 @@ def _cancelar_reservas_de_clase(class_id: str, cancel_reason: str, tipo: str):
             'cancelled_at': datetime.now(timezone.utc).isoformat(),
             'cancellation_reason': cancel_reason,
         }
-        user = _client().table('users').select('rol').eq('id', reserva['user_id']).single().execute().data
+        user = _client().table('users').select('rol, email, name').eq('id', reserva['user_id']).single().execute().data
         if user and user['rol'] == 'ABONADO':
             _client().table('reservations').update(reservation_update).eq('id', reserva['id']).execute()
 
@@ -131,10 +176,43 @@ def _cancelar_reservas_de_clase(class_id: str, cancel_reason: str, tipo: str):
             generates_refund=generates_refund,
         )
 
+        try:
+            if generates_credit:
+                create_notification(
+                    reserva['user_id'],
+                    'Tu clase fue cancelada: se te otorgó un crédito',
+                    f'Tu clase de {class_desc} fue cancelada. Motivo: {cancel_reason}. '
+                    'Como sos cliente abonado, se te otorgó un crédito para usar en otra clase.'
+                )
+                if user and user.get('email'):
+                    send_class_cancelled_credit_email(user['email'], user.get('name', 'usuario/a'), class_desc, cancel_reason)
+            elif generates_refund:
+                create_notification(
+                    reserva['user_id'],
+                    'Tu clase fue cancelada: se procesará tu reembolso',
+                    f'Tu clase de {class_desc} fue cancelada. Motivo: {cancel_reason}. '
+                    'Se procesará el reembolso de tu pago.'
+                )
+                if user and user.get('email'):
+                    send_class_cancelled_refund_email(user['email'], user.get('name', 'usuario/a'), class_desc, cancel_reason)
+            else:
+                # Abonado que alcanzó el máximo de créditos mensuales: se cancela sin crédito.
+                create_notification(
+                    reserva['user_id'],
+                    'Tu clase fue cancelada',
+                    f'Tu clase de {class_desc} fue cancelada. Motivo: {cancel_reason}. '
+                    'Alcanzaste el máximo de créditos disponibles este mes, por lo que no se otorgó un crédito adicional.'
+                )
+                if user and user.get('email'):
+                    send_class_cancelled_no_credit_email(user['email'], user.get('name', 'usuario/a'), class_desc, cancel_reason)
+        except Exception:
+            # No interrumpir el flujo principal si la notificación falla
+            pass
+
     # Resetear el cupo ocupado a 0: todas las reservas fueron canceladas,
     # no quedan inscriptos independientemente del status de la clase.
     _client().table('classes').update({'current_capacity': 0}).eq('id', class_id).execute()
-    _limpiar_waitlist_de_clase(class_id)
+    _limpiar_waitlist_de_clase(class_id, class_desc, cancel_reason)
 
 
 def _cancelar_clase_confirmada(class_id: str, reason: str, tipo: str, user_id: str = None):

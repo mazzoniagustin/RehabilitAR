@@ -52,19 +52,25 @@
     </div>
   </div>
 
-      <div class="user-chip">
-        <div class="avatar" id="avatarInitials">?</div>
-          <div>
-            <strong id="sidebarName" style="display:block;font-size:.82rem;color:var(--text)">Cargando...</strong>
-            <span id="sidebarEmail" style="font-size:.72rem;color:var(--muted)">—</span>
-          </div>
-        </div>
-      <button class="btn-logout" onclick="handleLogout()">
-      <svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-      Cerrar sesión
-      </button>
+  <div class="user-chip">
+    <div class="avatar" id="avatarInitials">?</div>
+
+      <div class="user-info">
+        <strong id="sidebarName">Cargando...</strong>
+        <span id="sidebarEmail">—</span>
       </div>
-    </aside>
+    </div>
+
+    <button class="btn-logout" onclick="handleLogout()">
+      <svg viewBox="0 0 24 24">
+        <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/>
+        <polyline points="16 17 21 12 16 7"/>
+        <line x1="21" y1="12" x2="9" y2="12"/>
+      </svg>
+      Cerrar sesión
+    </button>
+  </div>
+  </aside>
 
   <!-- ══════ MAIN ══════ -->
   <main class="main">
@@ -315,16 +321,35 @@
       </div>
     </div>
     
-    <div class="panel" id="panelReservas">
-      <div id="reservasAlert" class="alert"></div>
-      <div class="page-header"><div class="page-header-left"><h2>Mis reservas</h2><p>Clases reservadas y su estado</p></div></div>
-      <div class="section-card">
-        <h3><svg viewBox="0 0 24 24"><path d="M20 12V22H4V12"/><path d="M22 7H2v5h20V7z"/><path d="M12 22V7"/></svg> Reservas activas</h3>
+  <div class="panel" id="panelReservas">
+
+    <div id="reservasAlert" class="alert"></div>
+
+    <div class="page-header">
+      <div class="page-header-left">
+        <h2>Mis reservas</h2>
+        <p>Clases reservadas y su estado</p>
       </div>
-      <div id="reservasContainer"><div class="empty-state"><p>Cargando...</p></div></div>
     </div>
 
-    <!-- PANEL: Usuarios (admin/recepcionista) -->
+  <div class="section-card">
+    <h3>
+      <svg viewBox="0 0 24 24">
+        <path d="M20 12V22H4V12"/>
+        <path d="M22 7H2v5h20V7z"/>
+        <path d="M12 22V7"/>
+      </svg>
+      Reservas activas
+    </h3>
+
+    <div id="reservasContainer">
+      <div class="empty-state">
+        <p>No tenés reservas activas.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- PANEL: Usuarios (admin/recep) -->
 <div class="panel" id="panelUsuarios">
     <div class="page-header">
@@ -824,6 +849,8 @@
     </div>
   </div>
 </div>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="audit.js?v=999"></script>
 <script src="dashboard.js?v=20260528-two-class-types"></script>
 </body>
 </html>
