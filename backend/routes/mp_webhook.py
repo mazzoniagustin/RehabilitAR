@@ -6,8 +6,8 @@ from dotenv import load_dotenv
 from fastapi import APIRouter, Request
 from services.reservations.individual_class_reservation_service import reservar_clase_individual
 from services.reservations.regular_class_reservation_service import reservar_clase_fija
-
 from services.subscriptions_service import ensure_active_subscription
+from services.payments_service import notify_payment_registered
 
 load_dotenv()
 routerMPWebhook = APIRouter(
@@ -29,7 +29,9 @@ async def mp_webhook(request: Request):
 
     order_status = data.get("status")
     status_detail = data.get("status_detail")
-    payment_id = data.get("transactions", {}).get("payments", [{}])[0].get("id")
+    mp_payment = data.get("transactions", {}).get("payments", [{}])[0]
+
+    payment_id = mp_payment.get("reference", {}).get("id") or mp_payment.get("id")
 
     payment_row_id = data.get("external_reference")
 
@@ -65,6 +67,7 @@ async def mp_webhook(request: Request):
             supabase.table("users").update({
                 "rol": "ABONADO"
             }).eq("id", payment["user_id"]).execute()
+            notify_payment_registered(payment_row_id)
 
         elif payment["payment_reason"] in ["RESERVATION_50", "RESERVATION_100"]:
             print("ENTRÓ A RESERVA")
@@ -104,8 +107,9 @@ async def mp_webhook(request: Request):
                     "payment_reason": "DEBT",
                     "payment_type": "RESERVATION_REMAINING"
                 }).execute()
-
+            notify_payment_registered(payment_row_id)
         elif payment["payment_reason"] == "DEBT":
+            notify_payment_registered(payment_row_id)
             return {"status": "debt paid"}
 
         return {"status": "payment updated"}

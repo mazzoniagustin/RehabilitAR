@@ -1,15 +1,31 @@
 import smtplib
 from email.message import EmailMessage
 import os
+import mimetypes
 
 acc_password = os.getenv('acc_password')
 
-def send_email(to_email: str, subject: str, body: str):
+def send_email(to_email: str, subject: str, body: str, attachment_path: str = None):
     msg = EmailMessage()
     msg['Subject'] = subject
     msg['From'] = 'RehabilitAR <rehabilitar.faq@gmail.com>'
     msg['To'] = to_email
     msg.set_content(body)
+
+    if attachment_path:
+        try:
+            mime_type, _ = mimetypes.guess_type(attachment_path)
+            maintype, subtype = (mime_type or 'application/octet-stream').split('/', 1)
+
+            with open(attachment_path, 'rb') as f:
+                msg.add_attachment(
+                    f.read(),
+                    maintype=maintype,
+                    subtype=subtype,
+                    filename=os.path.basename(attachment_path)
+                )
+        except Exception as e:
+            print(f'Error al adjuntar archivo: {e}')
 
     try:
         with smtplib.SMTP('smtp.gmail.com', 587) as smtp:
@@ -158,3 +174,4 @@ def send_physical_certificate_rejected(to_email: str, name: str, reason: str):
         Equipo RehabilitAR
         """
     )
+

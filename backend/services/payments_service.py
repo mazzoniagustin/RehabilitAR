@@ -11,6 +11,12 @@ import requests
 import os
 from dotenv import load_dotenv
 from services.subscriptions_service import get_active_subscription
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfgen import canvas
+import os
+from services.notifications_service import create_notification
+from utils.notifications import send_email
+
 
 load_dotenv()
 
@@ -289,7 +295,7 @@ def pay_with_cash(user_id: str):
 
     today = datetime.now()
 
-    supabase.table("payments").insert({
+    payment_insert  = supabase.table("payments").insert({
         "user_id": user_id,
         "amount": 16,
         "status": "PAGADO",
@@ -299,13 +305,224 @@ def pay_with_cash(user_id: str):
         "paid_at": today.isoformat()
     }).execute()
 
+    payment_id = payment_insert.data[0]["id"]
+
     supabase.table("users").update({
         "rol": "ABONADO"
     }).eq("id", user_id).execute()
 
+    notify_payment_registered(payment_id)
     return {
         "message": "Mensualidad registrada correctamente. El cliente ahora es abonado."
     }
 
     
+# Notificaciones y comprobantes
 
+def get_mp_payment_data(mp_payment_id):
+    if not mp_payment_id:
+        return None
+
+    try:
+        response = requests.get(
+            f"https://api.mercadopago.com/v1/payments/{mp_payment_id}",
+            headers={"Authorization": f"Bearer {TEST_TOKEN}"}
+        )
+
+        print("MP PAYMENT DETAIL STATUS:", response.status_code)
+        print("MP PAYMENT DETAIL RESPONSE:", response.text)
+
+        if response.status_code != 200:
+            return None
+
+        return response.json()
+    except Exception as e:
+        print("Error consultando pago en Mercado Pago:", e)
+        return None
+    
+def download_mp_receipt_if_available(mp_data, payment_id):
+    if not mp_data:
+        return None
+
+    possible_urls = [
+        mp_data.get("transaction_details", {}).get("external_resource_url"),
+        mp_data.get("point_of_interaction", {}).get("transaction_data", {}).get("ticket_url"),
+    ]
+
+    receipt_url = next((url for url in possible_urls if url), None)
+
+    if not receipt_url:
+        print("Mercado Pago no devolvió URL descargable de comprobante.")
+        return None
+
+    try:
+        response = requests.get(receipt_url, timeout=15)
+
+        if response.status_code != 200:
+            return None
+
+        content_type = response.headers.get("Content-Type", "")
+
+        if "pdf" in content_type:
+            extension = "pdf"
+        elif "png" in content_type:
+            extension = "png"
+        elif "jpeg" in content_type or "jpg" in content_type:
+            extension = "jpg"
+        else:
+            extension = "bin"
+
+        receipts_dir = "receipts"
+        os.makedirs(receipts_dir, exist_ok=True)
+
+        file_path = os.path.join(receipts_dir, f"comprobante_mp_{payment_id}.{extension}")
+
+        with open(file_path, "wb") as f:
+            f.write(response.content)
+
+        return file_path
+
+    except Exception as e:
+        print("Error descargando comprobante de Mercado Pago:", e)
+        return None
+    
+
+
+def payment_reason_to_spanish(payment):
+    reason = payment.get("payment_reason")
+
+    if reason == "SUBSCRIPTION":
+        return "Mensualidad de RehabilitAR. El cliente es ahora abonado."
+
+    if reason == "RESERVATION_100":
+        return "Reserva de clase abonada al 100%."
+
+    if reason == "RESERVATION_50":
+        return "Reserva de clase abonada al 50%. Se generó una deuda por el 50% restante."
+
+    if reason == "DEBT":
+        return "Deuda saldada correctamente."
+
+    return "Pago registrado en RehabilitAR."
+
+def get_class_payment_detail(payment):
+    if not payment.get("class_id"):
+        return ""
+
+    clase = supabase.table("classes") \
+        .select("activity_type, start_time, type") \
+        .eq("id", payment["class_id"]) \
+        .single() \
+        .execute() \
+        .data
+
+    if not clase:
+        return ""
+
+    start_time = clase.get("start_time")
+    formatted_date = start_time
+
+    try:
+        formatted_date = datetime.fromisoformat(start_time.replace("Z", "+00:00")) \
+            .strftime("%d/%m/%Y a las %H:%M")
+    except Exception:
+        pass
+
+    return f"""
+                Clase asociada:
+                Actividad: {(clase.get("activity_type") or "").replace("_", " ")}
+                Tipo: {clase.get("type") or "-"}
+                Fecha y horario: {formatted_date}
+            """
+
+
+def build_payment_message(payment, user, mp_data=None):
+    motivo = payment_reason_to_spanish(payment)
+    class_detail = get_class_payment_detail(payment)
+
+    mp_detail = ""
+
+    if mp_data:
+        mp_detail = f"""
+                        Datos del comprobante de Mercado Pago:
+                        ID de pago Mercado Pago: {mp_data.get("id", "-")}
+                        Estado Mercado Pago: {mp_data.get("status", "-")}
+                        Fecha de aprobación: {mp_data.get("date_approved", "-")}
+                        Medio de pago: {mp_data.get("payment_method_id", "-")}
+                        Tipo de pago: {mp_data.get("payment_type_id", "-")}
+                    """
+
+    return f"""Hola {user.get("name")},
+
+                Se registró correctamente un pago en RehabilitAR.
+
+                Cliente afectado:
+                Nombre: {user.get("name")} {user.get("surname")}
+                Email: {user.get("email")}
+
+                Detalle del pago:
+                    ID interno del pago: {payment.get("id")}
+                    Monto: ${payment.get("amount")}
+                    Estado: {payment.get("status")}
+                    Método registrado: {payment.get("payment_method")}
+                    Motivo: {motivo}
+                    Fecha registrada: {payment.get("paid_at") or "-"}
+
+                {class_detail}
+                {mp_detail}
+
+            Saludos,
+            Equipo RehabilitAR
+        """
+
+def notify_payment_registered(payment_id: str):
+    payment = supabase.table("payments") \
+        .select("*") \
+        .eq("id", payment_id) \
+        .single() \
+        .execute() \
+        .data
+
+    if not payment:
+        print("No se encontró el pago para notificar:", payment_id)
+        return
+
+    user = supabase.table("users") \
+        .select("id, name, surname, email") \
+        .eq("id", payment["user_id"]) \
+        .single() \
+        .execute() \
+        .data
+
+    if not user:
+        print("No se encontró el usuario para notificar:", payment["user_id"])
+        return
+
+    mp_data = None
+    attachment_path = None
+
+    if payment.get("payment_method") == "MERCADO_PAGO":
+        mp_data = get_mp_payment_data(payment.get("external_id"))
+        attachment_path = download_mp_receipt_if_available(mp_data, payment_id)
+
+    message = build_payment_message(payment, user, mp_data)
+
+    create_notification(
+        payment["user_id"],
+        "Pago registrado correctamente",
+        message
+    )
+
+    email_body = message
+
+    if attachment_path:
+        email_body += "\n\nAdjuntamos el comprobante de Mercado Pago."
+    else:
+        email_body += "\n\nNo se encontró un comprobante descargable desde Mercado Pago. Se incluyen los datos del pago en este mensaje."
+
+    send_email(
+        to_email=user["email"],
+        subject="Pago registrado correctamente - RehabilitAR",
+        body=email_body,
+        attachment_path=attachment_path
+    )
