@@ -14,9 +14,6 @@ window.initAuditDashboard = async function() {
     const currentYear = currentDate.getFullYear();
 
     let yearOptions = '<option value="" selected>Todos los años</option>';
-    for (let y = currentYear; y >= currentYear - 3; y--) {
-        yearOptions += `<option value="${y}">${y}</option>`;
-    }
 
     let monthOptions = '<option value="" selected>Todos los meses</option>';
     const monthNames = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
@@ -87,11 +84,11 @@ window.initAuditDashboard = async function() {
       </div>
 
       <div class="section-card" style="background: white; padding: 20px; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 24px;">
-        <h4 style="margin-bottom: 8px;">🔍 Auditar Usuario Individual</h4>
+        <h4 style="margin-bottom: 8px;">🔍 Auditar Usuario</h4>
         <p style="color: var(--muted); font-size: 0.85rem;">Inspeccioná la información relevante según el rol: créditos e inasistencias para clientes, clases dictadas para profesores, etc.</p>
         
         <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 12px;">
-          <label for="auditUserSelect" style="font-size: 0.85rem; color: var(--text); font-weight: 500;">Seleccionar Usuario (Abonados, No Abonados, Profesores o Recepcionistas):</label>
+          <label for="auditUserSelect" style="font-size: 0.85rem; color: var(--text); font-weight: 500;">Seleccionar Usuario (Abonados, No Abonados o Profesores):</label>
           <select id="auditUserSelect" style="padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 0.9rem; background: white;">
             <option value="">Cargando lista de usuarios...</option>
           </select>
@@ -149,7 +146,7 @@ window.initAuditDashboard = async function() {
       const traceList = document.getElementById('auditTraceabilityList');
       traceList.innerHTML = '';
       if (data.traceability.length === 0) {
-        traceList.innerHTML = '<li>Sin registros recientes en este período.</li>';
+        traceList.innerHTML = '<li>Sin registros recientes.</li>';
       } else {
         data.traceability.forEach(log => {
           const d = new Date(log.date).toLocaleDateString('es-AR', {day: '2-digit', month:'2-digit'});
@@ -221,7 +218,6 @@ window.initAuditDashboard = async function() {
     ABONADO: 'Abonado',
     NO_ABONADO: 'No abonado',
     PROFESOR: 'Profesor',
-    RECEPCIONISTA: 'Recepcionista',
   };
 
   async function populateUsersFilter() {
@@ -231,22 +227,22 @@ window.initAuditDashboard = async function() {
       const users = await res.json();
 
       const userSelect = document.getElementById('auditUserSelect');
-      userSelect.innerHTML = '<option value="">-- Seleccionar un Usuario para Inspeccionar --</option>';
+      userSelect.innerHTML = '<option value="">-- Seleccionar un usuario para auditar --</option>';
 
 
       const auditables = users.filter(u =>
-        ['ABONADO', 'NO_ABONADO', 'PROFESOR', 'RECEPCIONISTA'].includes(u.rol)
+        ['ABONADO', 'NO_ABONADO', 'PROFESOR'].includes(u.rol)
       );
 
       if (auditables.length === 0) {
-        userSelect.innerHTML = '<option value="">No hay usuarios para inspeccionar</option>';
+        userSelect.innerHTML = '<option value="">No hay usuarios para auditar</option>';
         return;
       }
 
-      auditables.sort((a, b) => `${a.surname} ${a.name}`.localeCompare(`${b.surname} ${b.name}`));
+      auditables.sort((a, b) => `${a.name} ${a.surname}`.localeCompare(`${b.name} ${b.surname}`));
 
       auditables.forEach(u => {
-        const fullName = `${u.surname || ''}, ${u.name || ''} (${ROL_LABELS_AUDIT[u.rol] || u.rol})`;
+        const fullName = `${u.name || ''} ${u.surname || ''} (${ROL_LABELS_AUDIT[u.rol] || u.rol})`;
         userSelect.innerHTML += `<option value="${u.id}">${fullName}</option>`;
       });
 
@@ -261,9 +257,11 @@ window.initAuditDashboard = async function() {
       { label: 'CRÉDITOS USADOS', key: 'usedCredits', color: '#2d3748' },
       { label: 'SUSPENSIONES', key: 'totalSuspensions', color: '#e53e3e' },
       { label: 'INASISTENCIAS', key: 'absenceCount', color: '#dd6b20' },
+      { label: 'CANCELACIONES', key: 'cancellationCount', color: '#805ad5' },
       { label: 'DEUDA ACTUAL', key: 'financials.totalDebt', color: '#e74c3c', money: true },
     ],
     NO_ABONADO: [
+      { label: 'CRÉDITOS USADOS', key: 'usedCredits', color: '#2d3748' },
       { label: 'SUSPENSIONES', key: 'totalSuspensions', color: '#e53e3e' },
       { label: 'INASISTENCIAS', key: 'absenceCount', color: '#dd6b20' },
       { label: 'CANCELACIONES', key: 'cancellationCount', color: '#805ad5' },
@@ -272,12 +270,6 @@ window.initAuditDashboard = async function() {
     PROFESOR: [
       { label: 'CLASES DICTADAS', key: 'totalClasses', color: '#2d3748' },
       { label: 'SUSPENSIONES', key: 'totalSuspensions', color: '#e53e3e' },
-    ],
-    RECEPCIONISTA: [
-      { label: 'SUSPENSIONES', key: 'totalSuspensions', color: '#e53e3e' },
-      { label: 'INASISTENCIAS', key: 'absenceCount', color: '#dd6b20' },
-      { label: 'CANCELACIONES', key: 'cancellationCount', color: '#805ad5' },
-      { label: 'DEUDA ACTUAL', key: 'financials.totalDebt', color: '#e74c3c', money: true },
     ],
   };
 
