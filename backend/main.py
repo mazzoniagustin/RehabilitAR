@@ -16,6 +16,7 @@ from routes.mp_webhook import routerMPWebhook
 from routes.reservations import router as reservations_router
 from routes.attendance import routerAttendance
 from routes.notifications import router as notification_router
+from routes.audit import routerAudit
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +67,7 @@ app.include_router(routerMPWebhook)
 app.include_router(reservations_router)
 app.include_router(routerAttendance)
 app.include_router(notification_router)
+app.include_router(routerAudit)
 
 
 async def _automatic_no_professor_cancellation_loop():
