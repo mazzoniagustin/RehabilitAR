@@ -1509,6 +1509,9 @@ async function assignProfessorToClass(classId) {
 
     showAlert('clasesAlert', data.message || 'Se asigno el profesor correctamente.', 'success');
     await loadAdminClasses();
+    if (document.getElementById('professorRequestsContainer')) {
+      await loadProfessorRequests();
+    }
   } catch {
     showAlert('clasesAlert', 'No se pudo conectar.');
   }

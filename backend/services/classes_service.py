@@ -504,7 +504,7 @@ def assign_professor(class_id: str, data):
     try:
         class_response = (
             supabase.table('classes')
-            .select('id, professor_id, start_time, end_time, status')
+            .select('id, professor_id, activity_type, start_time, end_time, status, rooms(name)')
             .eq('id', class_id)
             .single()
             .execute()
@@ -533,15 +533,47 @@ def assign_professor(class_id: str, data):
             .execute()
         )
 
+        affected_requests = (
+            supabase.table('professor_requests')
+            .select('id, professor_id, status, users(name, email)')
+            .eq('class_id', class_id)
+            .in_('status', ['PENDIENTE', 'ACEPTADA'])
+            .neq('professor_id', str(data.professor_id))
+            .execute()
+        ).data or []
+
+        reject_reason = 'El administrador asignó directamente a otro profesor.'
+
         supabase.table('professor_requests').update({
             'status': 'RECHAZADA',
-            'reject_reason': 'El administrador asignó directamente a otro profesor.'
+            'reject_reason': reject_reason
         }).eq('class_id', class_id).eq('status', 'PENDIENTE').execute()
 
         supabase.table('professor_requests').update({
             'status': 'RECHAZADA',
             'reject_reason': 'El administrador reasignó la clase a otro profesor.'
         }).eq('class_id', class_id).eq('status', 'ACEPTADA').neq('professor_id', str(data.professor_id)).execute()
+
+        class_desc = _build_class_desc(clase)
+        for req in affected_requests:
+            professor = req.get('users') or {}
+            req_reason = (
+                reject_reason if req['status'] == 'PENDIENTE'
+                else 'El administrador reasignó la clase a otro profesor.'
+            )
+            try:
+                create_notification(
+                    req['professor_id'],
+                    'Solicitud de clase rechazada',
+                    f'Tu solicitud para dictar la clase {class_desc} fue rechazada. Motivo: {req_reason}'
+                )
+                if professor.get('email'):
+                    send_professor_request_rejected(
+                        professor['email'], professor.get('name', 'profesor/a'), class_desc, req_reason
+                    )
+            except Exception:
+                # No interrumpir la asignación si falla el envío de una notificación
+                pass
 
         return {'message': 'Se asignó el profesor correctamente.', 'data': updated_class.data[0]}
 
