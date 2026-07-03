@@ -257,6 +257,54 @@ def send_no_professor_class_email(to_email: str, name: str, class_desc: str):
         """
     )
 
+def send_pending_debt_reminder_email(to_email: str, name: str, class_desc: str, amount):
+
+    send_email(
+        to_email=to_email,
+        subject='Recordatorio de deuda pendiente.',
+        body=f"""Hola {name},
+
+        Te recordamos que tenés una deuda pendiente de ${amount} correspondiente a la clase de {class_desc}.
+
+        El saldo restante debe abonarse antes del inicio de la clase.
+
+        Saludos,
+        Equipo RehabilitAR
+        """
+    )
+
+def send_subscription_due_soon_email(to_email: str, name: str):
+
+    send_email(
+        to_email=to_email,
+        subject='Recordatorio de vencimiento de mensualidad.',
+        body=f"""Hola {name},
+
+        Te recordamos que estás cerca del vencimiento del plazo para abonar tu mensualidad.
+
+        Tenés tiempo hasta el día 10 del mes para registrar el pago.
+
+        Saludos,
+        Equipo RehabilitAR
+        """
+    )
+
+def send_subscription_payment_deadline_expired_email(to_email: str, name: str):
+
+    send_email(
+        to_email=to_email,
+        subject='Venció el plazo de pago de la mensualidad.',
+        body=f"""Hola {name},
+
+        Te informamos que venció el plazo de 10 días para abonar tu mensualidad.
+
+        Regularizá tu situación para evitar restricciones sobre tu cuenta.
+
+        Saludos,
+        Equipo RehabilitAR
+        """
+    )
+
 def send_waitlist_joined_email(to_email: str, name: str, class_desc: str, posicion: int):
 
     send_email(

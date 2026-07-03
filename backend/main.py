@@ -6,8 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from routes.payments import routerPayments
 from services.cancellations import classes_cancellation_service
-from services import attendance_reminder_service
-from services import no_professor_notification_service
+from services import automatic_notifications_service
 
 from routes.auth import router as auth_router
 from routes.staff import routerStaff as staff_router
@@ -88,7 +87,7 @@ async def _attendance_reminder_loop():
     interval_seconds = int(os.getenv("ATTENDANCE_REMINDER_INTERVAL_SECONDS", "900"))
     while True:
         try:
-            result = attendance_reminder_service.enviar_recordatorios_asistencia()
+            result = automatic_notifications_service.enviar_recordatorios_asistencia()
             if result.get("sent_count", 0) or result.get("errors"):
                 logger.info("Recordatorios de asistencia: %s", result)
         except Exception as exc:
@@ -100,11 +99,47 @@ async def _no_professor_notification_loop():
     interval_seconds = int(os.getenv("NO_PROFESSOR_NOTIFICATION_INTERVAL_SECONDS", "900"))
     while True:
         try:
-            result = no_professor_notification_service.avisar_profesores_clases_sin_profesor()
+            result = automatic_notifications_service.avisar_profesores_clases_sin_profesor()
             if result.get("sent_count", 0) or result.get("errors"):
                 logger.info("Avisos de clases sin profesor: %s", result)
         except Exception as exc:
             logger.exception("Error en avisos de clases sin profesor: %s", exc)
+        await asyncio.sleep(interval_seconds)
+
+
+async def _debt_reminder_loop():
+    interval_seconds = int(os.getenv("DEBT_REMINDER_INTERVAL_SECONDS", "900"))
+    while True:
+        try:
+            result = automatic_notifications_service.enviar_recordatorios_deuda_pendiente()
+            if result.get("sent_count", 0) or result.get("errors"):
+                logger.info("Recordatorios de deuda pendiente: %s", result)
+        except Exception as exc:
+            logger.exception("Error en recordatorios de deuda pendiente: %s", exc)
+        await asyncio.sleep(interval_seconds)
+
+
+async def _subscription_due_soon_loop():
+    interval_seconds = int(os.getenv("SUBSCRIPTION_DUE_SOON_INTERVAL_SECONDS", "900"))
+    while True:
+        try:
+            result = automatic_notifications_service.notificar_cercania_vencimiento_suscripcion()
+            if result.get("sent_count", 0) or result.get("errors"):
+                logger.info("Avisos de cercanía de vencimiento de suscripción: %s", result)
+        except Exception as exc:
+            logger.exception("Error en avisos de cercanía de vencimiento de suscripción: %s", exc)
+        await asyncio.sleep(interval_seconds)
+
+
+async def _subscription_payment_expired_loop():
+    interval_seconds = int(os.getenv("SUBSCRIPTION_PAYMENT_EXPIRED_INTERVAL_SECONDS", "900"))
+    while True:
+        try:
+            result = automatic_notifications_service.notificar_vencimiento_plazo_pago_deuda()
+            if result.get("sent_count", 0) or result.get("errors"):
+                logger.info("Avisos de vencimiento de plazo de pago: %s", result)
+        except Exception as exc:
+            logger.exception("Error en avisos de vencimiento de plazo de pago: %s", exc)
         await asyncio.sleep(interval_seconds)
 
 
@@ -119,6 +154,15 @@ async def start_automatic_jobs():
     app.state.no_professor_notification_task = asyncio.create_task(
         _no_professor_notification_loop()
     )
+    app.state.debt_reminder_task = asyncio.create_task(
+        _debt_reminder_loop()
+    )
+    app.state.subscription_due_soon_task = asyncio.create_task(
+        _subscription_due_soon_loop()
+    )
+    app.state.subscription_payment_expired_task = asyncio.create_task(
+        _subscription_payment_expired_loop()
+    )
 
 
 @app.on_event("shutdown")
@@ -127,6 +171,9 @@ async def stop_automatic_jobs():
         getattr(app.state, "no_professor_cancellation_task", None),
         getattr(app.state, "attendance_reminder_task", None),
         getattr(app.state, "no_professor_notification_task", None),
+        getattr(app.state, "debt_reminder_task", None),
+        getattr(app.state, "subscription_due_soon_task", None),
+        getattr(app.state, "subscription_payment_expired_task", None),
     ]
     for task in tasks:
         if not task:
