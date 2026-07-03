@@ -88,6 +88,8 @@ def get_stats(year: int = None, month: int = None):
         logs_list = (
             supabase.table('user_status_history')
             .select('reason, created_at, new_status, acted_by, user_id')
+            .eq('new_status', 'SUSPENDIDA')
+            .not_.ilike('reason', 'SOLICITUD DE DESBLOQUEO%')
             .gte('created_at', start_date)
             .lte('created_at', end_date)
             .order('created_at', desc=True)
@@ -145,6 +147,7 @@ def get_user_stats(user_id: str):
             .select('reason, created_at')\
             .eq('user_id', user_id)\
             .eq('new_status', 'SUSPENDIDA')\
+            .filter('reason', 'not.ilike', 'SOLICITUD DE DESBLOQUEO%')\
             .order('created_at', desc=True)\
             .execute()
 

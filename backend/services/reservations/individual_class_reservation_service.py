@@ -117,15 +117,6 @@ def reservar_clase_individual(user_id: str, class_id: str, payment_percentage: i
         )
         reservation_id = reservation_response.data['id']
 
-        supabase.table('payments').insert({
-            'user_id': user_id,
-            'reservation_id': reservation_id,
-            'amount': float(clase['price']) * 0.5,
-            'status': 'PENDIENTE',
-            'payment_reason': 'DEBT',
-            'payment_type': 'RESERVATION_REMAINING'
-        }).execute()
-            
         supabase.table('users').update({
             'total_reservations_count': user['total_reservations_count'] + 1
         }).eq('id', user_id).execute()

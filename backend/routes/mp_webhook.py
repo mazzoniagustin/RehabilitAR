@@ -25,7 +25,27 @@ async def mp_webhook(request: Request):
     if body.get("type") != "order":
         return {"status": "ignored"}
 
-    data = body.get("data", {})
+    order_id = body.get("data", {}).get("id")
+
+    if not order_id:
+        print("Webhook sin data.id, se ignora.")
+        return {"status": "ignored"}
+
+    # El body del webhook de Mercado Pago (topic "order") solo trae el id de
+    # la orden. El status, status_detail, external_reference y transactions
+    # reales hay que pedirlos con un GET a /v1/orders/{id}.
+    order_resp = requests.get(
+        f"https://api.mercadopago.com/v1/orders/{order_id}",
+        headers={"Authorization": f"Bearer {TEST_TOKEN}"}
+    )
+
+    print("GET ORDER STATUS:", order_resp.status_code)
+    print("GET ORDER BODY:", order_resp.text)
+
+    if order_resp.status_code != 200:
+        return {"status": "order not found"}
+
+    data = order_resp.json()
 
     order_status = data.get("status")
     status_detail = data.get("status_detail")
@@ -49,6 +69,12 @@ async def mp_webhook(request: Request):
 
         payment = payment_res.data
 
+        # Idempotencia: Mercado Pago puede reenviar la notificación (reintentos,
+        # o distintas acciones del mismo ciclo de vida de la orden). Si este pago
+        # ya fue procesado antes, no hay que volver a crear la reserva ni la deuda.
+        if payment and payment.get("status") == "PAGADO":
+            print("Pago ya procesado anteriormente, se ignora:", payment_row_id)
+            return {"status": "already processed"}
 
         print("PAYMENT ROW ID:", payment_row_id)
         print("PAYMENT DB:", payment)
