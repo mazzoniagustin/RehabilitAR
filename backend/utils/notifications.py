@@ -331,6 +331,24 @@ def send_class_cancelled_refund_email(to_email: str, name: str, class_desc: str,
         """
     )
 
+def send_reservation_cancelled_by_client_email(to_email: str, name: str, class_desc: str, detalle: str):
+
+    send_email(
+        to_email=to_email,
+        subject='Cancelaste tu reserva',
+        body=f"""Hola {name},
+
+        Tu reserva de {class_desc} fue cancelada con éxito.
+
+        {detalle}
+
+        Podes ver el detalle dentro de la página web.
+
+        Saludos,
+        Equipo RehabilitAR
+        """
+    )
+
 def send_waitlist_removed_class_cancelled_email(to_email: str, name: str, class_desc: str, reason: str):
 
     send_email(

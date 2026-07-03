@@ -3,7 +3,7 @@ from fastapi import HTTPException
 from datetime import datetime, timezone
 from utils import benefits
 from services.notifications_service import create_notification
-from utils.notifications import send_waitlist_promoted_email
+from utils.notifications import send_waitlist_promoted_email, send_reservation_cancelled_by_client_email
 from utils.class_desc import build_class_desc
 from services.reservations.waitlist_service import (
     _visible_positions_map,
@@ -84,7 +84,7 @@ def cancelar_reserva(reservation_id: str, current_user_id: str):
 
         clase = (
             supabase.table('classes')
-            .select('id, type, start_time, current_capacity')
+            .select('id, type, activity_type, start_time, current_capacity, rooms(name)')
             .eq('id', reserva['class_id'])
             .single()
             .execute()
@@ -166,6 +166,21 @@ def cancelar_reserva(reservation_id: str, current_user_id: str):
 
         # Promover waitlist respetando el tipo de clase
         _promover_waitlist(reserva['class_id'], clase['type'], nueva_capacidad)
+
+        try:
+            desc = build_class_desc(clase)
+            create_notification(
+                user['id'],
+                'Cancelaste tu reserva',
+                f'Cancelaste tu reserva de {desc}. {mensaje}'
+            )
+            if user.get('email'):
+                send_reservation_cancelled_by_client_email(
+                    user['email'], user.get('name', 'usuario/a'), desc, mensaje
+                )
+        except Exception:
+            # No interrumpir el flujo principal si la notificación falla
+            pass
 
         return {'message': mensaje}
 
