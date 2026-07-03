@@ -225,6 +225,38 @@ def send_reservation_confirmed_email(to_email: str, name: str, class_desc: str):
         """
     )
 
+def send_attendance_reminder_email(to_email: str, name: str, class_desc: str):
+
+    send_email(
+        to_email=to_email,
+        subject='Recordatorio de asistencia a clase.',
+        body=f"""Hola {name},
+
+        Te recordamos que tenés una clase reservada de {class_desc}.
+
+        Si no podés asistir, recordá cancelar tu reserva dentro de los plazos establecidos por el centro.
+
+        Saludos,
+        Equipo RehabilitAR
+        """
+    )
+
+def send_no_professor_class_email(to_email: str, name: str, class_desc: str):
+
+    send_email(
+        to_email=to_email,
+        subject='Clase disponible sin profesor asignado.',
+        body=f"""Hola {name},
+
+        Hay una clase de {class_desc} que todavía no tiene profesor asignado.
+
+        Si estás disponible, podés solicitar tomarla desde la página web.
+
+        Saludos,
+        Equipo RehabilitAR
+        """
+    )
+
 def send_waitlist_joined_email(to_email: str, name: str, class_desc: str, posicion: int):
 
     send_email(
@@ -237,6 +269,22 @@ def send_waitlist_joined_email(to_email: str, name: str, class_desc: str, posici
         Tu posición actual es {posicion}.
 
         Te avisaremos si entrás a la clase por una vacante o si avanzás de posición.
+
+        Saludos,
+        Equipo RehabilitAR
+        """
+    )
+
+def send_waitlist_threshold_admin_email(to_email: str, name: str, class_desc: str, total_waitlist: int):
+
+    send_email(
+        to_email=to_email,
+        subject='Lista de espera con alta demanda.',
+        body=f"""Hola {name},
+
+        La lista de espera de la clase de {class_desc} superó los 10 miembros.
+
+        Cantidad actual de personas en lista de espera: {total_waitlist}.
 
         Saludos,
         Equipo RehabilitAR

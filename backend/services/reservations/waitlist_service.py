@@ -1,10 +1,21 @@
-from database import supabase
+from database import supabase, supabase_admin
 from fastapi import HTTPException
 from services.cancellations.classes_cancellation_service import asegurar_clase_reservable_con_profesor
 from services.reservations.overlap_validator import validate_user_has_no_overlapping_class
 from services.notifications_service import create_notification
-from utils.notifications import send_waitlist_joined_email, send_waitlist_advanced_email
+from utils.notifications import (
+    send_waitlist_joined_email,
+    send_waitlist_advanced_email,
+    send_waitlist_threshold_admin_email,
+)
 from utils.class_desc import build_class_desc
+
+WAITLIST_THRESHOLD_EVENT_TYPE = 'WAITLIST_OVER_10'
+WAITLIST_THRESHOLD = 10
+
+
+def _client():
+    return supabase_admin or supabase
 
 
 def unirse_a_waitlist(user_id: str, class_id: str):
@@ -144,6 +155,7 @@ def _agregar_waitlist_individual(user_id: str, class_id: str, clase: dict = None
     }).execute()
 
     _notificar_union_waitlist(user_id, clase, nueva_posicion, user)
+    _notificar_admin_waitlist_si_supera_limite(class_id, clase)
 
     return {
         'message': f'Te uniste a la lista de espera. Posición: {nueva_posicion}.',
@@ -198,11 +210,106 @@ def _agregar_waitlist_fija(user_id: str, class_id: str, prioridad: str, clase: d
     }).execute()
 
     _notificar_union_waitlist(user_id, clase, posicion_visible, user)
+    _notificar_admin_waitlist_si_supera_limite(class_id, clase)
 
     return {
         'message': f'Te uniste a la lista de espera. Posición: {posicion_visible}.',
         'posicion': posicion_visible
     }
+
+
+def _waitlist_threshold_event_key(class_id: str, admin_id: str) -> str:
+    return f'{WAITLIST_THRESHOLD_EVENT_TYPE}:{class_id}:{admin_id}'
+
+
+def _claim_waitlist_threshold_delivery(class_id: str, admin_id: str) -> bool:
+    event_key = _waitlist_threshold_event_key(class_id, admin_id)
+    existing = (
+        _client().table('notification_delivery_log')
+        .select('id')
+        .eq('event_key', event_key)
+        .limit(1)
+        .execute()
+    )
+    if existing.data:
+        return False
+
+    _client().table('notification_delivery_log').insert({
+        'event_key': event_key,
+        'event_type': WAITLIST_THRESHOLD_EVENT_TYPE,
+        'user_id': admin_id,
+        'class_id': class_id,
+    }).execute()
+    return True
+
+
+def _crear_notificacion_admin(admin_id: str, title: str, message: str):
+    admin = (
+        _client().table('users')
+        .select('notifications_enabled')
+        .eq('id', admin_id)
+        .single()
+        .execute()
+    )
+    if not admin.data or not admin.data.get('notifications_enabled', True):
+        return
+
+    _client().table('notifications').insert({
+        'user_id': admin_id,
+        'title': title,
+        'message': message,
+    }).execute()
+
+
+def _notificar_admin_waitlist_si_supera_limite(class_id: str, clase: dict = None):
+    try:
+        count_response = (
+            supabase.table('waitlist')
+            .select('id', count='exact')
+            .eq('class_id', class_id)
+            .execute()
+        )
+        total_waitlist = count_response.count if count_response.count is not None else 0
+        if total_waitlist <= WAITLIST_THRESHOLD:
+            return
+
+        admins = (
+            _client().table('users')
+            .select('id, email, name')
+            .eq('rol', 'ADMINISTRATIVO')
+            .eq('account_status', 'ACTIVA')
+            .execute()
+        ).data or []
+        if not admins:
+            return
+
+        desc = build_class_desc(clase) if clase else 'la clase'
+
+        for admin in admins:
+            admin_id = str(admin['id'])
+            if not _claim_waitlist_threshold_delivery(str(class_id), admin_id):
+                continue
+
+            try:
+                _crear_notificacion_admin(
+                    admin_id,
+                    'Lista de espera con alta demanda',
+                    f'La lista de espera de la clase de {desc} superó los 10 miembros. '
+                    f'Cantidad actual: {total_waitlist}.'
+                )
+            except Exception:
+                pass
+
+            if admin.get('email'):
+                send_waitlist_threshold_admin_email(
+                    admin['email'],
+                    admin.get('name', 'administrativo/a'),
+                    desc,
+                    total_waitlist,
+                )
+    except Exception:
+        # No interrumpir la reserva/lista de espera por un fallo de notificación.
+        pass
 
 
 def _notificar_union_waitlist(user_id: str, clase: dict, posicion: int, user: dict = None):
