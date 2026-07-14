@@ -1,6 +1,7 @@
 (function() {
   let chartIngresosInstance = null;
   let chartActividadesInstance = null;
+  let currentAuditData = null;
 
 window.initAuditDashboard = async function() {
     const user = getUser(); 
@@ -13,7 +14,11 @@ window.initAuditDashboard = async function() {
     const currentDate = new Date();
     const currentYear = currentDate.getFullYear();
 
-    let yearOptions = '<option value="" selected>Todos los años</option>';
+  let yearOptions = '<option value="" selected>Todos los años</option>';
+
+  for (let year = 2026; year <= currentYear; year++) {
+      yearOptions += `<option value="${year}">${year}</option>`;
+  }
 
     let monthOptions = '<option value="" selected>Todos los meses</option>';
     const monthNames = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
@@ -40,6 +45,8 @@ window.initAuditDashboard = async function() {
             ${monthOptions}
           </select>
           <button class="btn btn-sm" id="btnRefreshGlobalAudit">Filtrar</button>
+          <button class="btn btn-sm" id="btnExportAudit">Exportar</button>
+          
         </div>
       </div>
 
@@ -108,9 +115,9 @@ window.initAuditDashboard = async function() {
 
     document.getElementById('btnRefreshGlobalAudit').onclick = fetchGlobalExtendedStats;
     document.getElementById('auditUserSelect').onchange = fetchUserStats;
+    document.getElementById('btnExportAudit').onclick = exportAuditExcel;
 
     fetchGlobalExtendedStats();
-
     populateUsersFilter();
   };
 
@@ -134,6 +141,7 @@ window.initAuditDashboard = async function() {
       }
 
       const data = await res.json();
+      currentAuditData = data;
       
       const fin = data.financials;
       const ops = data.operations;
@@ -328,4 +336,115 @@ window.initAuditDashboard = async function() {
     }
   }
 
+ function exportAuditExcel() {
+
+    if (!currentAuditData) {
+        alert('Primero cargá la auditoría.');
+        return;
+    }
+
+    const fin = currentAuditData.financials;
+    const ops = currentAuditData.operations;
+
+    const year =
+        document.getElementById('auditFilterYear').value || 'Todos los años';
+
+    const monthSelect = document.getElementById('auditFilterMonth');
+    const month =
+        monthSelect.value === ""
+            ? "Todos los meses"
+            : monthSelect.options[monthSelect.selectedIndex].text;
+
+    const record = currentAuditData.traceability.map(t => ({
+        Fecha: new Date(t.date).toLocaleString('es-AR'),
+        Administrador: t.actor,
+        Usuario: t.target,
+        Motivo: t.reason
+    }));
+
+
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet([]);
+
+
+    XLSX.utils.sheet_add_aoa(ws, [
+        ['REPORTE DE AUDITORÍA']
+    ], { origin: "A1" });
+
+
+    XLSX.utils.sheet_add_aoa(ws, [
+        ['Fecha de exportación', new Date().toLocaleString('es-AR')],
+        ['Año', year],
+        ['Mes', month]
+    ], { origin: "A3" });
+
+
+    XLSX.utils.sheet_add_aoa(ws, [
+        [],
+        ['RESUMEN GENERAL'],
+        ['Concepto', 'Valor'],
+        ['Total recaudado', `$${fin.totalRevenue.toLocaleString('es-AR')}`],
+        ['Suscripciones', `$${fin.breakdown.SUBSCRIPTION.toLocaleString('es-AR')}`],
+        ['Reservas', `$${fin.breakdown.RESERVATION.toLocaleString('es-AR')}`],
+        ['Pago de deudas', `$${fin.breakdown.DEBT.toLocaleString('es-AR')}`],
+        ['Reservas Tren Superior', `${ops.activities.TREN_SUPERIOR}`],
+        ['Reservas Tren Medio', `${ops.activities.TREN_MEDIO}`],
+        ['Reservas Tren Inferior', `${ops.activities.TREN_INFERIOR}`]
+    ], { origin: "A7" });
+
+
+    let fila = 18;
+
+    XLSX.utils.sheet_add_aoa(ws, [
+        ['HISTORIAL DE SUSPENSIONES'],
+        ['Fecha', 'Administrador', 'Usuario', 'Motivo']
+    ], {
+        origin: `A${fila}`
+    });
+
+    fila += 2;
+
+    if (record.length === 0) {
+
+        XLSX.utils.sheet_add_aoa(ws, [
+            ['No existen suspensiones para el filtro seleccionado.']
+        ], {
+            origin: `A${fila}`
+        });
+
+    } else {
+
+        record.forEach(r => {
+
+            XLSX.utils.sheet_add_aoa(ws, [[
+                r.Fecha,
+                r.Administrador,
+                r.Usuario,
+                r.Motivo
+            ]], {
+                origin: `A${fila}`
+            });
+
+            fila++;
+
+        });
+
+    }
+
+
+    ws["!cols"] = [
+        { wch: 24 }, 
+        { wch: 28 }, 
+        { wch: 28 }, 
+        { wch: 55 }  
+    ];
+
+    XLSX.utils.book_append_sheet(wb, ws, "Auditoría");
+
+
+    XLSX.writeFile(
+        wb,
+        `Auditoria_${year.replace(/\s/g, "_")}_${month.replace(/\s/g, "_")}.xlsx`
+    );
+  }
 })();
