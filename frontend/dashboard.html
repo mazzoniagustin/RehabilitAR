@@ -849,6 +849,68 @@
     </div>
   </div>
 </div>
+
+<div class="modal-overlay" id="attendanceQrModal">
+  <div class="modal" style="max-width:480px">
+
+    <div class="modal-header">
+      <h3>QR de asistencia</h3>
+
+      <button
+        class="modal-close"
+        onclick="closeAttendanceQrModal(true)"
+      >
+        ✕
+      </button>
+    </div>
+
+    <p>
+      Los participantes deben escanear este código
+      e ingresar el correo electrónico asociado a su cuenta.
+    </p>
+
+    <img
+      id="attendanceQrImage"
+      alt="QR para registrar asistencia"
+      style="
+        width:300px;
+        max-width:100%;
+        margin:20px auto;
+        display:block;
+      "
+    />
+
+    <p
+      id="attendanceQrCountdown"
+      style="
+        text-align:center;
+        font-weight:600;
+        color:var(--teal-dark);
+      "
+    >
+      —
+    </p>
+
+    <p
+      id="attendanceQrUrl"
+      style="
+        font-size:.7rem;
+        word-break:break-all;
+        text-align:center;
+      "
+    ></p>
+
+    <div class="modal-actions">
+      <button
+        class="btn btn-sm btn-outline"
+        onclick="closeAttendanceQrModal(true)"
+      >
+        Finalizar asistencia
+      </button>
+    </div>
+
+  </div>
+</div>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 <script src="audit.js?v=999"></script>

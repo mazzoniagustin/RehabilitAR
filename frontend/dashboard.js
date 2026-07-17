@@ -1161,8 +1161,12 @@ async function loadClases() {
 
                 <button class="action-btn success" onclick="openAttendancePanel('${c.id}')">
                   Pasar asistencia
+                </button>
+
+                <button class="action-btn" onclick="generateAttendanceQr('${c.id}')">
+                  Generar QR de asistencia
                 </button>`
-                : clientBtn}
+                : clientBtn} 
               ${isMyClass ? `<button class="action-btn" onclick="openStudentsModal('${c.id}', '${(c.activity_type || '').replace(/_/g, ' ')}')">Inscriptos</button>` : ''}
             </td>
           </tr>`;
@@ -1616,6 +1620,8 @@ async function joinWaitlist(classId) {
 let currentAttendanceClassId = null;
 let currentAttendanceUserId = null;
 let currentAttendanceReservationId = null;
+let attendanceQrTimer = null;
+let attendanceQrClassId = null;
 
 async function openAttendancePanel(classId) {
   currentAttendanceClassId = classId;
@@ -1775,6 +1781,120 @@ async function loadReservas() {
       </table>`;
   } catch { container.innerHTML = '<div class="empty-state"><p>No se pudo cargar.</p></div>'; }
 }
+
+async function generateAttendanceQr(classId) {
+  try {
+    const response = await fetch(
+      `${API}/attendance/class/${classId}/qr`,
+      {
+        method: 'POST',
+        headers: authH()
+      }
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      return showAlert(
+        'clasesAlert',
+        data.detail || 'No se pudo generar el QR de asistencia.'
+      );
+    }
+
+    attendanceQrClassId = classId;
+
+    document.getElementById('attendanceQrImage').src = data.qr_url;
+    document.getElementById('attendanceQrUrl').textContent =
+      data.attendance_url;
+
+    document.getElementById('attendanceQrModal')
+      .classList.add('open');
+
+    startAttendanceQrCountdown(data.expires_at);
+
+  } catch (error) {
+    console.error(error);
+
+    showAlert(
+      'clasesAlert',
+      'No se pudo conectar con el servidor.'
+    );
+  }
+}
+
+
+async function closeAttendanceQrModal(disableQr = true) {
+  document.getElementById('attendanceQrModal')
+    .classList.remove('open');
+
+  if (attendanceQrTimer) {
+    clearInterval(attendanceQrTimer);
+    attendanceQrTimer = null;
+  }
+
+  if (disableQr && attendanceQrClassId) {
+    try {
+      await fetch(
+        `${API}/attendance/class/${attendanceQrClassId}/qr/disable`,
+        {
+          method: 'PATCH',
+          headers: authH()
+        }
+      );
+    } catch (error) {
+      console.error(
+        'No se pudo desactivar el QR de asistencia:',
+        error
+      );
+    }
+  }
+
+  attendanceQrClassId = null;
+}
+
+
+function startAttendanceQrCountdown(expiresAt) {
+  const countdown = document.getElementById(
+    'attendanceQrCountdown'
+  );
+
+  if (attendanceQrTimer) {
+    clearInterval(attendanceQrTimer);
+  }
+
+  const updateCountdown = () => {
+    const remaining =
+      new Date(expiresAt).getTime() - Date.now();
+
+    if (remaining <= 0) {
+      countdown.textContent = 'QR vencido';
+
+      clearInterval(attendanceQrTimer);
+      attendanceQrTimer = null;
+
+      return;
+    }
+
+    const minutes = Math.floor(remaining / 60000);
+    const seconds = Math.floor(
+      (remaining % 60000) / 1000
+    );
+
+    countdown.textContent =
+      `Vence en ${minutes}:${String(seconds).padStart(2, '0')}`;
+  };
+
+  updateCountdown();
+
+  attendanceQrTimer = setInterval(
+    updateCountdown,
+    1000
+  );
+}
+
+
+
+
 
 async function leaveWaitlist(classId) {
   if (!confirm('¿Querés salir de la lista de espera?')) return;

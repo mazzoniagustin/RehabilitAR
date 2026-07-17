@@ -19,6 +19,8 @@ from routes.attendance import routerAttendance
 from routes.notifications import router as notification_router
 from routes.audit import routerAudit
 
+from fastapi.staticfiles import StaticFiles
+
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
@@ -54,7 +56,7 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 app.mount(
     "/frontend",
-    StaticFiles(directory=os.path.join(BASE_DIR, "frontend"), html=True),
+    StaticFiles(directory="../frontend", html=True),
     name="frontend"
 )
 
