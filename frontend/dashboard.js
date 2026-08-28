@@ -8,7 +8,12 @@ const clearAuth = () => { localStorage.removeItem('token'); localStorage.removeI
 const authH     = () => ({ 'Content-Type': 'application/json', 'Authorization': `Bearer ${getToken()}` });
 const setUser   = u  => localStorage.setItem('currentUser', JSON.stringify(u));
 const getUser   = () => JSON.parse(localStorage.getItem('currentUser') || 'null');
-
+let subscriptionCheckInterval = null;
+let debtCheckInterval = null;
+let pendingReservationClassId = null;
+let pendingReservationClassType = null;
+let reservationCheckInterval = null;
+let cashSubscriptionUserId = null;
 function getAge(birthDateStr) {
   const today = new Date();
   const birth = new Date(birthDateStr);
@@ -152,7 +157,7 @@ const NAV_CONFIG = {
     { label:'Inicio',             panel:'Inicio',        icon:'grid' },
     { label:'Mi perfil',          panel:'Perfil',        icon:'user' },
     { label:'Encontrar',    panel:'Usuarios',        icon:'users' },
-    { label:'Mis clases',         panel:'Clases',        icon:'calendar', section:'Clases' },
+    { label:'Clases',         panel:'Clases',        icon:'calendar', section:'Clases' },
     { label: 'Solicitar reactivación', panel:'Reactivacion', icon:'bell' },
     { label:'Seguridad',          panel:'Seguridad',     icon:'lock' },
   ],
@@ -198,8 +203,8 @@ function onPanelShow(panel) {
 }
 // CARGA DEL DASHBOARD
 const STAT_MAPS = {
-  NO_ABONADO:    [{ label:'Reservas totales', key:'total_reservations' }, { label:'Ausencias', key:'total_absences' }],
-  ABONADO:       [{ label:'Reservas totales', key:'total_reservations' }, { label:'Ausencias', key:'total_absences' }, { label:'Créditos disponibles', key:'credits' }],
+  NO_ABONADO:    [{ label:'Reservas actuales', key:'total_reservations' }, { label:'Ausencias', key:'total_absences' }],
+  ABONADO:       [{ label:'Reservas actuales', key:'total_reservations' }, { label:'Ausencias', key:'total_absences' }, { label:'Créditos disponibles', key:'credits' }],
   ADMINISTRATIVO:[{ label:'Usuarios registrados', key:'total_users' }],
   RECEPCIONISTA: [{ label:'Usuarios registrados', key:'total_users' }],
   PROFESOR:      [{ label:'Clases dictadas', key:'total_classes' }],
@@ -296,6 +301,11 @@ async function loadDashboard() {
 }
 
   buildSidebar(u.rol);
+  initNotifications();
+
+  if (typeof initAuditDashboard === 'function') {
+    window.initAuditDashboard();
+  }
 }
 
 
@@ -1117,8 +1127,12 @@ async function loadClases() {
     if (isProfessor) await loadMyProfessorRequests();
 
     const res  = await fetch(isProfessor ? `${API}/classes/available-for-professor` : `${API}/classes/available`, { headers: authH() });
-    if (!res.ok) { container.innerHTML = '<div class="empty-state"><p>Error al cargar las clases.</p></div>'; return; }
     const data = await res.json();
+    if (res.status === 401) return handleUnauthorized();
+    if (!res.ok) {
+      container.innerHTML = `<div class="empty-state"><p>${apiErrorMessage(data, 'Error al cargar las clases.')}</p></div>`;
+      return;
+    }
     if (!data.length) { container.innerHTML = '<div class="empty-state"><p>No hay clases disponibles.</p></div>'; return; }
     container.innerHTML = `
       <table class="data-table">
@@ -1143,9 +1157,16 @@ async function loadClases() {
             <td>${c.current_capacity}/${c.max_capacity}${isFull ? ' <span style="color:var(--color-text-warning);font-size:11px">LLENA</span>' : ''}</td>
             <td>${c.professor_name || '<span style="color:var(--muted)">Sin asignar</span>'}</td>
             <td style="display:flex;gap:6px">
-              ${isProfessor
-                ? `<button class="action-btn" ${buttonDisabled ? 'disabled' : ''} onclick="requestProfessorClass('${c.id}')">${buttonLabel}</button>`
-                : clientBtn}
+              ${isProfessor ? `<button class="action-btn" ${buttonDisabled ? 'disabled' : ''} onclick="requestProfessorClass('${c.id}')">${buttonLabel}</button>
+
+                <button class="action-btn success" onclick="openAttendancePanel('${c.id}')">
+                  Pasar asistencia
+                </button>
+
+                <button class="action-btn" onclick="generateAttendanceQr('${c.id}')">
+                  Generar QR de asistencia
+                </button>`
+                : clientBtn} 
               ${isMyClass ? `<button class="action-btn" onclick="openStudentsModal('${c.id}', '${(c.activity_type || '').replace(/_/g, ' ')}')">Inscriptos</button>` : ''}
             </td>
           </tr>`;
@@ -1492,25 +1513,93 @@ async function assignProfessorToClass(classId) {
 
     showAlert('clasesAlert', data.message || 'Se asigno el profesor correctamente.', 'success');
     await loadAdminClasses();
+    if (document.getElementById('professorRequestsContainer')) {
+      await loadProfessorRequests();
+    }
   } catch {
     showAlert('clasesAlert', 'No se pudo conectar.');
   }
 }
 
-async function reserveClass(classId, classType) {
-  try {
-    const isFija = classType === 'FIJA';
-    const url  = isFija ? `${API}/reservations/regular` : `${API}/reservations/individual`;
-    const body = isFija
-      ? { class_id: classId }
-      : { class_id: classId, payment_percentage: 100 }; // payment_percentage: pendiente módulo de pagos
+function reserveClass(classId, classType) {
+  pendingReservationClassId = classId;
+  pendingReservationClassType = classType;
 
-    const res  = await fetch(url, { method: 'POST', headers: authH(), body: JSON.stringify(body) });
+  document.getElementById('reservationPaymentAlert').className = 'alert';
+  document.getElementById('reservationPaymentModal').classList.add('open');
+}
+
+function closeReservationPaymentModal() {
+  document.getElementById('reservationPaymentModal').classList.remove('open');
+  pendingReservationClassId = null;
+  pendingReservationClassType = null;
+}
+
+async function confirmReservationPayment(paymentPercentage) {
+  try {
+    const payRes = await fetch(`${API}/payments/reservation`, {
+      method: 'POST',
+      headers: authH(),
+      body: JSON.stringify({
+        class_id: pendingReservationClassId,
+        class_type: pendingReservationClassType,
+        payment_percentage: paymentPercentage
+      })
+    });
+
+    const payData = await payRes.json();
+
+    if (!payRes.ok) {
+      return showAlert(
+        'reservationPaymentAlert',
+        payData.detail || 'No se pudo generar el QR.'
+      );
+    }
+
+    closeReservationPaymentModal();
+
+    document.getElementById('paymentQrTitle').textContent = 'Pagar reserva';
+    document.getElementById('paymentQrSubtitle').textContent =
+      `Escaneá el QR con Mercado Pago para abonar el ${paymentPercentage}% de la reserva.`;
+    document.getElementById('paymentQrImage').src = payData.qr_url;
+    document.getElementById('paymentQrModal').classList.add('open');
+
+    startReservationStatusCheck(payData.payment_id);
+
+  } catch (error) {
+    console.error(error);
+    showAlert('reservationPaymentAlert', 'No se pudo conectar con el servidor.');
+  }
+}
+
+function startReservationStatusCheck(paymentId) {
+  if (reservationCheckInterval) clearInterval(reservationCheckInterval);
+
+  reservationCheckInterval = setInterval(async () => {
+    const res = await fetch(`${API}/payments/reservation/status/${paymentId}`, {
+      headers: authH()
+    });
+
     const data = await res.json();
-    if (!res.ok) return showAlert('clasesAlert', typeof data.detail === 'string' ? data.detail : 'Error al reservar.');
-    showAlert('clasesAlert', data.message || '¡Reserva realizada!', 'success');
-    loadClases();
-  } catch { showAlert('clasesAlert', 'No se pudo conectar.'); }
+
+    console.log("Estado pago:", data);
+
+    if (data.is_paid) {
+      clearInterval(reservationCheckInterval);
+      reservationCheckInterval = null;
+
+      closePaymentQrModal();
+
+      showAlert(
+        'clasesAlert',
+        'Inscripción exitosa. El pago fue acreditado correctamente.',
+        'success'
+      );
+
+      loadClases();
+      loadReservas();
+    }
+  }, 3000);
 }
 
 async function joinWaitlist(classId) {
@@ -1527,17 +1616,139 @@ async function joinWaitlist(classId) {
   } catch { showAlert('clasesAlert', 'No se pudo conectar.'); }
 }
 
+// asistencia
+let currentAttendanceClassId = null;
+let currentAttendanceUserId = null;
+let currentAttendanceReservationId = null;
+let attendanceQrTimer = null;
+let attendanceQrClassId = null;
+
+async function openAttendancePanel(classId) {
+  currentAttendanceClassId = classId;
+
+  document.getElementById('attendanceModal').classList.add('open');
+  document.getElementById('attendanceContainer').innerHTML =
+    '<div class="empty-state"><p>Cargando participantes...</p></div>';
+
+  try {
+    const res = await fetch(`${API}/attendance/class/${classId}/participants`, {
+      headers: authH()
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      return showAlert('attendanceAlert', data.detail || 'No se pudieron cargar los participantes.');
+    }
+
+    if (!data.length) {
+      document.getElementById('attendanceContainer').innerHTML =
+        '<div class="empty-state"><p>No hay participantes inscriptos.</p></div>';
+      return;
+    }
+
+    document.getElementById('attendanceContainer').innerHTML = `
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Cliente</th>
+            <th>Email</th>
+            <th>Estado actual</th>
+            <th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${data.map(r => `
+            <tr>
+              <td><strong>${r.users?.name || ''} ${r.users?.surname || ''}</strong></td>
+              <td>${r.users?.email || '—'}</td>
+              <td>${r.attendance?.[0]?.status || 'Sin registrar'}</td>
+              <td style="display:flex;gap:6px;flex-wrap:wrap">
+                <button class="action-btn success" onclick="markAttendance('${r.user_id}', '${r.id}', 'PRESENTE')">
+                  Presente
+                </button>
+
+                <button class="action-btn" onclick="openNoticeAttendance('${r.user_id}', '${r.id}')">
+                  Presente con aviso
+                </button>
+
+                <button class="action-btn danger" onclick="markAttendance('${r.user_id}', '${r.id}', 'AUSENTE')">
+                  Ausente
+                </button>
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    `;
+
+  } catch (error) {
+    console.error(error);
+    showAlert('attendanceAlert', 'No se pudo conectar con el servidor.');
+  }
+}
+
+
+function closeAttendanceModal() {
+  document.getElementById('attendanceModal').classList.remove('open');
+  currentAttendanceClassId = null;
+}
+
+
+async function markAttendance(userId, reservationId, status, noticeReason = null) {
+  try {
+    const res = await fetch(`${API}/attendance/mark`, {
+      method: 'POST',
+      headers: authH(),
+      body: JSON.stringify({
+        class_id: currentAttendanceClassId,
+        user_id: userId,
+        reservation_id: reservationId,
+        status: status,
+        notice_reason: noticeReason
+      })
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      return showAlert('attendanceAlert', data.detail || 'No se pudo registrar la asistencia.');
+    }
+
+    showAlert('attendanceAlert', 'Asistencia registrada correctamente.', 'success');
+    openAttendancePanel(currentAttendanceClassId);
+
+  } catch (error) {
+    console.error(error);
+    showAlert('attendanceAlert', 'No se pudo conectar con el servidor.');
+  }
+}
+
+
+function openNoticeAttendance(userId, reservationId) {
+  const reason = prompt('Ingresá el aviso del cliente:');
+
+  if (!reason || !reason.trim()) {
+    return showAlert('attendanceAlert', 'Debe ingresar un aviso.');
+  }
+
+  markAttendance(userId, reservationId, 'PRESENTE_CON_AVISO', reason.trim());
+}
 async function loadReservas() {
   const container = document.getElementById('reservasContainer');
   container.innerHTML = '<div class="empty-state"><p>Cargando...</p></div>';
   try {
     const res  = await fetch(`${API}/reservations/me`, { headers: authH() });
-    if (!res.ok) { container.innerHTML = '<div class="empty-state"><p>Error al cargar.</p></div>'; return; }
     const data = await res.json();
+    if (res.status === 401) return handleUnauthorized();
+    if (!res.ok) {
+      container.innerHTML = `<div class="empty-state"><p>${apiErrorMessage(data, 'Error al cargar.')}</p></div>`;
+      return;
+    }
     if (!data.length) { container.innerHTML = '<div class="empty-state"><p>No tenés reservas activas.</p></div>'; return; }
     container.innerHTML = `
       <table class="data-table">
-        <thead><tr><th>Actividad</th><th>Tipo</th><th>Inicio</th><th>Estado</th><th>Pago</th><th>Posición</th><th></th></tr></thead>
+        <thead><tr><th>Actividad</th><th>Tipo</th><th>Inicio</th><th>Estado</th><th>Pago</th><th>Asistencia</th><th>Posición</th><th></th></tr></thead>
         <tbody>${data.map(r => {
           const isWaitlist = r.kind === 'WAITLIST';
           const estado = isWaitlist
@@ -1547,6 +1758,10 @@ async function loadReservas() {
             ? badge(r.payment_status, { PENDIENTE:'Pendiente', SENADO_50:'50% señado', PAGADO:'Pagado', DEVUELTO:'Devuelto', CREDITO_APLICADO:'Crédito' })
             : '—';
           const posicion = isWaitlist ? `#${r.waitlist_position || '—'}` : '—';
+          const asistencia = r.attendance_status
+            ? `${r.attendance_status.replace(/_/g, ' ')}${r.attendance_comment
+            ? `<br><small style="color:var(--muted)">Aviso: ${r.attendance_comment}</small>`: ''}`
+            : 'Sin registrar';
           const action = isWaitlist
             ? `<button class="action-btn danger" onclick="leaveWaitlist('${r.class_id}')">Salir</button>`
             : (r.status === 'CONFIRMADA' ? `<button class="action-btn danger" onclick="cancelReserva('${r.id}')">Cancelar</button>` : '');
@@ -1557,6 +1772,7 @@ async function loadReservas() {
             <td>${formatDate(r.start_time)}</td>
             <td>${estado}</td>
             <td>${pago}</td>
+            <td>${asistencia}</td>
             <td>${posicion}</td>
             <td>${action}</td>
           </tr>`;
@@ -1565,6 +1781,120 @@ async function loadReservas() {
       </table>`;
   } catch { container.innerHTML = '<div class="empty-state"><p>No se pudo cargar.</p></div>'; }
 }
+
+async function generateAttendanceQr(classId) {
+  try {
+    const response = await fetch(
+      `${API}/attendance/class/${classId}/qr`,
+      {
+        method: 'POST',
+        headers: authH()
+      }
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      return showAlert(
+        'clasesAlert',
+        data.detail || 'No se pudo generar el QR de asistencia.'
+      );
+    }
+
+    attendanceQrClassId = classId;
+
+    document.getElementById('attendanceQrImage').src = data.qr_url;
+    document.getElementById('attendanceQrUrl').textContent =
+      data.attendance_url;
+
+    document.getElementById('attendanceQrModal')
+      .classList.add('open');
+
+    startAttendanceQrCountdown(data.expires_at);
+
+  } catch (error) {
+    console.error(error);
+
+    showAlert(
+      'clasesAlert',
+      'No se pudo conectar con el servidor.'
+    );
+  }
+}
+
+
+async function closeAttendanceQrModal(disableQr = true) {
+  document.getElementById('attendanceQrModal')
+    .classList.remove('open');
+
+  if (attendanceQrTimer) {
+    clearInterval(attendanceQrTimer);
+    attendanceQrTimer = null;
+  }
+
+  if (disableQr && attendanceQrClassId) {
+    try {
+      await fetch(
+        `${API}/attendance/class/${attendanceQrClassId}/qr/disable`,
+        {
+          method: 'PATCH',
+          headers: authH()
+        }
+      );
+    } catch (error) {
+      console.error(
+        'No se pudo desactivar el QR de asistencia:',
+        error
+      );
+    }
+  }
+
+  attendanceQrClassId = null;
+}
+
+
+function startAttendanceQrCountdown(expiresAt) {
+  const countdown = document.getElementById(
+    'attendanceQrCountdown'
+  );
+
+  if (attendanceQrTimer) {
+    clearInterval(attendanceQrTimer);
+  }
+
+  const updateCountdown = () => {
+    const remaining =
+      new Date(expiresAt).getTime() - Date.now();
+
+    if (remaining <= 0) {
+      countdown.textContent = 'QR vencido';
+
+      clearInterval(attendanceQrTimer);
+      attendanceQrTimer = null;
+
+      return;
+    }
+
+    const minutes = Math.floor(remaining / 60000);
+    const seconds = Math.floor(
+      (remaining % 60000) / 1000
+    );
+
+    countdown.textContent =
+      `Vence en ${minutes}:${String(seconds).padStart(2, '0')}`;
+  };
+
+  updateCountdown();
+
+  attendanceQrTimer = setInterval(
+    updateCountdown,
+    1000
+  );
+}
+
+
+
+
 
 async function leaveWaitlist(classId) {
   if (!confirm('¿Querés salir de la lista de espera?')) return;
@@ -1793,7 +2123,7 @@ async function openUserProfile(userId) {
 
   const currentUser = getUser();
   const isAdmin = currentUser?.rol === 'ADMINISTRATIVO';
-
+  const isReceptionist = currentUser?.rol === 'RECEPCIONISTA';
   const url = isAdmin ? `${API}/users/${userId}` : `${API}/users/public/${userId}`;
 
   try {
@@ -1845,6 +2175,13 @@ async function openUserProfile(userId) {
       ];
     }
 
+    if (isReceptionist && u.rol === 'NO_ABONADO') {
+      document.getElementById('modalActions').innerHTML = `
+        <button class="btn btn-sm" onclick="registerCashSubscription('${u.id}')">
+          Registrar mensualidad en efectivo
+        </button> 
+      `;
+    }
     document.getElementById('modalUserBody').innerHTML = `
       <div id="userViewMode">
         ${fields.map(([label, value]) =>
@@ -1875,6 +2212,7 @@ function getEditableRoles(currentRole) {
 function toggleEditUser(u) {
   const viewMode = document.getElementById('userViewMode');
   const editMode = document.getElementById('userEditMode');
+  const actions = document.getElementById('modalActions');
 
   if (editMode.style.display === 'none' || !editMode.style.display) {
 
@@ -1943,6 +2281,8 @@ function toggleEditUser(u) {
 
     viewMode.style.display = 'none';
     editMode.style.display = 'block';
+    if (actions) actions.style.display = 'none';
+
   } else {
     cancelEditUser();
   }
@@ -1957,6 +2297,9 @@ function handleRoleChange(role) {
 function cancelEditUser() {
   document.getElementById('userEditMode').style.display = 'none';
   document.getElementById('userViewMode').style.display = 'block';
+
+  const actions = document.getElementById('modalActions');
+  if (actions) actions.style.display = 'flex';
 }
 
 async function saveUserProfile(userId) {
@@ -2486,6 +2829,13 @@ async function handleChangePassword() {
     document.getElementById('currentPw').value = '';
     document.getElementById('newPw').value = '';
     document.getElementById('confirmPw').value = '';
+    if (data.force_logout) {
+      localStorage.clear();
+      sessionStorage.clear();
+      setTimeout(() => {
+      window.location.href = 'http://localhost:8000/frontend/login.html';
+      }, 2500);
+    }
   } catch { showAlert('pwAlert', 'No se pudo conectar.'); }
 }
 
@@ -2495,6 +2845,12 @@ async function paySubscription() {
 
   try {
     const user = getUser();
+    if (user?.rol === 'ABONADO') {
+      return showAlert(
+        'pagosAlert',
+        'Ya sos cliente abonado. No podés volver a pagar la mensualidad.'
+      );
+    }
     const res = await fetch(`${API}/payments/subscription`, {
       method: 'POST',
       headers: authH(),
@@ -2512,6 +2868,7 @@ async function paySubscription() {
     document.getElementById('paymentQrSubtitle').textContent = 'Escaneá el QR con Mercado Pago para abonar la mensualidad.';
     document.getElementById('paymentQrImage').src = data.qr_url;
     document.getElementById('paymentQrModal').classList.add('open');
+    startSubscriptionStatusCheck(user.id);
 
   } catch (error) {
 
@@ -2524,9 +2881,62 @@ async function paySubscription() {
   } 
 }
 
+function startSubscriptionStatusCheck(userId) {
+  if (subscriptionCheckInterval) {
+    clearInterval(subscriptionCheckInterval);
+  }
+
+  subscriptionCheckInterval = setInterval(async () => {
+    try {
+      const res = await fetch(`${API}/payments/subscription/status/${userId}`, {
+        headers: authH()
+      });
+
+      const data = await res.json();
+
+      if (data.is_subscribed) {
+        clearInterval(subscriptionCheckInterval);
+        subscriptionCheckInterval = null;
+
+        closePaymentQrModal();
+
+        const user = getUser();
+        user.rol = "ABONADO";
+        setUser(user);
+
+        showAlert(
+          'pagosAlert',
+          'Pago registrado correctamente. Ahora sos cliente abonado.',
+          'success'
+        );
+
+        setTimeout(() => {
+          location.reload();
+        }, 1500);
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  }, 3000);
+}
 function closePaymentQrModal() {
   document.getElementById('paymentQrModal').classList.remove('open');
+
+  if (subscriptionCheckInterval) {
+    clearInterval(subscriptionCheckInterval);
+    subscriptionCheckInterval = null;
+  }
+
+  if (debtCheckInterval) {
+    clearInterval(debtCheckInterval);
+    debtCheckInterval = null;
+  }
+  if (reservationCheckInterval) {
+    clearInterval(reservationCheckInterval);
+    reservationCheckInterval = null;
+  }
 }
+
 async function loadDebts() {
   const user = getUser();
 
@@ -2572,8 +2982,8 @@ async function loadDebts() {
       ${debts.map(d => `
         <div class="debt-item">
           <div class="debt-info">
-            <strong>Deuda #${d.id}</strong>
-            <span>Fecha de vencimiento: ${d.due_date}</span>
+            <strong>${d.payment_type === 'RESERVATION_REMAINING' ? 'Deuda por pagar 50%' : 'Deuda pendiente'}</strong>
+            <span>${d.due_date ? `Fecha de vencimiento: ${d.due_date}` : 'Pago pendiente'}</span>
           </div>
 
           <div class="debt-amount">$${d.amount}</div>
@@ -2611,7 +3021,143 @@ async function payDebt(debtId, amount) {
   document.getElementById('paymentQrSubtitle').textContent = 'Escaneá el QR con Mercado Pago para abonar tu deuda.';
   document.getElementById('paymentQrImage').src = data.qr_url;
   document.getElementById('paymentQrModal').classList.add('open');
+  startDebtStatusCheck(debtId);
 }
+function startDebtStatusCheck(debtId) {
+  if (debtCheckInterval) {
+    clearInterval(debtCheckInterval);
+  }
+
+  debtCheckInterval = setInterval(async () => {
+    try {
+      const res = await fetch(`${API}/payments/debt/status/${debtId}`, {
+        headers: authH()
+      });
+
+      const data = await res.json();
+
+      if (data.is_paid) {
+        clearInterval(debtCheckInterval);
+        debtCheckInterval = null;
+
+        closePaymentQrModal();
+
+        showAlert(
+          'pagosAlert',
+          'Pago registrado correctamente. La deuda fue saldada.',
+          'success'
+        );
+
+        loadDebts();
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  }, 3000);
+}
+
+let notifPollTimer = null;
+
+function initNotifications() {
+  fetchNotifications();
+  notifPollTimer = setInterval(fetchNotifications, 30000);
+  document.addEventListener('click', (e) => {
+    const wrapper = document.getElementById('notification-wrapper');
+    if (wrapper && !wrapper.contains(e.target)) closeNotificationDropdown();
+  });
+}
+
+async function fetchNotifications() {
+  try {
+    const res = await fetch(`${API}/notifications/`, { headers: authH() });
+    if (!res.ok) return;
+    const data = await res.json();
+    renderBell(data.unread_count);
+    renderDropdown(data.notifications);
+    updateToggleBtn(data.notifications_enabled);
+  } catch (err) {
+    console.error('Error notificaciones:', err);
+  }
+}
+
+function renderBell(unreadCount) {
+  const badge = document.getElementById('notif-badge');
+  if (!badge) return;
+  if (unreadCount > 0) {
+    badge.textContent = unreadCount > 99 ? '99+' : unreadCount;
+    badge.classList.remove('notif-badge--hidden');
+  } else {
+    badge.classList.add('notif-badge--hidden');
+  }
+}
+
+function renderDropdown(notifications) {
+  const list = document.getElementById('notif-list');
+  if (!list) return;
+  if (!notifications.length) {
+    list.innerHTML = `<div class="notif-empty">Sin notificaciones</div>`;
+    return;
+  }
+  list.innerHTML = notifications.map(n => `
+    <div class="notif-item ${n.is_read ? 'notif-item--read' : 'notif-item--unread'}"
+         onclick="handleNotifClick('${n.id}', ${n.is_read})">
+      <div class="notif-item__title">${n.title}</div>
+      <div class="notif-item__message">${n.message || ''}</div>
+      <div class="notif-item__time">${formatNotifTime(n.created_at)}</div>
+    </div>
+  `).join('');
+}
+
+function toggleNotificationDropdown() {
+  document.getElementById('notif-dropdown')?.classList.toggle('notif-dropdown--hidden');
+}
+
+function closeNotificationDropdown() {
+  document.getElementById('notif-dropdown')?.classList.add('notif-dropdown--hidden');
+}
+
+function updateToggleBtn(enabled) {
+  const btn = document.getElementById('notifToggleBtn');
+  if (!btn) return;
+  btn.textContent = enabled ? 'Desactivar' : 'Activar';
+}
+
+async function handleNotifClick(id, isRead) {
+  if (!isRead) await markAsRead(id);
+}
+
+async function markAsRead(id) {
+  try {
+    await fetch(`${API}/notifications/${id}/read`, { method: 'PATCH', headers: authH() });
+    fetchNotifications();
+  } catch (err) { console.error(err); }
+}
+
+async function markAllAsRead() {
+  try {
+    await fetch(`${API}/notifications/read-all`, { method: 'PATCH', headers: authH() });
+    fetchNotifications();
+  } catch (err) { console.error(err); }
+}
+
+async function toggleNotifications() {
+  try {
+    const res = await fetch(`${API}/notifications/toggle`, { method: 'PATCH', headers: authH() });
+    const data = await res.json();
+    updateToggleBtn(data.notifications_enabled);
+  } catch (err) { console.error(err); }
+}
+
+function formatNotifTime(isoString) {
+  const date = new Date(isoString);
+  const diffMin = Math.floor((new Date() - date) / 60000);
+  if (diffMin < 1) return 'Ahora';
+  if (diffMin < 60) return `Hace ${diffMin} min`;
+  const diffHrs = Math.floor(diffMin / 60);
+  if (diffHrs < 24) return `Hace ${diffHrs} h`;
+  return date.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' });
+}
+
 // LOGOUT
 
 async function handleLogout() {
@@ -2620,6 +3166,71 @@ async function handleLogout() {
   window.location.href = 'login.html';
 }
 
+async function registerCashSubscription(userId) {
+  try {
+    const res = await fetch(`${API}/payments/subscription/cash/validate/${userId}`, {
+      headers: authH()
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      return showAlert(
+        'usuariosAlert',
+        data.detail || 'No se puede registrar la mensualidad.'
+      );
+    }
+
+    cashSubscriptionUserId = userId;
+    document.getElementById('cashSubscriptionAlert').className = 'alert';
+    document.getElementById('cashSubscriptionModal').classList.add('open');
+
+  } catch (error) {
+    console.error(error);
+    showAlert('usuariosAlert', 'No se pudo conectar con el servidor.');
+  }
+}
+
+function closeCashSubscriptionModal() {
+  document.getElementById('cashSubscriptionModal').classList.remove('open');
+  cashSubscriptionUserId = null;
+}
+
+async function confirmCashSubscription() {
+  if (!cashSubscriptionUserId) return;
+
+  try {
+    const res = await fetch(`${API}/payments/subscription/cash`, {
+      method: 'POST',
+      headers: authH(),
+      body: JSON.stringify({ user_id: cashSubscriptionUserId })
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      return showAlert(
+        'cashSubscriptionAlert',
+        data.detail || 'No se pudo registrar la mensualidad.'
+      );
+    }
+
+    closeCashSubscriptionModal();
+    closeUserModal();
+
+    showAlert(
+      'usuariosAlert',
+      data.message || 'Mensualidad registrada correctamente.',
+      'success'
+    );
+
+    initUserPanel();
+
+  } catch (error) {
+    console.error(error);
+    showAlert('cashSubscriptionAlert', 'No se pudo conectar con el servidor.');
+  }
+}
 // INIT
 
 (async function init() {

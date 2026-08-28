@@ -1,8 +1,17 @@
-from database import supabase
+from database import supabase, supabase_admin
 from datetime import datetime, timedelta, timezone
 from fastapi import HTTPException
-from services.classes_service import cancel_class
 from utils import benefits
+from services.notifications_service import create_notification
+from utils.notifications import (
+    send_class_cancelled_credit_email,
+    send_class_cancelled_no_credit_email,
+    send_class_cancelled_refund_email,
+    send_waitlist_removed_class_cancelled_email,
+)
+from utils.class_desc import build_class_desc
+
+AUTO_NO_PROFESSOR_REASON = 'Cancelación automática por falta de profesor.'
 
 
 def _to_aware_utc(value: str) -> datetime:
@@ -10,6 +19,10 @@ def _to_aware_utc(value: str) -> datetime:
     if parsed.tzinfo is None:
         return parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(timezone.utc)
+
+
+def _client():
+    return supabase_admin or supabase
 
 
 def _registrar_cancelacion(
@@ -37,11 +50,66 @@ def _registrar_cancelacion(
         row['user_id'] = str(user_id)
     if reservation_id:
         row['reservation_id'] = str(reservation_id)
-    supabase.table('cancellations').insert(row).execute()
+    _client().table('cancellations').insert(row).execute()
 
 
-def _limpiar_waitlist_de_clase(class_id: str):
-    supabase.table('waitlist').delete().eq('class_id', class_id).execute()
+def _limpiar_waitlist_de_clase(class_id: str, class_desc: str = None, cancel_reason: str = None):
+    entradas = (
+        _client().table('waitlist')
+        .select('user_id, users(email, name)')
+        .eq('class_id', class_id)
+        .execute()
+    ).data or []
+
+    _client().table('waitlist').delete().eq('class_id', class_id).execute()
+
+    if class_desc is None:
+        return
+
+    for entrada in entradas:
+        user_id = entrada.get('user_id')
+        persona = entrada.get('users') or {}
+        try:
+            create_notification(
+                user_id,
+                'Se canceló una clase de tu lista de espera',
+                f'La clase de {class_desc}, en la que estabas en lista de espera, fue cancelada. '
+                f'Motivo: {cancel_reason}.'
+            )
+            if persona.get('email'):
+                send_waitlist_removed_class_cancelled_email(
+                    persona['email'], persona.get('name', 'usuario/a'), class_desc, cancel_reason
+                )
+        except Exception:
+            # No interrumpir el flujo principal si la notificación falla
+            pass
+
+
+def _marcar_clase_cancelada(class_id: str):
+    class_id = str(class_id)
+    class_response = (
+        _client().table('classes')
+        .select('id, status')
+        .eq('id', class_id)
+        .single()
+        .execute()
+    )
+    if not class_response.data:
+        raise HTTPException(status_code=404, detail='La clase seleccionada no existe.')
+
+    if class_response.data['status'] == 'CANCELADA':
+        return class_response.data
+
+    updated_class = (
+        _client().table('classes')
+        .update({'status': 'CANCELADA'})
+        .eq('id', class_id)
+        .select('id, status')
+        .execute()
+    )
+    if not (updated_class.data or []):
+        raise HTTPException(status_code=500, detail='No se pudo cancelar la clase. Intente nuevamente.')
+    return updated_class.data[0]
 
 
 def _cancelar_reservas_de_clase(class_id: str, cancel_reason: str, tipo: str):
@@ -52,8 +120,17 @@ def _cancelar_reservas_de_clase(class_id: str, cancel_reason: str, tipo: str):
     Al finalizar, resetea current_capacity a 0 para que la clase
     quede consistente aunque su status sea CANCELADA.
     """
+    clase_info = (
+        _client().table('classes')
+        .select('activity_type, start_time, rooms(name)')
+        .eq('id', class_id)
+        .single()
+        .execute()
+    ).data
+    class_desc = build_class_desc(clase_info) if clase_info else 'la clase'
+
     reservas = (
-        supabase.table('reservations')
+        _client().table('reservations')
         .select('*')
         .eq('class_id', class_id)
         .eq('status', 'CONFIRMADA')
@@ -65,25 +142,30 @@ def _cancelar_reservas_de_clase(class_id: str, cancel_reason: str, tipo: str):
             'cancelled_at': datetime.now(timezone.utc).isoformat(),
             'cancellation_reason': cancel_reason,
         }
-        user = supabase.table('users').select('rol').eq('id', reserva['user_id']).single().execute().data
+        user = _client().table('users').select('rol, email, name').eq('id', reserva['user_id']).single().execute().data
         if user and user['rol'] == 'ABONADO':
-            credit_result = benefits.otorgar_credito(
-                reserva['user_id'],
-                reservation_id=reserva['id'],
-                class_id=class_id,
-                reason=f'Crédito otorgado por cancelación de clase: {cancel_reason}'
-            )
+            _client().table('reservations').update(reservation_update).eq('id', reserva['id']).execute()
+
+            try:
+                credit_result = benefits.otorgar_credito(
+                    reserva['user_id'],
+                    reservation_id=reserva['id'],
+                    class_id=class_id,
+                    reason=f'Crédito otorgado por cancelación de clase: {cancel_reason}'
+                )
+            except Exception:
+                credit_result = {'granted': False}
             generates_credit = bool(credit_result.get('granted'))
             if generates_credit:
-                reservation_update['payment_status'] = 'CREDITO_APLICADO'
+                _client().table('reservations').update({'payment_status': 'CREDITO_APLICADO'}).eq('id', reserva['id']).execute()
             generates_refund = False
         else:
             # depositar_reserva(reserva['amount_paid'], user['email']) #pendiente_de_implementar
             reservation_update['payment_status'] = 'DEVUELTO'
             generates_credit = False
             generates_refund = True
+            _client().table('reservations').update(reservation_update).eq('id', reserva['id']).execute()
 
-        supabase.table('reservations').update(reservation_update).eq('id', reserva['id']).execute()
         _registrar_cancelacion(
             class_id=class_id,
             cancel_reason=cancel_reason,
@@ -94,14 +176,47 @@ def _cancelar_reservas_de_clase(class_id: str, cancel_reason: str, tipo: str):
             generates_refund=generates_refund,
         )
 
+        try:
+            if generates_credit:
+                create_notification(
+                    reserva['user_id'],
+                    'Tu clase fue cancelada: se te otorgó un crédito',
+                    f'Tu clase de {class_desc} fue cancelada. Motivo: {cancel_reason}. '
+                    'Como sos cliente abonado, se te otorgó un crédito para usar en otra clase.'
+                )
+                if user and user.get('email'):
+                    send_class_cancelled_credit_email(user['email'], user.get('name', 'usuario/a'), class_desc, cancel_reason)
+            elif generates_refund:
+                create_notification(
+                    reserva['user_id'],
+                    'Tu clase fue cancelada: se procesará tu reembolso',
+                    f'Tu clase de {class_desc} fue cancelada. Motivo: {cancel_reason}. '
+                    'Se procesará el reembolso de tu pago.'
+                )
+                if user and user.get('email'):
+                    send_class_cancelled_refund_email(user['email'], user.get('name', 'usuario/a'), class_desc, cancel_reason)
+            else:
+                # Abonado que alcanzó el máximo de créditos mensuales: se cancela sin crédito.
+                create_notification(
+                    reserva['user_id'],
+                    'Tu clase fue cancelada',
+                    f'Tu clase de {class_desc} fue cancelada. Motivo: {cancel_reason}. '
+                    'Alcanzaste el máximo de créditos disponibles este mes, por lo que no se otorgó un crédito adicional.'
+                )
+                if user and user.get('email'):
+                    send_class_cancelled_no_credit_email(user['email'], user.get('name', 'usuario/a'), class_desc, cancel_reason)
+        except Exception:
+            # No interrumpir el flujo principal si la notificación falla
+            pass
+
     # Resetear el cupo ocupado a 0: todas las reservas fueron canceladas,
     # no quedan inscriptos independientemente del status de la clase.
-    supabase.table('classes').update({'current_capacity': 0}).eq('id', class_id).execute()
-    _limpiar_waitlist_de_clase(class_id)
+    _client().table('classes').update({'current_capacity': 0}).eq('id', class_id).execute()
+    _limpiar_waitlist_de_clase(class_id, class_desc, cancel_reason)
 
 
 def _cancelar_clase_confirmada(class_id: str, reason: str, tipo: str, user_id: str = None):
-    cancel_class(class_id)
+    _marcar_clase_cancelada(class_id)
     _registrar_cancelacion(class_id, reason, tipo=tipo, user_id=user_id)
     _cancelar_reservas_de_clase(class_id, reason, tipo=tipo)
 
@@ -127,23 +242,7 @@ def cancelacion_automatica(class_id: str):
         if class_id is None:
             raise HTTPException(status_code=400, detail='El ID de la clase es obligatorio para la cancelación automática.')
 
-        clase = (
-            supabase.table('classes')
-            .select('professor_id, start_time')
-            .eq('id', class_id)
-            .single()
-            .execute()
-        ).data
-        if not clase:
-            raise HTTPException(status_code=404, detail='La clase seleccionada no existe.')
-
-        start_time = _to_aware_utc(clase['start_time'])
-        ahora = datetime.now(timezone.utc)
-        diferencia_horas = (start_time - ahora).total_seconds() / 3600
-
-        if clase['professor_id'] is None and diferencia_horas <= 12:
-            reason = 'Cancelación automática por falta de profesor.'
-            _cancelar_clase_confirmada(class_id, reason, tipo='AUTOMATICA')
+        if cancelar_si_corresponde_sin_profesor(class_id):
             return {'message': 'Clase cancelada automáticamente por falta de profesor.'}
 
         return {'message': 'No se cumplen las condiciones para cancelar la clase automáticamente.'}
@@ -154,6 +253,78 @@ def cancelacion_automatica(class_id: str):
         raise HTTPException(status_code=500, detail=f'Error al cancelar la clase: {str(e)}')
 
 
+def _esta_en_ventana_sin_profesor(clase: dict):
+    if not clase:
+        return False
+    if clase.get('status') and clase['status'] != 'PROGRAMADA':
+        return False
+    if clase.get('professor_id') is not None:
+        return False
+
+    start_time = _to_aware_utc(clase['start_time'])
+    ahora = datetime.now(timezone.utc)
+    diferencia_horas = (start_time - ahora).total_seconds() / 3600
+    return 0 < diferencia_horas <= 12
+
+
+def cancelar_si_corresponde_sin_profesor(class_id: str, clase: dict = None):
+    class_id = str(class_id)
+    if clase is None:
+        clase = (
+            _client().table('classes')
+            .select('id, status, professor_id, start_time')
+            .eq('id', class_id)
+            .single()
+            .execute()
+        ).data
+        if not clase:
+            raise HTTPException(status_code=404, detail='La clase seleccionada no existe.')
+
+    if _esta_en_ventana_sin_profesor(clase):
+        _cancelar_clase_confirmada(class_id, AUTO_NO_PROFESSOR_REASON, tipo='AUTOMATICA')
+        return True
+
+    return False
+
+
+def asegurar_clase_reservable_con_profesor(class_id: str, clase: dict = None):
+    if cancelar_si_corresponde_sin_profesor(class_id, clase):
+        raise HTTPException(
+            status_code=400,
+            detail='La clase fue cancelada automáticamente por falta de profesor.'
+        )
+
+
+def sincronizar_reservas_de_clases_canceladas(user_id: str = None):
+    try:
+        query = (
+            _client().table('reservations')
+            .select('id, class_id, user_id, classes(status)')
+            .eq('status', 'CONFIRMADA')
+        )
+        if user_id:
+            query = query.eq('user_id', str(user_id))
+
+        reservas = query.execute()
+        class_ids = {
+            str(reserva['class_id'])
+            for reserva in (reservas.data or [])
+            if (reserva.get('classes') or {}).get('status') == 'CANCELADA'
+        }
+
+        for class_id in class_ids:
+            _cancelar_reservas_de_clase(
+                class_id,
+                'Cancelación de reserva por clase cancelada.',
+                tipo='AUTOMATICA'
+            )
+
+        return {'synced_count': len(class_ids), 'class_ids': list(class_ids)}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f'Error al sincronizar reservas de clases canceladas: {str(e)}')
+
+
 def cancelar_clases_sin_profesor():
     """
     Cancela todas las clases programadas sin profesor que comienzan dentro
@@ -162,10 +333,9 @@ def cancelar_clases_sin_profesor():
     try:
         ahora = datetime.now(timezone.utc)
         limite = ahora + timedelta(hours=12)
-        reason = 'Cancelación automática por falta de profesor.'
 
         clases = (
-            supabase.table('classes')
+            _client().table('classes')
             .select('id')
             .eq('status', 'PROGRAMADA')
             .is_('professor_id', None)
@@ -179,7 +349,7 @@ def cancelar_clases_sin_profesor():
 
         for clase in (clases.data or []):
             try:
-                _cancelar_clase_confirmada(clase['id'], reason, tipo='AUTOMATICA')
+                _cancelar_clase_confirmada(clase['id'], AUTO_NO_PROFESSOR_REASON, tipo='AUTOMATICA')
                 canceladas.append(str(clase['id']))
             except Exception as e:
                 errores.append({'class_id': str(clase['id']), 'error': str(e)})

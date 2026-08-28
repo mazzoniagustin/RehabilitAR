@@ -34,7 +34,8 @@ def change_password(data,current_user):
         if not response.user:
             raise HTTPException(status_code=404, detail='Usuario no encontrado.')
         
-        return {'Mensaje': 'Contraseña actualizada exitosamente.'}
+        return {'Mensaje': 'Contraseña actualizada exitosamente.',
+                'force_logout': True}
 
     except HTTPException:
         raise
@@ -98,7 +99,13 @@ def show_user_info(user_id: str):
             base['total_users'] = count_users_res.count if count_users_res.count is not None else 0
         
         if user['rol'] in ['ABONADO', 'NO_ABONADO']:
-           reservations_res = supabase.table('reservations').select('id', count='exact').eq('user_id', user['id']).execute()
+           reservations_res = (
+               supabase.table('reservations')
+               .select('id', count='exact')
+               .eq('user_id', user['id'])
+               .eq('status', 'CONFIRMADA')
+               .execute()
+           )
            base['total_reservations'] = reservations_res.count if reservations_res.count is not None else 0
            
            attendance_res = supabase.table('attendance').select('id, status').eq('user_id', user['id']).execute()
