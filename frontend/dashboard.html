@@ -28,19 +28,49 @@
     </nav>
 
     <div class="sidebar-footer">
-      <div class="user-chip">
-        <div class="avatar" id="avatarInitials">?</div>
-          <div>
-            <strong id="sidebarName" style="display:block;font-size:.82rem;color:var(--text)">Cargando...</strong>
-            <span id="sidebarEmail" style="font-size:.72rem;color:var(--muted)">—</span>
+      <div class="sidebar-footer">
+
+      <div id="notification-wrapper" class="notif-wrapper">
+        <button class="notif-bell" onclick="toggleNotificationDropdown()" aria-label="Notificaciones">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"
+           fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+            <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+          </svg>
+          Notificaciones
+        <span id="notif-badge" class="notif-badge notif-badge--hidden">0</span>
+        </button>
+        <div id="notif-dropdown" class="notif-dropdown notif-dropdown--hidden">
+          <div class="notif-header">
+          <span>Notificaciones</span>
+            <div style="display:flex;gap:8px;align-items:center">
+            <button class="notif-mark-all" id="notifToggleBtn" onclick="toggleNotifications()">Desactivar</button>
+              <button class="notif-mark-all" onclick="markAllAsRead()">Marcar todas leídas</button>
           </div>
         </div>
-      <button class="btn-logout" onclick="handleLogout()">
-      <svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-      Cerrar sesión
-      </button>
+      <div id="notif-list" class="notif-list"></div>
+    </div>
+  </div>
+
+  <div class="user-chip">
+    <div class="avatar" id="avatarInitials">?</div>
+
+      <div class="user-info">
+        <strong id="sidebarName">Cargando...</strong>
+        <span id="sidebarEmail">—</span>
       </div>
-    </aside>
+    </div>
+
+    <button class="btn-logout" onclick="handleLogout()">
+      <svg viewBox="0 0 24 24">
+        <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/>
+        <polyline points="16 17 21 12 16 7"/>
+        <line x1="21" y1="12" x2="9" y2="12"/>
+      </svg>
+      Cerrar sesión
+    </button>
+  </div>
+  </aside>
 
   <!-- ══════ MAIN ══════ -->
   <main class="main">
@@ -291,16 +321,35 @@
       </div>
     </div>
     
-    <div class="panel" id="panelReservas">
-      <div id="reservasAlert" class="alert"></div>
-      <div class="page-header"><div class="page-header-left"><h2>Mis reservas</h2><p>Clases reservadas y su estado</p></div></div>
-      <div class="section-card">
-        <h3><svg viewBox="0 0 24 24"><path d="M20 12V22H4V12"/><path d="M22 7H2v5h20V7z"/><path d="M12 22V7"/></svg> Reservas activas</h3>
+  <div class="panel" id="panelReservas">
+
+    <div id="reservasAlert" class="alert"></div>
+
+    <div class="page-header">
+      <div class="page-header-left">
+        <h2>Mis reservas</h2>
+        <p>Clases reservadas y su estado</p>
       </div>
-      <div id="reservasContainer"><div class="empty-state"><p>Cargando...</p></div></div>
     </div>
 
-    <!-- PANEL: Usuarios (admin/recepcionista) -->
+  <div class="section-card">
+    <h3>
+      <svg viewBox="0 0 24 24">
+        <path d="M20 12V22H4V12"/>
+        <path d="M22 7H2v5h20V7z"/>
+        <path d="M12 22V7"/>
+      </svg>
+      Reservas activas
+    </h3>
+
+    <div id="reservasContainer">
+      <div class="empty-state">
+        <p>No tenés reservas activas.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- PANEL: Usuarios (admin/recep) -->
 <div class="panel" id="panelUsuarios">
     <div class="page-header">
@@ -736,6 +785,135 @@
     >
   </div>
 </div>
+<div class="modal-overlay" id="reservationPaymentModal">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-header">
+      <h3>Elegir forma de pago</h3>
+      <button class="modal-close" onclick="closeReservationPaymentModal()">✕</button>
+    </div>
+
+    <div id="reservationPaymentAlert" class="alert"></div>
+
+    <p style="color:var(--muted);font-size:.9rem;margin-bottom:18px">
+      Seleccioná cómo querés pagar la reserva.
+    </p>
+
+    <div style="display:flex;gap:12px;flex-wrap:wrap">
+      <button class="btn" onclick="confirmReservationPayment(50)">
+        Pagar 50%
+      </button>
+
+      <button class="btn" onclick="confirmReservationPayment(100)">
+        Pagar 100%
+      </button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="cashSubscriptionModal">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-header">
+      <h3>Confirmar pago en efectivo</h3>
+      <button class="modal-close" onclick="closeCashSubscriptionModal()">✕</button>
+    </div>
+
+    <div id="cashSubscriptionAlert" class="alert"></div>
+
+    <p style="color:var(--muted);font-size:.9rem;margin-bottom:18px">
+      Confirmá que el cliente pagó la mensualidad en efectivo.
+      Al aceptar, el cliente pasará a ser abonado.
+    </p>
+
+    <div class="modal-actions">
+      <button class="btn btn-sm" onclick="confirmCashSubscription()">
+        Confirmar pago
+      </button>
+      <button class="btn btn-sm btn-outline" onclick="closeCashSubscriptionModal()">
+        Cancelar
+      </button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="attendanceModal">
+  <div class="modal" style="max-width:720px">
+    <div class="modal-header">
+      <h3>Pasar asistencia</h3>
+      <button class="modal-close" onclick="closeAttendanceModal()">✕</button>
+    </div>
+
+    <div id="attendanceAlert" class="alert"></div>
+
+    <div id="attendanceContainer">
+      <div class="empty-state"><p>Cargando participantes...</p></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="attendanceQrModal">
+  <div class="modal" style="max-width:480px">
+
+    <div class="modal-header">
+      <h3>QR de asistencia</h3>
+
+      <button
+        class="modal-close"
+        onclick="closeAttendanceQrModal(true)"
+      >
+        ✕
+      </button>
+    </div>
+
+    <p>
+      Los participantes deben escanear este código
+      e ingresar el correo electrónico asociado a su cuenta.
+    </p>
+
+    <img
+      id="attendanceQrImage"
+      alt="QR para registrar asistencia"
+      style="
+        width:300px;
+        max-width:100%;
+        margin:20px auto;
+        display:block;
+      "
+    />
+
+    <p
+      id="attendanceQrCountdown"
+      style="
+        text-align:center;
+        font-weight:600;
+        color:var(--teal-dark);
+      "
+    >
+      —
+    </p>
+
+    <p
+      id="attendanceQrUrl"
+      style="
+        font-size:.7rem;
+        word-break:break-all;
+        text-align:center;
+      "
+    ></p>
+
+    <div class="modal-actions">
+      <button
+        class="btn btn-sm btn-outline"
+        onclick="closeAttendanceQrModal(true)"
+      >
+        Finalizar asistencia
+      </button>
+    </div>
+
+  </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+<script src="audit.js?v=999"></script>
 <script src="dashboard.js?v=20260528-two-class-types"></script>
 </body>
 </html>

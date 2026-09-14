@@ -4,9 +4,17 @@ from fastapi import HTTPException
 
 def get_my_reservations(user_id: str):
     try:
+        from services.cancellations.classes_cancellation_service import (
+            cancelar_clases_sin_profesor,
+            sincronizar_reservas_de_clases_canceladas,
+        )
+
+        cancelar_clases_sin_profesor()
+        sincronizar_reservas_de_clases_canceladas(user_id)
+
         res = (
             supabase.table('reservations')
-            .select('id, status, payment_status, class_id, classes(activity_type, start_time, type)')
+            .select('id, status, payment_status, class_id, classes(activity_type, start_time, type), attendance(status, comment)')
             .eq('user_id', user_id)
             .neq('status', 'CANCELADA')
             .order('created_at', desc=True)
@@ -14,10 +22,18 @@ def get_my_reservations(user_id: str):
         )
 
         reservations = res.data or []
-
         result = []
         for r in reservations:
             clase = r.get('classes') or {}
+            asistencia = r.get('attendance') or []
+
+            attendance_status = None
+            attendance_comment = None
+
+            if asistencia:
+                attendance_status = asistencia[0].get('status')
+                attendance_comment = asistencia[0].get('comment')
+
             result.append({
                 'kind':           'RESERVATION',
                 'id':             r['id'],
@@ -27,11 +43,13 @@ def get_my_reservations(user_id: str):
                 'activity_type':  clase.get('activity_type'),
                 'start_time':     clase.get('start_time'),
                 'type':           clase.get('type'),
+                'attendance_status': attendance_status,
+                'attendance_comment': attendance_comment,
             })
 
         waitlist_res = (
             supabase.table('waitlist')
-            .select('id, class_id, position, priority, priority_order, joined_at, classes(activity_type, start_time, type)')
+            .select('id, class_id, position, priority, priority_order, joined_at, classes(activity_type, start_time, type, status)')
             .eq('user_id', user_id)
             .order('joined_at', desc=True)
             .execute()
@@ -39,6 +57,8 @@ def get_my_reservations(user_id: str):
 
         for w in (waitlist_res.data or []):
             clase = w.get('classes') or {}
+            if clase.get('status') == 'CANCELADA':
+                continue
             result.append({
                 'kind':              'WAITLIST',
                 'id':                w['id'],

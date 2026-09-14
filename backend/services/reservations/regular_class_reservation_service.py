@@ -1,16 +1,22 @@
 from database import supabase
 from fastapi import HTTPException
+from services.cancellations.classes_cancellation_service import asegurar_clase_reservable_con_profesor
+from services.reservations.overlap_validator import validate_user_has_no_overlapping_class
 from services.reservations import waitlist_service
+from services.notifications_service import create_notification
+from utils.notifications import send_reservation_confirmed_email
+from utils.class_desc import build_class_desc
 
 
-def reservar_clase_fija(user_id: str, class_id: str):
+def reservar_clase_fija(user_id: str, class_id: str, payment_percentage: int = 100):
     try:
+        # Normalizar a str por si llegan como objetos UUID desde Pydantic
         user_id = str(user_id)
         class_id = str(class_id)
 
         clase_response = (
             supabase.table('classes')
-            .select('*')
+            .select('*, rooms(name)')
             .eq('id', class_id)
             .single()
             .execute()
@@ -21,6 +27,8 @@ def reservar_clase_fija(user_id: str, class_id: str):
 
         if clase['type'] != 'FIJA':
             raise HTTPException(status_code=400, detail='Esta clase no es fija.')
+
+        asegurar_clase_reservable_con_profesor(class_id, clase)
 
         user_response = (
             supabase.table('users')
@@ -38,7 +46,8 @@ def reservar_clase_fija(user_id: str, class_id: str):
                 status_code=403,
                 detail='Reserva fallida, no se encuentra habilitado para tomar la clase.'
             )
-
+        if user['rol'] != 'ABONADO' and payment_percentage not in (50, 100):
+            raise HTTPException(status_code=400, detail='El porcentaje de pago debe ser 50 o 100.')
         existing_active = (
             supabase.table('reservations')
             .select('id, status')
@@ -50,10 +59,12 @@ def reservar_clase_fija(user_id: str, class_id: str):
         if existing_active.data:
             raise HTTPException(status_code=400, detail='Ya tenés una reserva para esta clase.')
 
+        validate_user_has_no_overlapping_class(user_id, class_id, clase)
+
         if clase['current_capacity'] >= clase['max_capacity']:
             return waitlist_service.unirse_a_waitlist(user_id, class_id)
 
-        payment_status = 'PAGADO' if user['rol'] == 'ABONADO' else 'PENDIENTE'
+        payment_status = 'PAGADO' if user['rol'] == 'ABONADO' else ('SENADO_50' if payment_percentage == 50 else 'PAGADO')
 
         existing_cancelled = (
             supabase.table('reservations')
@@ -89,9 +100,86 @@ def reservar_clase_fija(user_id: str, class_id: str):
             'current_capacity': clase['current_capacity'] + 1
         }).eq('id', class_id).execute()
 
-        return {'message': 'Inscripción exitosa.'}
+        reservation_response = (
+            supabase.table('reservations')
+            .select('id')
+            .eq('user_id', user_id)
+            .eq('class_id', class_id)
+            .eq('status', 'CONFIRMADA')
+            .single()
+            .execute()
+        )
+
+        reservation_id = reservation_response.data['id']
+
+        try:
+            create_notification(
+                user_id,
+                'Reserva confirmada',
+                f'Te uniste correctamente a la clase de {build_class_desc(clase)}.'
+            )
+            send_reservation_confirmed_email(user['email'], user.get('name', 'usuario/a'), build_class_desc(clase))
+        except Exception:
+            # No interrumpir el flujo principal si la notificación falla:
+            # la reserva ya quedó confirmada en la base de datos.
+            pass
+
+        return {
+            'message': 'Reserva generada. Escaneá el QR para completar el pago.',
+            'reservation_id': reservation_id,
+        }
 
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'Error al realizar la reserva: {str(e)}')
+
+
+def _agregar_a_waitlist(user_id: str, class_id: str, prioridad: str):
+    """
+    Agrega al usuario a la lista de espera respetando prioridad FIFO:
+    - ABONADO tiene prioridad sobre NO_ABONADO.
+    - Dentro del mismo nivel de prioridad, se respeta el orden de llegada.
+    """
+    ya_en_lista = (
+        supabase.table('waitlist')
+        .select('id')
+        .eq('user_id', user_id)
+        .eq('class_id', class_id)
+        .execute()
+    )
+    if ya_en_lista.data:
+        raise HTTPException(status_code=400, detail='Ya estás en la lista de espera para esta clase.')
+
+    waitlist_response = (
+        supabase.table('waitlist')
+        .select('position')
+        .eq('class_id', class_id)
+        .order('position', desc=True)
+        .limit(1)
+        .execute()
+    )
+    entradas = waitlist_response.data or []
+    nueva_posicion = (entradas[0]['position'] + 1) if entradas else 1
+
+    nivel_response = (
+        supabase.table('waitlist')
+        .select('priority_order')
+        .eq('class_id', class_id)
+        .eq('priority', prioridad)
+        .order('priority_order', desc=True)
+        .limit(1)
+        .execute()
+    )
+    nivel_entradas = nivel_response.data or []
+    nuevo_priority_order = (nivel_entradas[0]['priority_order'] + 1) if nivel_entradas else 1
+
+    supabase.table('waitlist').insert({
+        'user_id': user_id,
+        'class_id': class_id,
+        'position': nueva_posicion,
+        'priority': prioridad,
+        'priority_order': nuevo_priority_order,
+    }).execute()
+
+    return {'message': 'La clase se encuentra llena. Fuiste agregado a la lista de espera.'}

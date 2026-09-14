@@ -22,6 +22,8 @@ from utils.professor_validators import (
 )
 
 from schemes.class_scheme import CLASS_DURATION_MINUTES
+from services.notifications_service import create_notification
+from utils.notifications import send_professor_request_accepted, send_professor_request_rejected
 
 
 # ── Helpers de fecha ──────────────────────────────────────────────────────────
@@ -64,6 +66,33 @@ def _to_utc(dt: datetime) -> datetime:
         # Naive datetimes se interpretan como hora argentina (UTC-3)
         return dt.replace(tzinfo=ZoneInfo('America/Argentina/Buenos_Aires')).astimezone(timezone.utc)
     return dt.astimezone(timezone.utc)
+
+
+# Debe coincidir con la ventana usada en
+# services/cancellations/classes_cancellation_service.cancelar_clases_sin_profesor
+NO_PROFESSOR_WINDOW_HOURS = 12
+
+
+def _validate_not_too_close_without_professor(start_time: datetime):
+    """
+    Si la clase se crea sin profesor asignado, no se permite que su inicio caiga
+    dentro de la ventana de cancelación automática por falta de profesor (12hs).
+    Si se permitiera, la clase quedaría PROGRAMADA solo hasta el próximo ciclo
+    de cancelación automática, dando la falsa impresión de haberse creado bien.
+    """
+    now_utc = datetime.now(timezone.utc)
+    start_utc = _to_utc(start_time)
+    hours_until_start = (start_utc - now_utc).total_seconds() / 3600
+    if hours_until_start <= NO_PROFESSOR_WINDOW_HOURS:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                'No se puede crear la clase sin profesor asignado: falta menos de 12 horas '
+                'para el horario de inicio, por lo que quedaría sujeta a cancelación '
+                'automática por falta de profesor. Asigná un profesor o elegí un horario '
+                'con más anticipación.'
+            )
+        )
 
 
 def _overlaps(existing_start, existing_end, start_time, end_time):
@@ -150,6 +179,8 @@ def create_individual_class(data):
             validate_professor_exists(data.professor_id)
             validate_professor_weekly_hours(data.professor_id, data.start_time, end_time)
             validate_professor_schedule_availability(data.professor_id, data.start_time, end_time)
+        else:
+            _validate_not_too_close_without_professor(data.start_time)
 
         new_class = (
             supabase.table('classes')
@@ -246,6 +277,13 @@ def create_fija_class(data):
                 except HTTPException:
                     professor_id = None
 
+            if professor_id is None:
+                try:
+                    _validate_not_too_close_without_professor(start_dt)
+                except HTTPException as e:
+                    conflicts.append({'date': occ_date.isoformat(), 'reason': e.detail})
+                    continue
+
             rows_to_insert.append({
                 'room_id': str(data.room_id),
                 'professor_id': professor_id,
@@ -307,6 +345,9 @@ def create_fija_class(data):
 
 def list_active_classes(user_id: str = None):
     try:
+        from services.cancellations.classes_cancellation_service import cancelar_clases_sin_profesor
+        cancelar_clases_sin_profesor()
+
         response = (
             supabase.table('classes')
             .select('*, rooms(id, name, capacity)')
@@ -463,7 +504,7 @@ def assign_professor(class_id: str, data):
     try:
         class_response = (
             supabase.table('classes')
-            .select('id, professor_id, start_time, end_time, status')
+            .select('id, professor_id, activity_type, start_time, end_time, status, rooms(name)')
             .eq('id', class_id)
             .single()
             .execute()
@@ -492,15 +533,47 @@ def assign_professor(class_id: str, data):
             .execute()
         )
 
+        affected_requests = (
+            supabase.table('professor_requests')
+            .select('id, professor_id, status, users(name, email)')
+            .eq('class_id', class_id)
+            .in_('status', ['PENDIENTE', 'ACEPTADA'])
+            .neq('professor_id', str(data.professor_id))
+            .execute()
+        ).data or []
+
+        reject_reason = 'El administrador asignó directamente a otro profesor.'
+
         supabase.table('professor_requests').update({
             'status': 'RECHAZADA',
-            'reject_reason': 'El administrador asignó directamente a otro profesor.'
+            'reject_reason': reject_reason
         }).eq('class_id', class_id).eq('status', 'PENDIENTE').execute()
 
         supabase.table('professor_requests').update({
             'status': 'RECHAZADA',
             'reject_reason': 'El administrador reasignó la clase a otro profesor.'
         }).eq('class_id', class_id).eq('status', 'ACEPTADA').neq('professor_id', str(data.professor_id)).execute()
+
+        class_desc = _build_class_desc(clase)
+        for req in affected_requests:
+            professor = req.get('users') or {}
+            req_reason = (
+                reject_reason if req['status'] == 'PENDIENTE'
+                else 'El administrador reasignó la clase a otro profesor.'
+            )
+            try:
+                create_notification(
+                    req['professor_id'],
+                    'Solicitud de clase rechazada',
+                    f'Tu solicitud para dictar la clase {class_desc} fue rechazada. Motivo: {req_reason}'
+                )
+                if professor.get('email'):
+                    send_professor_request_rejected(
+                        professor['email'], professor.get('name', 'profesor/a'), class_desc, req_reason
+                    )
+            except Exception:
+                # No interrumpir la asignación si falla el envío de una notificación
+                pass
 
         return {'message': 'Se asignó el profesor correctamente.', 'data': updated_class.data[0]}
 
@@ -690,9 +763,29 @@ def list_professor_requests(professor_id: str):
         raise HTTPException(status_code=500, detail=f'Error al obtener tus solicitudes: {str(e)}')
 
 
+def _format_class_datetime_ar(start_time_iso: str) -> str:
+    dt = datetime.fromisoformat(start_time_iso)
+    dt_ar = _to_utc(dt).astimezone(TZ_AR)
+    dias = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo']
+    return f"{dias[dt_ar.weekday()]} {dt_ar.strftime('%d/%m/%Y')} a las {dt_ar.strftime('%H:%M')}"
+
+
+def _build_class_desc(clase: dict) -> str:
+    activity = clase.get('activity_type', '') or ''
+    room = (clase.get('rooms') or {}).get('name', '') if clase.get('rooms') else ''
+    when = _format_class_datetime_ar(clase['start_time']) if clase.get('start_time') else ''
+    return ' '.join(filter(None, [activity, f'en {room}' if room else '', f'el {when}' if when else ''])).strip()
+
+
 def evaluate_professor_request(class_id: str, request_id: str, data):
     try:
-        req_response = supabase.table('professor_requests').select('*, classes(start_time, end_time, status, professor_id)').eq('id', request_id).single().execute()
+        req_response = (
+            supabase.table('professor_requests')
+            .select('*, classes(start_time, end_time, status, professor_id, activity_type, rooms(name)), users(name, email)')
+            .eq('id', request_id)
+            .single()
+            .execute()
+        )
         if not req_response.data:
             raise HTTPException(status_code=404, detail='Solicitud no encontrada.')
 
@@ -702,13 +795,25 @@ def evaluate_professor_request(class_id: str, request_id: str, data):
         if request_obj['status'] != 'PENDIENTE':
             raise HTTPException(status_code=400, detail='La solicitud ya fue evaluada.')
 
+        professor = request_obj.get('users') or {}
+        clase = request_obj.get('classes') or {}
+        class_desc = _build_class_desc(clase)
+
         if data.status == 'RECHAZADA':
             if not data.reason or not data.reason.strip():
                 raise HTTPException(status_code=400, detail='El rechazo debe incluir un motivo obligatorio')
             updated = supabase.table('professor_requests').update({'status': 'RECHAZADA', 'reject_reason': data.reason}).eq('id', request_id).select().execute()
+
+            if professor.get('email'):
+                send_professor_request_rejected(professor['email'], professor.get('name', 'profesor/a'), class_desc, data.reason)
+            create_notification(
+                request_obj['professor_id'],
+                'Solicitud de clase rechazada',
+                f'Tu solicitud para dictar la clase {class_desc} fue rechazada. Motivo: {data.reason}'
+            )
+
             return {'message': 'Solicitud rechazada correctamente con motivo', 'data': updated.data[0]}
 
-        clase = request_obj['classes']
         if clase['professor_id'] is not None:
             raise HTTPException(status_code=400, detail='La clase ya tiene un profesor asignado.')
 
@@ -728,10 +833,39 @@ def evaluate_professor_request(class_id: str, request_id: str, data):
         supabase.table('classes').update({'professor_id': request_obj['professor_id']}).eq('id', class_id).execute()
         updated = supabase.table('professor_requests').update({'status': 'ACEPTADA'}).eq('id', request_id).execute()
 
+        other_pending = (
+            supabase.table('professor_requests')
+            .select('*, classes(start_time, end_time, status, professor_id, activity_type, rooms(name)), users(name, email)')
+            .eq('class_id', class_id)
+            .eq('status', 'PENDIENTE')
+            .neq('id', request_id)
+            .execute()
+        )
+
         supabase.table('professor_requests').update({
             'status': 'RECHAZADA',
             'reject_reason': 'Otra solicitud fue aceptada para esta clase.'
         }).eq('class_id', class_id).eq('status', 'PENDIENTE').neq('id', request_id).execute()
+
+        if professor.get('email'):
+            send_professor_request_accepted(professor['email'], professor.get('name', 'profesor/a'), class_desc)
+        create_notification(
+            request_obj['professor_id'],
+            'Solicitud de clase aceptada',
+            f'Tu solicitud para dictar la clase {class_desc} fue aceptada.'
+        )
+
+        auto_reject_reason = 'Otra solicitud fue aceptada para esta clase.'
+        for other_request in (other_pending.data or []):
+            other_professor = other_request.get('users') or {}
+            other_class_desc = _build_class_desc(other_request.get('classes') or {})
+            if other_professor.get('email'):
+                send_professor_request_rejected(other_professor['email'], other_professor.get('name', 'profesor/a'), other_class_desc, auto_reject_reason)
+            create_notification(
+                other_request['professor_id'],
+                'Solicitud de clase rechazada',
+                f'Tu solicitud para dictar la clase {other_class_desc} fue rechazada. Motivo: {auto_reject_reason}'
+            )
 
         return {'message': 'Se aceptó la solicitud correctamente.', 'data': updated.data[0]}
 

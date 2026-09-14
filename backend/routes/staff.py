@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from services import admin_service, user_service
+from services import admin_service
 from schemes.user_scheme import ActionReason, ActionReason, UserRegisterByStaff, AproveCertificate, RejectCertificate, EmployeeRegisterByAdmin
 from utils.permissions import check_permission, is_adult
 
