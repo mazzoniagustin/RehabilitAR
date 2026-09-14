@@ -1,0 +1,919 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>RehabilitAR — Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="styles.css"/>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+
+<div class="dashboard" id="dashboard">
+
+  <!-- ══════ SIDEBAR ══════ -->
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <img src="assets/RehabilitAR.png" class="sidebar-brand-logo" alt="RehabilitAR"/>
+    <div class="sidebar-brand-text">
+      <h2>RehabilitAR</h2>
+      <span id="sidebarRole">—</span>
+    </div>
+  </div>
+
+    <nav class="nav" id="sidebarNav">
+      <!-- Generado dinámicamente según el rol -->
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="sidebar-footer">
+
+      <div id="notification-wrapper" class="notif-wrapper">
+        <button class="notif-bell" onclick="toggleNotificationDropdown()" aria-label="Notificaciones">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"
+           fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+            <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+          </svg>
+          Notificaciones
+        <span id="notif-badge" class="notif-badge notif-badge--hidden">0</span>
+        </button>
+        <div id="notif-dropdown" class="notif-dropdown notif-dropdown--hidden">
+          <div class="notif-header">
+          <span>Notificaciones</span>
+            <div style="display:flex;gap:8px;align-items:center">
+            <button class="notif-mark-all" id="notifToggleBtn" onclick="toggleNotifications()">Desactivar</button>
+              <button class="notif-mark-all" onclick="markAllAsRead()">Marcar todas leídas</button>
+          </div>
+        </div>
+      <div id="notif-list" class="notif-list"></div>
+    </div>
+  </div>
+
+  <div class="user-chip">
+    <div class="avatar" id="avatarInitials">?</div>
+
+      <div class="user-info">
+        <strong id="sidebarName">Cargando...</strong>
+        <span id="sidebarEmail">—</span>
+      </div>
+    </div>
+
+    <button class="btn-logout" onclick="handleLogout()">
+      <svg viewBox="0 0 24 24">
+        <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/>
+        <polyline points="16 17 21 12 16 7"/>
+        <line x1="21" y1="12" x2="9" y2="12"/>
+      </svg>
+      Cerrar sesión
+    </button>
+  </div>
+  </aside>
+
+  <!-- ══════ MAIN ══════ -->
+  <main class="main">
+
+    <!-- PANEL: Inicio -->
+    <div class="panel active" id="panelInicio">
+      <div class="page-header">
+        <div class="page-header-left">
+          <h2 id="welcomeMsg">Bienvenido</h2>
+          <p>Resumen de tu cuenta en RehabilitAR</p>
+        </div>
+      </div>
+      <div id="dashAlert" class="alert"></div>
+      <div class="stats-grid" id="statsGrid"></div>
+    </div>
+
+    <!-- PANEL: Mi Perfil -->
+    <div class="panel" id="panelPerfil">
+      <div class="page-header">
+        <div class="page-header-left"><h2>Mi perfil</h2><p>Información personal y estado de cuenta</p></div>
+        <button class="btn btn-sm btn-outline" onclick="toggleEdit()">Editar datos</button>
+      </div>
+      <div id="perfilAlert" class="alert"></div>
+
+      <!-- Vista de perfil -->
+      <div class="section-card" id="profileViewMode">
+        <h3><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg> Datos personales</h3>
+        <div class="field-row"><span class="field-label">Nombre</span><span class="field-value" id="pfName">—</span></div>
+        <div class="field-row"><span class="field-label">Apellido</span><span class="field-value" id="pfSurname">—</span></div>
+        <div class="field-row"><span class="field-label">Email</span><span class="field-value" id="pfEmail">—</span></div>
+        <div class="field-row"><span class="field-label">DNI</span><span class="field-value" id="pfDni">—</span></div>
+        <div class="field-row"><span class="field-label">Fecha de nac.</span><span class="field-value" id="pfBirthdate">—</span></div>
+        <div class="field-row"><span class="field-label">Teléfono</span><span class="field-value" id="pfPhone">—</span></div>
+        <div class="field-row"><span class="field-label">Género</span><span class="field-value" id="pfGender">—</span></div>
+        <div class="field-row"><span class="field-label">Edad</span><span class="field-value" id="pfAge">—</span></div>
+        <div class="field-row"><span class="field-label">Dirección</span><span class="field-value" id="pfAddress">—</span></div>
+        <div class="field-row"><span class="field-label">Rol</span><span class="field-value" id="pfRol">—</span></div>
+        <div class="field-row"><span class="field-label">Estado de cuenta</span><span class="field-value" id="pfStatus">—</span></div>
+        <!-- Solo para empleados -->
+        <div class="field-row" id="pfSpecialtyRow" style="display:none">
+          <span class="field-label">Especialidad</span><span class="field-value" id="pfSpecialty">—</span>
+        </div>
+        <!-- Solo para clientes -->
+        <div class="field-row" id="pfCertRow" style="display:none">
+          <span class="field-label">Apto físico</span><span class="field-value" id="pfCert">—</span>
+        </div>
+        <!-- Solo para abonados -->
+        <div class="field-row" id="pfCreditsRow" style="display:none">
+          <span class="field-label">Créditos</span>
+          <span class="field-value">
+            <span id="pfCredits">—</span>/3
+            <div class="credits-bar"><div class="credits-fill" id="creditsFill" style="width:0%"></div></div>
+          </span>
+        </div>
+        <div class="field-row" id="pfExpiryRow" style="display:none">
+          <span class="field-label">Vence suscripción</span><span class="field-value" id="pfExpiry">—</span>
+        </div>
+      </div>
+
+      <!-- Formulario de edición -->
+      <div class="section-card" id="profileEditMode" style="display:none">
+        <h3>Editar datos personales</h3>
+        <p style="font-size:.83rem;color:var(--muted);margin-bottom:16px">Podés editar nombre, apellido, teléfono, dirección, género y edad.</p>
+        <div class="edit-row">
+          <div class="form-group"><label>Nombre</label><input type="text" id="editName"/></div>
+          <div class="form-group"><label>Apellido</label><input type="text" id="editSurname"/></div>
+        </div>
+        <div class="form-group"><label>Teléfono</label><input type="text" id="editPhone" placeholder="Ej: 2214567890"/></div>
+        <div class="form-group"><label>Dirección</label><input type="text" id="editAddress" placeholder="Ej: Calle 123"/></div>
+        <div class="form-group">
+          <label>Género</label>
+          <select id="editGender">
+            <option value="">Seleccionar</option>
+            <option value="MASCULINO">Masculino</option>
+            <option value="FEMENINO">Femenino</option>
+            <option value="OTRO">Otro</option>
+          </select>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-sm" onclick="saveProfile()">Guardar cambios</button>
+          <button class="btn btn-sm btn-outline" onclick="toggleEdit()">Cancelar</button>
+        </div>
+      </div>
+
+      <!-- Subida de certificado — solo para clientes -->
+      <div class="section-card" id="certSection" style="display:none">
+        <h3><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> Apto físico</h3>
+        <div id="certAlert" class="alert"></div>
+        <div class="file-drop" onclick="document.getElementById('dashCertInput').click()">
+          <svg viewBox="0 0 24 24" style="display:block;margin:0 auto 8px;width:32px;height:32px;stroke:var(--muted);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round">
+            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+          <p><strong>Clic para subir</strong> tu apto físico</p>
+          <p style="font-size:.75rem;margin-top:4px">PDF, JPG o PNG — máx 5MB</p>
+        </div>
+        <div class="file-name" id="dashCertName" style="display:none"></div>
+        <input type="file" id="dashCertInput" accept=".pdf,.jpg,.jpeg,.png" style="display:none" onchange="handleDashCertSelect(event)"/>
+        <div class="btn-row" style="margin-top:12px">
+          <button class="btn btn-sm" id="uploadCertBtn" onclick="submitCertificate()" disabled>Subir apto físico</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- PANEL: Seguridad -->
+    <div class="panel" id="panelSeguridad">
+      <div class="page-header"><div class="page-header-left"><h2>Seguridad</h2><p>Administrá tu contraseña</p></div></div>
+      <div class="section-card" style="max-width:420px">
+        <h3><svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg> Cambiar contraseña</h3>
+        <div id="pwAlert" class="alert"></div>
+        <div class="form-group"><label>Contraseña actual</label><input type="password" id="currentPw" placeholder="Tu contraseña actual" /></div>
+        <div class="form-group"><label>Nueva contraseña</label><input type="password" id="newPw" placeholder="Mínimo 6 caracteres"/></div>
+        <div class="form-group"><label>Confirmar contraseña</label><input type="password" id="confirmPw" placeholder="Repetí la contraseña"/></div>
+        <button class="btn btn-sm" onclick="handleChangePassword()">Actualizar contraseña</button>
+      </div>
+    </div>
+
+    <!-- PANEL: Clases -->
+    <div class="panel" id="panelClases">
+      <div class="page-header"><div class="page-header-left"><h2 id="clasesTitle">Clases disponibles</h2><p id="clasesSubtitle">Explora y reserva clases</p></div></div>
+      <div id="clasesAlert" class="alert"></div>
+      <div class="section-card" id="adminClassForm" style="display:none">
+        <h3><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Crear clase</h3>
+
+        <!-- Tabs selector -->
+        <div class="class-type-tabs" style="display:flex;gap:0;margin-bottom:20px;border-bottom:2px solid var(--border)">
+          <button id="tabIndividual" class="class-tab active" onclick="switchClassTab('individual')"
+            style="padding:8px 20px;border:none;background:none;cursor:pointer;font-size:.9rem;font-weight:600;border-bottom:2px solid var(--accent);margin-bottom:-2px;color:var(--accent)">
+            Individual
+          </button>
+          <button id="tabFija" class="class-tab" onclick="switchClassTab('fija')"
+            style="padding:8px 20px;border:none;background:none;cursor:pointer;font-size:.9rem;font-weight:500;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--muted)">
+            Fija (mensual)
+          </button>
+        </div>
+
+        <!-- ── FORM INDIVIDUAL ── -->
+        <div id="formIndividual">
+          <p style="font-size:.82rem;color:var(--muted);margin-bottom:14px">
+            Sesión puntual con fecha y hora exactas.
+          </p>
+          <input type="hidden" id="classDate"/>
+          <input type="hidden" id="classStartTime"/>
+          <input type="hidden" id="classDuration" value="60"/>
+          <div class="edit-row">
+            <div class="form-group">
+              <label>Fecha</label>
+              <div style="display:flex;gap:6px">
+                <select id="classDateDay" style="flex:1" onchange="syncClassDate()"><option value="">Día</option></select>
+                <select id="classDateMonth" style="flex:1.4" onchange="syncClassDate()">
+                  <option value="">Mes</option>
+                  <option value="1">Enero</option><option value="2">Febrero</option><option value="3">Marzo</option>
+                  <option value="4">Abril</option><option value="5">Mayo</option><option value="6">Junio</option>
+                  <option value="7">Julio</option><option value="8">Agosto</option><option value="9">Septiembre</option>
+                  <option value="10">Octubre</option><option value="11">Noviembre</option><option value="12">Diciembre</option>
+                </select>
+                <select id="classDateYear" style="flex:1" onchange="syncClassDate()"><option value="">Año</option></select>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Hora inicio</label>
+              <div style="display:flex;gap:6px">
+                <select id="classStartHour" style="flex:1" onchange="syncClassTime('Start')"></select>
+                <select id="classStartMinute" style="flex:1" onchange="syncClassTime('Start')"></select>
+              </div>
+            </div>
+          </div>
+
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:4px">
+            <button class="btn btn-sm btn-outline" id="checkIndividualBtn" onclick="checkIndividualAvailability()">Ver disponibilidad</button>
+          </div>
+
+          <div id="classDetailsFields" style="display:none;margin-top:16px">
+            <div id="individualPreview" style="display:none;margin-bottom:12px;padding:10px 14px;background:var(--surface-alt,#f5f5f5);border-radius:8px;font-size:.82rem;color:var(--muted)"></div>
+            <div class="edit-row">
+              <div class="form-group"><label>Sala</label><select id="classRoom"></select></div>
+              <div class="form-group">
+                <label>Actividad</label>
+                <select id="classActivity">
+                  <option value="TREN_SUPERIOR">Tren superior</option>
+                  <option value="TREN_MEDIO">Tren medio</option>
+                  <option value="TREN_INFERIOR">Tren inferior</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-group"><label>Cupo máximo</label><input type="number" id="classCapacity" min="1" step="1" placeholder="Ej: 10" oninput="this.value=this.value.replace(/[^0-9]/g,'')"/></div>
+            <div class="form-group"><label>Profesor inicial (opcional)</label><select id="classProfessor"></select></div>
+            <button class="btn btn-sm" id="createClassBtn" onclick="createIndividualClass()">Crear clase individual</button>
+          </div>
+        </div>
+
+        <!-- ── FORM FIJA ── -->
+        <div id="formFija" style="display:none">
+          <p style="font-size:.82rem;color:var(--muted);margin-bottom:14px">
+            Se genera una clase por cada ocurrencia del día elegido en el mes.
+          </p>
+          <div class="edit-row">
+            <div class="form-group">
+              <label>Día de la semana</label>
+              <select id="fijaDayOfWeek">
+                <option value="0">Lunes</option>
+                <option value="1">Martes</option>
+                <option value="2">Miércoles</option>
+                <option value="3">Jueves</option>
+                <option value="4">Viernes</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Hora de inicio</label>
+              <input type="hidden" id="fijaStartTime"/>
+              <div style="display:flex;gap:6px">
+                <select id="fijaStartHour" style="flex:1" onchange="syncFijaTime()"></select>
+                <select id="fijaStartMinute" style="flex:1" onchange="syncFijaTime()"></select>
+              </div>
+            </div>
+          </div>
+          <input type="hidden" id="fijaDuration" value="60"/>
+
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:4px">
+            <button class="btn btn-sm btn-outline" id="checkFijaBtn" onclick="checkFijaAvailability()">Ver disponibilidad</button>
+          </div>
+
+          <div id="fijaDetailsFields" style="display:none;margin-top:16px">
+            <div id="fijaPreview" style="display:none;margin-bottom:12px;padding:10px 14px;background:var(--surface-alt,#f5f5f5);border-radius:8px;font-size:.82rem;color:var(--muted)"></div>
+            <div class="edit-row">
+              <div class="form-group"><label>Sala</label><select id="fijaRoom"></select></div>
+              <div class="form-group">
+                <label>Actividad</label>
+                <select id="fijaActivity">
+                  <option value="TREN_SUPERIOR">Tren superior</option>
+                  <option value="TREN_MEDIO">Tren medio</option>
+                  <option value="TREN_INFERIOR">Tren inferior</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-group"><label>Cupo máximo</label><input type="number" id="fijaCapacity" min="1" step="1" placeholder="Ej: 15" oninput="this.value=this.value.replace(/[^0-9]/g,'')"/></div>
+            <div class="form-group"><label>Profesor inicial (opcional)</label><select id="fijaProfessor"></select></div>
+            <button class="btn btn-sm" id="createFijaBtn" onclick="createFijaClass()">Crear clases del mes</button>
+          </div>
+        </div>
+      </div>
+      <div class="section-card" id="adminProfessorRequests" style="display:none">
+        <h3><svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg> Solicitudes de profesores</h3>
+        <div id="professorRequestsContainer"><div class="empty-state"><p>Cargando...</p></div></div>
+      </div>
+      <div class="section-card">
+        <h3 id="clasesListTitle"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Proximas clases</h3>
+        <div id="clasesTableContainer"><div class="empty-state"><p>Cargando...</p></div></div>
+      </div>
+    </div>
+    
+  <div class="panel" id="panelReservas">
+
+    <div id="reservasAlert" class="alert"></div>
+
+    <div class="page-header">
+      <div class="page-header-left">
+        <h2>Mis reservas</h2>
+        <p>Clases reservadas y su estado</p>
+      </div>
+    </div>
+
+  <div class="section-card">
+    <h3>
+      <svg viewBox="0 0 24 24">
+        <path d="M20 12V22H4V12"/>
+        <path d="M22 7H2v5h20V7z"/>
+        <path d="M12 22V7"/>
+      </svg>
+      Reservas activas
+    </h3>
+
+    <div id="reservasContainer">
+      <div class="empty-state">
+        <p>No tenés reservas activas.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- PANEL: Usuarios (admin/recep) -->
+<div class="panel" id="panelUsuarios">
+    <div class="page-header">
+      <div class="page-header-left">
+        <h2>Gestión de usuarios</h2>
+        <p>Buscá, filtrá y administrá los usuarios del centro</p>
+      </div>
+      <button class="btn btn-sm" onclick="openRegisterModal()" id="btnRegistrarUsuario" style="display:none">+ Registrar usuario</button>
+    </div>
+    
+    <div id="usuariosAlert" class="alert"></div>
+
+    <div class="section-card" style="padding:16px 20px;margin-bottom:16px" id="adminFilters" style="display:none">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:12px;align-items:end">
+        <div class="form-group" style="margin:0">
+          <label>Buscar por nombre</label>
+          <input type="text" id="searchName" placeholder="Ej: Juan" oninput="onSearchInput()"/>
+        </div>
+        <div class="form-group" style="margin:0">
+          <label>Filtrar por rol</label>
+          <select id="filterRole" onchange="applyAdminFilters()">
+            <option value="">Todos los roles</option>
+            <option value="NO_ABONADO">No abonados</option>
+            <option value="ABONADO">Abonados</option>
+            <option value="PROFESOR">Profesores</option>
+            <option value="RECEPCIONISTA">Recepcionistas</option>
+            <option value="ADMINISTRATIVO">Administrativos</option>
+          </select>
+        </div>
+        <div class="form-group" style="margin:0">
+          <label>Filtrar por estado</label>
+          <select id="filterStatus" onchange="applyAdminFilters()">
+            <option value="">Todos los estados</option>
+            <option value="ACTIVA">Activa</option>
+            <option value="SUSPENDIDA">Suspendida</option>
+          </select>
+        </div>
+        <div style="display:flex;gap:8px;align-items:flex-end;padding-bottom:2px">
+          <button class="btn btn-sm btn-outline" onclick="clearAdminFilters()">Limpiar</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-card" style="padding:16px 20px;margin-bottom:16px" id="publicFilters" style="display:none">
+      <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:12px;align-items:end">
+        <div class="form-group" style="margin:0">
+          <label>Buscar por nombre</label>
+          <input type="text" id="publicSearchName" placeholder="Ej: Juan" oninput="onPublicSearchInput()"/>
+        </div>
+        <div class="form-group" style="margin:0">
+          <label>Filtrar por rol</label>
+          <select id="publicFilterRole" onchange="applyPublicFilters()">
+            <option value="">Todos</option>
+            <option value="NO_ABONADO">No abonados</option>
+            <option value="ABONADO">Abonados</option>
+            <option value="PROFESOR">Profesores</option>
+            <option value="RECEPCIONISTA">Recepcionistas</option>
+          </select>
+        </div>
+        <div style="display:flex;gap:8px;align-items:flex-end;padding-bottom:2px">
+          <button class="btn btn-sm btn-outline" onclick="clearPublicFilters()">Limpiar</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-card">
+      <h3>
+        <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+        Usuarios
+        <span id="userCount" style="font-size:.8rem;font-weight:400;color:var(--muted);margin-left:8px"></span>
+      </h3>
+      <div id="usersTableContainer">
+        <div class="empty-state">
+          <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+          <p>Usá los filtros para buscar usuarios</p>
+        </div>
+      </div>
+    </div>
+  </div> <div class="panel" id="panelCertificados">
+    <div class="page-header">
+      <div class="page-header-left">
+        <h2>Aptos físicos</h2>
+        <p>Aptos pendientes de aprobación</p>
+      </div>
+    </div>
+    <div class="section-card">
+      <h3>
+        <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> 
+        Pendientes
+      </h3>
+      <div id="certsAlert" class="alert"></div>
+      <div id="pendingCertsContainer">
+        <div class="empty-state"><p>Cargando...</p></div>
+      </div>
+    </div>
+    </div>
+
+
+  <div class="panel" id="panelSolicitudes">
+    <div class="page-header">
+      <div class="page-header-left">
+        <h2>Solicitudes de reactivacion</h2>
+        <p>Reclamos enviados por usuarios suspendidos</p>
+      </div>
+    </div>
+    <div id="solicitudesAlert" class="alert"></div>
+    <div class="section-card">
+      <h3>
+        <svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+        Pendientes
+      </h3>
+      <div id="solicitudesContainer">
+        <div class="empty-state"><p>Cargando...</p></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PANEL: Solicitar reactivación (clientes/empleados suspendidos) -->
+<div class="panel" id="panelReactivacion">
+  <div class="page-header">
+    <div class="page-header-left">
+      <h2>Solicitar reactivación</h2>
+      <p>Enviá un reclamo para reactivar tu cuenta</p>
+    </div>
+  </div>
+  <div id="reactivacionAlert" class="alert"></div>
+
+  <div class="section-card" style="max-width:520px">
+    <h3>
+      <svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+      Estado de tu cuenta
+    </h3>
+    <div id="reactivacionStatus" style="margin-bottom:20px"></div>
+
+    <div id="reactivacionForm">
+      <div class="form-group">
+        <label>Motivo del reclamo</label>
+        <input type="text" id="unblockReason" placeholder="Explicá por qué debería reactivarse tu cuenta"/>
+      </div>
+      <button class="btn btn-sm" onclick="submitUnblockRequest()">Enviar solicitud</button>
+    </div>
+  </div>
+</div>
+
+<!--PANEL: Pagos (clientes)-->
+<div class="panel" id="panelPagos">
+  <div class="page-header">
+    <div class="page-header-left">
+      <h2>Pagos</h2>
+      <p>Conviertete en cliente abonado y disfruta de beneficios exclusivos</p>
+    </div>
+  </div>
+  <div id="pagosAlert" class="alert"></div>
+
+  <div class="section-card" style="max-width:700px">
+    <h3>
+      Beneficios de ser cliente abonado
+    </h3>
+    <div class="field-row">
+      <div class="benefit-icon">
+      <svg viewBox="0 0 24 24"><path d="M12 1v22"/><path d="M17 5H9.5a3.5 3.5 0 000 7H14a3.5 3.5 0 010 7H6"/></svg>
+      </div>
+      <span class="field-label">Descuentos exclusivos</span>
+      <span class="field-value">Accedé a descuentos especiales en clases y servicios.</span>
+    </div>
+
+    <div class="field-row">
+       <div class="benefit-icon">
+        <svg viewBox="0 0 24 24">
+          <path d="M8 2v4"/>
+          <path d="M16 2v4"/>
+          <rect x="3" y="6" width="18" height="15" rx="2"/>
+          <path d="M3 10h18"/>
+          <path d="M8 14h.01"/>
+          <path d="M12 14h.01"/>
+          <path d="M16 14h.01"/>
+        </svg>
+      </div>
+      <span class="field-label">Prioridad en reservas</span>
+      <span class="field-value">Tenés prioridad para reservar tus horarios favoritos.</span>
+    </div>
+
+    <div class="field-row">
+      <div class="benefit-icon">
+        <svg viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="9"/>
+          <path d="M12 7v5l3 3"/>
+        </svg>
+      </div>
+      <span class="field-label">Cancelaciones flexibles</span>
+      <span class="field-value">Más flexibilidad para reprogramar o cancelar tus clases.</span>
+    </div>
+
+    <div class="field-row">
+      <div class="benefit-icon">
+        <svg viewBox="0 0 24 24">
+          <path d="M12 17.27L18.18 21 16.54 14 22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24 7.46 14 5.82 21z"/>
+        </svg>
+      </div>
+      <span class="field-label">Sistema de creditos</span>
+      <span class="field-value">Un sistema que permite recuperar hasta 3 clases.</span>
+    </div>
+
+    <button class="btn" onclick="paySubscription()">Pagar mensualidad</button>
+  </div>
+  <div id="debtsContainer">
+</div>
+</div>
+</main>
+</div>
+
+
+<!-- Modal: Ver perfil de usuario (admin) -->
+<div class="modal-overlay" id="userProfileModal">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-header">
+      <h3 id="modalUserName">Perfil</h3>
+      <button class="modal-close" onclick="closeUserModal()">✕</button>
+    </div>
+    <div id="modalUserBody"></div>
+    <div id="modalActions" style="display:flex;gap:8px;margin-top:20px;flex-wrap:wrap"></div>
+  </div>
+</div>
+
+<!-- Modal: Bloquear usuario -->
+<div class="modal-overlay" id="blockModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="blockModalTitle">Suspender usuario</h3>
+      <button class="modal-close" onclick="closeBlockModal()">✕</button>
+    </div>
+    <p>El usuario será notificado y no podrá acceder al sistema hasta ser reactivado.</p>
+    <div class="form-group"><label>Motivo de la suspensión</label><input type="text" id="blockReason" placeholder="Ej: Inasistencia superior al 50%"/></div>
+    <div id="blockModalAlert" class="alert" style="display:none"></div>
+    <div class="modal-actions">
+      <button class="btn btn-sm btn-danger" onclick="confirmBlock()">Suspender</button>
+      <button class="btn btn-sm btn-outline" onclick="closeBlockModal()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Reactivar usuario -->
+<div class="modal-overlay" id="unblockModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="unblockModalTitle">Reactivar usuario</h3>
+      <button class="modal-close" onclick="closeUnblockModal()">✕</button>
+    </div>
+
+    <p>¿Desea reactivar la cuenta?.</p>
+
+    <div id="unblockModalAlert" class="alert" style="display:none"></div>
+
+    <div class="modal-actions">
+      <button class="btn btn-sm" onclick="unblockUser()">
+        Reactivar
+      </button>
+      <button class="btn btn-sm btn-outline" onclick="closeUnblockModal()">
+        Cancelar
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Rechazar certificado -->
+<div class="modal-overlay" id="rejectModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Rechazar apto físico</h3>
+      <button class="modal-close" onclick="closeRejectModal()">✕</button>
+    </div>
+    <p>Indicá el motivo del rechazo. El cliente será notificado.</p>
+    <div class="form-group"><label>Motivo</label><input type="text" id="rejectReason" placeholder="Ej: El documento está vencido"/></div>
+    <div id="rejectAlert"></div>
+    <div class="modal-actions">
+      <button class="btn btn-sm btn-danger" onclick="confirmReject()">Rechazar</button>
+      <button class="btn btn-sm btn-outline" onclick="closeRejectModal()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Rechazar solicitud de desbloqueo -->
+<div class="modal-overlay" id="rejectUnlockModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Rechazar solicitud</h3>
+      <button class="modal-close" onclick="closeRejectUnlockModal()">✕</button>
+    </div>
+    <p>Indicá el motivo del rechazo. El usuario será notificado.</p>
+    <div class="form-group"><label>Motivo</label><input type="text" id="rejectUnlockReason" placeholder="Ej: La situación no fue regularizada"/></div>
+    <div class="modal-actions">
+      <button class="btn btn-sm btn-danger" onclick="confirmRejectUnlock()">Rechazar</button>
+      <button class="btn btn-sm btn-outline" onclick="closeRejectUnlockModal()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Rechazar solicitud de profesor -->
+<div class="modal-overlay" id="rejectProfessorRequestModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Rechazar solicitud de profesor</h3>
+      <button class="modal-close" onclick="closeRejectProfessorRequestModal()">x</button>
+    </div>
+    <p>Indica el motivo del rechazo para dejar registrada la evaluacion.</p>
+    <div id="rejectProfessorRequestAlert" class="alert"></div>
+    <div class="form-group"><label>Motivo</label><input type="text" id="rejectProfessorRequestReason" placeholder="Ej: No cumple con los requisitos para esta clase"/></div>
+    <div class="modal-actions">
+      <button class="btn btn-sm btn-danger" onclick="confirmRejectProfessorRequest()">Rechazar</button>
+      <button class="btn btn-sm btn-outline" onclick="closeRejectProfessorRequestModal()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Modificar cupo -->
+<div class="modal-overlay" id="capacityModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Modificar cupo</h3>
+      <button class="modal-close" onclick="closeCapacityModal()">✕</button>
+    </div>
+    <div id="capacityAlert" class="alert"></div>
+    <p style="font-size:.88rem;color:var(--muted);margin-bottom:14px">Cupo actual: <strong id="currentCapacityText">—</strong></p>
+    <div class="form-group"><label>Nuevo cupo</label><input type="number" id="newCapacityInput" min="1" placeholder="Ej: 20"/></div>
+    <p style="font-size:.78rem;color:var(--muted);margin-top:8px">Si el nuevo cupo es menor a los inscriptos actuales, la clase se cancelará automáticamente.</p>
+    <div class="modal-actions">
+      <button class="btn btn-sm" onclick="confirmUpdateCapacity()">Guardar</button>
+      <button class="btn btn-sm btn-outline" onclick="closeCapacityModal()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Ver inscriptos -->
+<div class="modal-overlay" id="studentsModal">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-header">
+      <h3 id="studentsModalTitle">Inscriptos</h3>
+      <button class="modal-close" onclick="closeStudentsModal()">✕</button>
+    </div>
+    <div id="studentsContainer"><div class="empty-state"><p>Cargando...</p></div></div>
+    <div class="modal-actions">
+      <button class="btn btn-sm btn-outline" onclick="closeStudentsModal()">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Registrar usuario (admin/recep) -->
+<div class="modal-overlay" id="registerUserModal">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-header">
+      <h3>Registrar usuario</h3>
+      <button class="modal-close" onclick="closeRegisterModal()">✕</button>
+    </div>
+    <div id="registerUserAlert" class="alert"></div>
+
+    <!-- Selector de tipo -->
+    <div class="form-group" id="rolSelectorGroup">
+      <label>¿Qué tipo de usuario registrar?</label>
+      <select id="registerType" onchange="onRegisterTypeChange()">
+        <option value="cliente">Cliente</option>
+        <option value="empleado" id="optEmpleado" style="display:none">Empleado</option>
+      </select>
+    </div>
+
+    <!-- Campos comunes -->
+    <div class="row-2">
+      <div class="form-group"><label>Nombre</label><input type="text" id="rName"/></div>
+      <div class="form-group"><label>Apellido</label><input type="text" id="rSurname"/></div>
+    </div>
+    <div class="form-group"><label>Email</label><input type="email" id="rEmail"/></div>
+    <div class="form-group"><label>DNI</label><input type="text" id="rDni"/></div>
+    <div class="form-group">
+      <label>Fecha de nacimiento</label>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+        <select id="rBirthdateDay"><option value="">Día</option></select>
+        <select id="rBirthdateMonth">
+          <option value="">Mes</option>
+          <option value="1">Enero</option>
+          <option value="2">Febrero</option>
+          <option value="3">Marzo</option>
+          <option value="4">Abril</option>
+          <option value="5">Mayo</option>
+          <option value="6">Junio</option>
+          <option value="7">Julio</option>
+          <option value="8">Agosto</option>
+          <option value="9">Septiembre</option>
+          <option value="10">Octubre</option>
+          <option value="11">Noviembre</option>
+          <option value="12">Diciembre</option>
+        </select>
+        <select id="rBirthdateYear"><option value="">Año</option></select>
+      </div>
+      <p id="rBirthdateError" style="font-size:12px;color:var(--color-text-danger);margin:4px 0 0;display:none"></p>
+    </div>
+    <!--<div class="form-group" id="rPhoneGroup"><label>Teléfono</label><input type="text" id="rPhone" placeholder="Opcional"/></div>-->
+
+    <!-- Solo para empleados -->
+    <div id="employeeFields" style="display:none">
+      <div class="form-group">
+        <label>Rol</label>
+        <select id="rRol" onchange="onRolChange()">
+          <option value="RECEPCIONISTA">Recepcionista</option>
+          <option value="PROFESOR">Profesor</option>
+          <option value="ADMINISTRATIVO">Administrativo</option>
+        </select>
+      </div>
+      <div class="form-group" id="specialtyGroup">
+        <label>Especialidad</label>
+        <input type="text" id="rSpecialty" placeholder="Ej: Rehabilitación de rodilla"/>
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-sm" id="registerUserBtn" onclick="submitRegisterUser()">Registrar</button>
+      <button class="btn btn-sm btn-outline" onclick="closeRegisterModal()">Cancelar</button>
+    </div>
+  </div>
+</div>
+<div class="modal-overlay" id="paymentQrModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="paymentQrTitle">Pagar</h3>
+      <button class="modal-close" onclick="closePaymentQrModal()">✕</button>
+    </div>
+
+    <p id="paymentQrSubtitle">
+      Escaneá el QR con Mercado Pago para abonar.
+    </p>
+
+    <img
+      id="paymentQrImage"
+      style="width:260px;margin:20px auto;display:block"
+    >
+  </div>
+</div>
+<div class="modal-overlay" id="reservationPaymentModal">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-header">
+      <h3>Elegir forma de pago</h3>
+      <button class="modal-close" onclick="closeReservationPaymentModal()">✕</button>
+    </div>
+
+    <div id="reservationPaymentAlert" class="alert"></div>
+
+    <p style="color:var(--muted);font-size:.9rem;margin-bottom:18px">
+      Seleccioná cómo querés pagar la reserva.
+    </p>
+
+    <div style="display:flex;gap:12px;flex-wrap:wrap">
+      <button class="btn" onclick="confirmReservationPayment(50)">
+        Pagar 50%
+      </button>
+
+      <button class="btn" onclick="confirmReservationPayment(100)">
+        Pagar 100%
+      </button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="cashSubscriptionModal">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-header">
+      <h3>Confirmar pago en efectivo</h3>
+      <button class="modal-close" onclick="closeCashSubscriptionModal()">✕</button>
+    </div>
+
+    <div id="cashSubscriptionAlert" class="alert"></div>
+
+    <p style="color:var(--muted);font-size:.9rem;margin-bottom:18px">
+      Confirmá que el cliente pagó la mensualidad en efectivo.
+      Al aceptar, el cliente pasará a ser abonado.
+    </p>
+
+    <div class="modal-actions">
+      <button class="btn btn-sm" onclick="confirmCashSubscription()">
+        Confirmar pago
+      </button>
+      <button class="btn btn-sm btn-outline" onclick="closeCashSubscriptionModal()">
+        Cancelar
+      </button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="attendanceModal">
+  <div class="modal" style="max-width:720px">
+    <div class="modal-header">
+      <h3>Pasar asistencia</h3>
+      <button class="modal-close" onclick="closeAttendanceModal()">✕</button>
+    </div>
+
+    <div id="attendanceAlert" class="alert"></div>
+
+    <div id="attendanceContainer">
+      <div class="empty-state"><p>Cargando participantes...</p></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="attendanceQrModal">
+  <div class="modal" style="max-width:480px">
+
+    <div class="modal-header">
+      <h3>QR de asistencia</h3>
+
+      <button
+        class="modal-close"
+        onclick="closeAttendanceQrModal(true)"
+      >
+        ✕
+      </button>
+    </div>
+
+    <p>
+      Los participantes deben escanear este código
+      e ingresar el correo electrónico asociado a su cuenta.
+    </p>
+
+    <img
+      id="attendanceQrImage"
+      alt="QR para registrar asistencia"
+      style="
+        width:300px;
+        max-width:100%;
+        margin:20px auto;
+        display:block;
+      "
+    />
+
+    <p
+      id="attendanceQrCountdown"
+      style="
+        text-align:center;
+        font-weight:600;
+        color:var(--teal-dark);
+      "
+    >
+      —
+    </p>
+
+    <p
+      id="attendanceQrUrl"
+      style="
+        font-size:.7rem;
+        word-break:break-all;
+        text-align:center;
+      "
+    ></p>
+
+    <div class="modal-actions">
+      <button
+        class="btn btn-sm btn-outline"
+        onclick="closeAttendanceQrModal(true)"
+      >
+        Finalizar asistencia
+      </button>
+    </div>
+
+  </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+<script src="audit.js?v=999"></script>
+<script src="dashboard.js?v=20260528-two-class-types"></script>
+</body>
+</html>

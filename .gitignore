@@ -2,3 +2,10 @@
 __pycache__/
 *.pyc
 .env
+__pycache__/
+*.pyc
+*.pyo
+supabase/*
+!supabase/migrations/
+supabase/migrations/*
+!supabase/migrations/20260703000000_create_notification_delivery_log.sql
