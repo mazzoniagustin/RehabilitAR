@@ -2,6 +2,7 @@ import os
 import asyncio
 import logging
 from fastapi import FastAPI
+from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from routes.payments import routerPayments
@@ -182,6 +183,11 @@ async def stop_automatic_jobs():
             continue
         task.cancel()
 
-@app.get("/")
+@app.get("/", include_in_schema=False)
+def root():
+    return RedirectResponse(url="/frontend/login.html")
+
+
+@app.get("/health", include_in_schema=False)
 def health_check():
     return {"status": "ok", "message": "RehabilitAR API corriendo"}

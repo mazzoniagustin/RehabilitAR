@@ -1,4 +1,5 @@
 import smtplib
+import threading
 from email.message import EmailMessage
 import os
 import mimetypes
@@ -27,13 +28,16 @@ def send_email(to_email: str, subject: str, body: str, attachment_path: str = No
         except Exception as e:
             print(f'Error al adjuntar archivo: {e}')
 
-    try:
-        with smtplib.SMTP('smtp.gmail.com', 587) as smtp:
-            smtp.starttls()
-            smtp.login('rehabilitar.faq@gmail.com', acc_password)
-            smtp.send_message(msg)
-    except Exception as e:
-        print(f'Error al enviar el correo: {e}')
+    def _send():
+        try:
+            with smtplib.SMTP('smtp.gmail.com', 587, timeout=15) as smtp:
+                smtp.starttls()
+                smtp.login('rehabilitar.faq@gmail.com', acc_password)
+                smtp.send_message(msg)
+        except Exception as e:
+            print(f'Error al enviar el correo: {e}')
+
+    threading.Thread(target=_send, daemon=True).start()
 
 
 
