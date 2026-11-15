@@ -1,6 +1,6 @@
 // CONFIG
 
-const API = 'http://localhost:8000';
+const API = window.location.origin;
 
 // HELPERS
 const getToken  = () => localStorage.getItem('token');
