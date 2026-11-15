@@ -1,6 +1,7 @@
 from fastapi import HTTPException
 from utils.permissions import check_user_existance, user_data_validators
 from database import supabase, supabase_admin
+import os
 
 #Aplicacion de las reglas de negocio.
 
@@ -86,7 +87,7 @@ def recover_password(email):
         supabase.auth.reset_password_for_email(
             email,
             {
-                'redirect_to': 'http://localhost:8000/frontend/reset-password.html'
+                'redirect_to': f"{os.getenv('FRONTEND_PUBLIC_URL', 'http://localhost:8000/frontend')}/reset-password.html"
             })
         return {'Mensaje': 'Correo de recuperación de contraseña enviado exitosamente.'}
     
