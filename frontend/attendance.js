@@ -1,4 +1,4 @@
-const API_PUBLIC_URL = "https://stabilize-avalanche-ability.ngrok-free.dev";
+const API_PUBLIC_URL = window.location.origin;
 
 const queryParameters =
   new URLSearchParams(window.location.search);

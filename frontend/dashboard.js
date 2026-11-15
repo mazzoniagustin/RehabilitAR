@@ -1,6 +1,6 @@
 console.log("dashboard cargó");
 // CONFIG
-const API          = 'http://localhost:8000';
+const API          = window.location.origin;
 
 // HELPERS
 const getToken  = () => localStorage.getItem('token');
@@ -2833,7 +2833,7 @@ async function handleChangePassword() {
       localStorage.clear();
       sessionStorage.clear();
       setTimeout(() => {
-      window.location.href = 'http://localhost:8000/frontend/login.html';
+      window.location.href = '/frontend/login.html';
       }, 2500);
     }
   } catch { showAlert('pwAlert', 'No se pudo conectar.'); }
